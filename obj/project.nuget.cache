@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "dgSpecHash": "2UDURYkUbs8=",
+  "success": true,
+  "projectFilePath": "F:\\All Projects\\Rider\\ECCR\\ECCR\\ECCR.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia\\11.2.0\\avalonia.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.angle.windows.natives\\2.1.22045.20230930\\avalonia.angle.windows.natives.2.1.22045.20230930.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.buildservices\\0.0.29\\avalonia.buildservices.0.0.29.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.desktop\\11.2.0\\avalonia.desktop.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.fonts.inter\\11.2.0\\avalonia.fonts.inter.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.freedesktop\\11.2.0\\avalonia.freedesktop.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.native\\11.2.0\\avalonia.native.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.remote.protocol\\11.2.0\\avalonia.remote.protocol.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.skia\\11.2.0\\avalonia.skia.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.themes.fluent\\11.2.0\\avalonia.themes.fluent.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.win32\\11.2.0\\avalonia.win32.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\avalonia.x11\\11.2.0\\avalonia.x11.11.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\communitytoolkit.mvvm\\8.3.2\\communitytoolkit.mvvm.8.3.2.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\harfbuzzsharp\\7.3.0.2\\harfbuzzsharp.7.3.0.2.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\harfbuzzsharp.nativeassets.linux\\7.3.0.2\\harfbuzzsharp.nativeassets.linux.7.3.0.2.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\harfbuzzsharp.nativeassets.macos\\7.3.0.2\\harfbuzzsharp.nativeassets.macos.7.3.0.2.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\harfbuzzsharp.nativeassets.webassembly\\7.3.0.3-preview.2.2\\harfbuzzsharp.nativeassets.webassembly.7.3.0.3-preview.2.2.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\harfbuzzsharp.nativeassets.win32\\7.3.0.2\\harfbuzzsharp.nativeassets.win32.7.3.0.2.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microcom.runtime\\0.11.0\\microcom.runtime.0.11.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.1\\microsoft.extensions.dependencyinjection.abstractions.8.0.1.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.1\\microsoft.extensions.logging.abstractions.8.0.1.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microsoft.netcore.platforms\\1.1.0\\microsoft.netcore.platforms.1.1.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\nefarius.drivers.hidhide\\2.0.0\\nefarius.drivers.hidhide.2.0.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\nefarius.utilities.devicemanagement\\3.18.1\\nefarius.utilities.devicemanagement.3.18.1.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\nefarius.vicius.abstractions\\1.0.1\\nefarius.vicius.abstractions.1.0.1.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\nefarius.vigem.client\\1.21.256\\nefarius.vigem.client.1.21.256.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\netstandard.library\\1.6.1\\netstandard.library.1.6.1.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\sharpdx\\4.2.0\\sharpdx.4.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\sharpdx.directinput\\4.2.0\\sharpdx.directinput.4.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\skiasharp\\2.88.8\\skiasharp.2.88.8.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\skiasharp.nativeassets.linux\\2.88.8\\skiasharp.nativeassets.linux.2.88.8.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\skiasharp.nativeassets.macos\\2.88.8\\skiasharp.nativeassets.macos.2.88.8.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\skiasharp.nativeassets.webassembly\\2.88.8\\skiasharp.nativeassets.webassembly.2.88.8.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\skiasharp.nativeassets.win32\\2.88.8\\skiasharp.nativeassets.win32.2.88.8.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\system.codedom\\9.0.0\\system.codedom.9.0.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\system.componentmodel.annotations\\5.0.0\\system.componentmodel.annotations.5.0.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\system.management\\9.0.0\\system.management.9.0.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\tmds.dbus.protocol\\0.20.0\\tmds.dbus.protocol.0.20.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\velopack\\1.2.0\\velopack.1.2.0.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "message": "Package 'Tmds.DBus.Protocol' 0.20.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-xrw6-gwf8-vvr9",
+      "projectPath": "F:\\All Projects\\Rider\\ECCR\\ECCR\\ECCR.csproj",
+      "warningLevel": 1,
+      "filePath": "F:\\All Projects\\Rider\\ECCR\\ECCR\\ECCR.csproj",
+      "libraryId": "Tmds.DBus.Protocol",
+      "targetGraphs": [
+        "net10.0-windows"
+      ]
+    }
+  ]
+}
