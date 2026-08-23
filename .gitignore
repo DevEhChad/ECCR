@@ -1,0 +1,26 @@
+## Build and Compilation Outputs
+bin/
+obj/
+publish/
+releases/
+*.nupkg
+
+## IDE & Editor Artifacts
+.idea/
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.userprefs
+*.workspace
+
+## Operating System & Temporary Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+## Velopack local build cache
+.velopack/
