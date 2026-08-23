@@ -32,7 +32,48 @@ public partial class MappingEntry : ObservableObject
     private uint _targetDeviceId = 1;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Glyph))]
+    [NotifyPropertyChangedFor(nameof(Foreground))]
     private string _targetOutput = "VA-Throttle (RT - Right Trigger / Gas)";
+
+    // --- Resolved Properties for Line 195 & 196 ---
+
+    [JsonIgnore]
+    public string Glyph => GetGlyphForOutput(TargetOutput);
+
+    [JsonIgnore]
+    public string Foreground => GetColorForOutput(TargetOutput);
+
+    private static string GetGlyphForOutput(string output) => output switch
+    {
+        var s when s.Contains("Throttle") || s.Contains("Gas") || s.Contains("RT") => "⮝",
+        var s when s.Contains("Brake") || s.Contains("LT") => "⮟",
+        var s when s.Contains("Steering") || s.Contains("X-Axis") => "◎",
+        var s when s.Contains("Clutch") => "⎊",
+        var s when s.Contains("Handbrake") => "⧈",
+        var s when s.Contains("Gear") => "⚙",
+        var s when s.StartsWith("Button") || s.Contains("Btn") => "●",
+        "A" or "Cross" => "Ⓐ",
+        "B" or "Circle" => "Ⓑ",
+        "X" or "Square" => "Ⓧ",
+        "Y" or "Triangle" => "Ⓨ",
+        _ => "•"
+    };
+
+    private static string GetColorForOutput(string output) => output switch
+    {
+        var s when s.Contains("Throttle") || s.Contains("Gas") || s.Contains("RT") => "#00E599", // Green
+        var s when s.Contains("Brake") || s.Contains("LT") => "#FF4D6D",                         // Red
+        var s when s.Contains("Steering") || s.Contains("X-Axis") => "#3E7BFA",                  // Blue
+        var s when s.Contains("Clutch") => "#A855F7",                                            // Purple
+        var s when s.Contains("Handbrake") => "#EC4899",                                         // Pink
+        var s when s.Contains("Gear") => "#F59E0B",                                              // Amber
+        "A" => "#00E599",
+        "B" => "#FF4D6D",
+        "X" => "#3E7BFA",
+        "Y" => "#FFCC00",
+        _ => "#8B95A5"                                                                           // Muted Gray
+    };
 
     // --- Calibration Thresholds & Points ---
 
@@ -43,15 +84,15 @@ public partial class MappingEntry : ObservableObject
     private int _rawMax = 65535;
 
     [ObservableProperty]
-    private double _deadzone = 0.0; // Inner Deadzone (0.0 to 0.4)
+    private double _deadzone = 0.0;
 
     [ObservableProperty]
-    private double _outerDeadzone = 0.0; // Outer / Upper Deadzone (0.0 to 0.4)
+    private double _outerDeadzone = 0.0;
 
     [ObservableProperty]
     private bool _isInverted = false;
 
-    // --- Live UI Visualizers (Ignored by JSON persistence) ---
+    // --- Live UI Visualizers ---
 
     [JsonIgnore]
     [ObservableProperty]
@@ -74,16 +115,10 @@ public partial class MappingEntry : ObservableObject
     }
 
     [RelayCommand]
-    public void SetCurrentAsMin()
-    {
-        RawMin = LatestRawReading;
-    }
+    public void SetCurrentAsMin() => RawMin = LatestRawReading;
 
     [RelayCommand]
-    public void SetCurrentAsMax()
-    {
-        RawMax = LatestRawReading;
-    }
+    public void SetCurrentAsMax() => RawMax = LatestRawReading;
 
     [RelayCommand]
     public void ResetCalibration()
@@ -110,7 +145,6 @@ public partial class MappingEntry : ObservableObject
         }
         else
         {
-            // Handles both normal (Min < Max) and hardware-reversed potentiometer curves
             normalized = (double)(rawReading - min) / (max - min);
         }
 
@@ -121,31 +155,21 @@ public partial class MappingEntry : ObservableObject
             normalized = 1.0 - normalized;
         }
 
-        // Apply Inner Deadzone
         if (Deadzone > 0.0 && Deadzone < 0.9)
         {
             if (normalized <= Deadzone)
-            {
                 normalized = 0.0;
-            }
             else
-            {
                 normalized = (normalized - Deadzone) / (1.0 - Deadzone);
-            }
         }
 
-        // Apply Outer Deadzone (ensures 100% reach without bottoming out physical sensor)
         if (OuterDeadzone > 0.0 && OuterDeadzone < 0.9)
         {
             double maxThreshold = 1.0 - OuterDeadzone;
             if (normalized >= maxThreshold)
-            {
                 normalized = 1.0;
-            }
             else
-            {
                 normalized = normalized / maxThreshold;
-            }
         }
 
         double finalResult = Math.Clamp(normalized, 0.0, 1.0);

@@ -10,7 +10,7 @@ namespace ECCR;
 
 public partial class App : Application
 {
-    public static MainWindow? AppMainWindow { get; private set; }
+    private MainWindowViewModel? _mainViewModel;
 
     public override void Initialize()
     {
@@ -21,45 +21,52 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            AppMainWindow = new MainWindow
+            _mainViewModel = new MainWindowViewModel();
+            desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel()
+                DataContext = _mainViewModel
             };
-            desktop.MainWindow = AppMainWindow;
+
+            desktop.Exit += (sender, args) =>
+            {
+                _mainViewModel?.CleanupAndShutdown();
+            };
+
+            AppDomain.CurrentDomain.ProcessExit += (sender, args) =>
+            {
+                _mainViewModel?.CleanupAndShutdown();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    private void OnTrayIconClicked(object? sender, EventArgs e)
+    public void OnTrayIconClicked(object? sender, EventArgs e)
     {
         ShowMainWindow();
     }
 
-    private void OnOpenClicked(object? sender, EventArgs e)
+    public void OnShowAppClick(object? sender, EventArgs e)
     {
         ShowMainWindow();
     }
 
-    private void OnExitClicked(object? sender, EventArgs e)
+    public void OnExitAppClick(object? sender, EventArgs e)
     {
+        _mainViewModel?.CleanupAndShutdown();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            if (AppMainWindow != null)
-            {
-                AppMainWindow.AllowFullClose = true;
-            }
             desktop.Shutdown();
         }
     }
 
-    public static void ShowMainWindow()
+    private void ShowMainWindow()
     {
-        if (AppMainWindow != null)
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
         {
-            AppMainWindow.Show();
-            AppMainWindow.WindowState = WindowState.Normal;
-            AppMainWindow.Activate();
+            desktop.MainWindow.Show();
+            desktop.MainWindow.WindowState = WindowState.Normal;
+            desktop.MainWindow.Activate();
         }
     }
 }

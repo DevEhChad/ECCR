@@ -17,6 +17,10 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <Window.Resources>
+        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
+    </Window.Resources>
+
     <Grid>
         <!-- Main Application Layout -->
         <Grid RowDefinitions="Auto, Auto, *, Auto" Margin="16,12">
@@ -78,7 +82,6 @@
                 <Border Grid.ColumnSpan="7" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,8"/>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                    <!-- Native XAML ECCR Vector Logo -->
                     <Viewbox Width="22" Height="22" VerticalAlignment="Center">
                         <Canvas Width="48" Height="48">
                             <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
@@ -183,7 +186,7 @@
                                                         <Grid ColumnDefinitions="Auto, *">
                                                             <Border Grid.Column="0" 
                                                                     x:DataType="converters:BadgeInfo"
-                                                                    DataContext="{Binding $parent[Button].((models:MappingEntry)DataContext).SourceDisplayName, Converter={StaticResource ButtonBadgeConverter}}"
+                                                                    DataContext="{Binding SourceDisplayName, Converter={StaticResource ButtonBadgeConverter}}"
                                                                     IsVisible="{Binding HasBadge}"
                                                                     Background="{Binding Background}"
                                                                     BorderBrush="{Binding Border}"
@@ -266,7 +269,7 @@
                                                                     </Border>
                                                                     <TextBlock Grid.Column="1" 
                                                                                Text="{Binding}" 
-                                                                               VerticalAlignment="Center"
+                                                                               VerticalAlignment="Center" 
                                                                                TextTrimming="CharacterEllipsis"/>
                                                                 </Grid>
                                                             </DataTemplate>
@@ -450,7 +453,6 @@
                 <Grid RowDefinitions="Auto, *, Auto">
                     <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,16">
                         <Grid ColumnDefinitions="Auto, *, Auto">
-                            <!-- Native Vector Icon in Modal Header -->
                             <Viewbox Grid.Column="0" Width="28" Height="28" Margin="0,0,12,0" VerticalAlignment="Center">
                                 <Canvas Width="48" Height="48">
                                     <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
@@ -594,7 +596,7 @@
                                     <Button Content="+ Add Game (.exe)" Command="{Binding AddApplicationToHidHideCommand}" CommandParameter="{Binding #RootWindow.StorageProvider}" FontSize="11"/>
                                     <Button Content="Clear All" Command="{Binding ClearAllApplicationsFromHidHideCommand}" FontSize="11"/>
                                 </StackPanel>
-                                <ScrollViewer Grid.Row="3">
+                                <ScrollViewer Grid.Row="2">
                                     <ItemsControl ItemsSource="{Binding WhitelistedApplications}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="x:String">

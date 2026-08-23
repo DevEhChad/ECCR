@@ -11,78 +11,120 @@ public class RawDeviceInputState
     public Guid InstanceGuid { get; set; }
     public string DeviceName { get; set; } = string.Empty;
     public int[] Axes { get; set; } = new int[8];
-    public bool[] Buttons { get; set; } = Array.Empty<bool>();
-    public int[] PointOfViewControllers { get; set; } = Array.Empty<int>();
+    public bool[] Buttons { get; set; } = new bool[132];
 }
 
 public class ConnectedDeviceInfo
 {
     public Guid InstanceGuid { get; set; }
     public string InstanceName { get; set; } = string.Empty;
-    public DeviceType Type { get; set; }
-    public int ButtonCount { get; set; } = 32;
-    public int AxisCount { get; set; } = 8;
+    public string ProductName { get; set; } = string.Empty;
+    public int ButtonCount { get; set; }
+    public int AxisCount { get; set; }
 }
 
 public class InputDeviceManager : IDisposable
 {
-    private readonly DirectInput _directInput = new();
+    private readonly DirectInput _directInput;
     private readonly List<Joystick> _activeJoysticks = new();
     private readonly List<ConnectedDeviceInfo> _connectedDevices = new();
-    private Thread? _pollThread;
+    private readonly object _lock = new();
+
+    private Thread? _pollingThread;
     private bool _isPolling;
 
     public event Action<List<ConnectedDeviceInfo>>? OnDevicesRefreshed;
     public event Action<RawDeviceInputState>? OnInputPolled;
 
-    public List<ConnectedDeviceInfo> GetConnectedDevices()
+    public InputDeviceManager()
     {
-        lock (_connectedDevices)
-        {
-            return _connectedDevices.ToList();
-        }
+        _directInput = new DirectInput();
     }
 
     public void RefreshDevices()
     {
-        lock (_activeJoysticks)
+        lock (_lock)
         {
-            foreach (var js in _activeJoysticks)
+            foreach (var j in _activeJoysticks)
             {
-                try { js.Unacquire(); js.Dispose(); } catch { }
+                try
+                {
+                    j.Unacquire();
+                    j.Dispose();
+                }
+                catch { }
             }
             _activeJoysticks.Clear();
+            _connectedDevices.Clear();
 
-            lock (_connectedDevices)
+            var devices = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AttachedOnly);
+
+            foreach (var dev in devices)
             {
-                _connectedDevices.Clear();
-
-                var devices = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AllDevices);
-
-                foreach (var deviceInstance in devices)
+                if (IsVirtualDevice(dev))
                 {
-                    try
-                    {
-                        var joystick = new Joystick(_directInput, deviceInstance.InstanceGuid);
-                        joystick.Acquire();
-                        _activeJoysticks.Add(joystick);
-
-                        var caps = joystick.Capabilities;
-
-                        _connectedDevices.Add(new ConnectedDeviceInfo
-                        {
-                            InstanceGuid = deviceInstance.InstanceGuid,
-                            InstanceName = deviceInstance.InstanceName,
-                            Type = deviceInstance.Type,
-                            ButtonCount = Math.Max(caps.ButtonCount, 32),
-                            AxisCount = Math.Max(caps.AxeCount, 8)
-                        });
-                    }
-                    catch { }
+                    continue;
                 }
 
-                OnDevicesRefreshed?.Invoke(_connectedDevices.ToList());
+                try
+                {
+                    var joystick = new Joystick(_directInput, dev.InstanceGuid);
+                    joystick.Acquire();
+
+                    int buttonCount = joystick.Capabilities.ButtonCount;
+                    int axisCount = joystick.Capabilities.AxeCount;
+
+                    _activeJoysticks.Add(joystick);
+                    _connectedDevices.Add(new ConnectedDeviceInfo
+                    {
+                        InstanceGuid = dev.InstanceGuid,
+                        InstanceName = dev.InstanceName ?? string.Empty,
+                        ProductName = dev.ProductName ?? string.Empty,
+                        ButtonCount = Math.Max(buttonCount, 16),
+                        AxisCount = Math.Max(axisCount, 6)
+                    });
+                }
+                catch { }
             }
+        }
+
+        OnDevicesRefreshed?.Invoke(GetConnectedDevices());
+    }
+
+    private static bool IsVirtualDevice(DeviceInstance dev)
+    {
+        string name = (dev.InstanceName ?? string.Empty).ToLowerInvariant();
+        string prod = (dev.ProductName ?? string.Empty).ToLowerInvariant();
+        string guidStr = dev.ProductGuid.ToString().ToLowerInvariant();
+
+        if (name.Contains("vjoy") || prod.Contains("vjoy") ||
+            name.Contains("vigem") || prod.Contains("vigem") ||
+            name.Contains("nefarius") || prod.Contains("nefarius") ||
+            name.Contains("virtual") || prod.Contains("virtual") ||
+            name.Contains("root#") || prod.Contains("root#") ||
+            name.Contains("software device"))
+        {
+            return true;
+        }
+
+        if (guidStr.StartsWith("028e045e") || prod.Contains("xbox 360 for windows"))
+        {
+            return true;
+        }
+
+        if (guidStr.StartsWith("0be31234"))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public List<ConnectedDeviceInfo> GetConnectedDevices()
+    {
+        lock (_lock)
+        {
+            return _connectedDevices.ToList();
         }
     }
 
@@ -91,85 +133,99 @@ public class InputDeviceManager : IDisposable
         if (_isPolling) return;
         _isPolling = true;
 
-        _pollThread = new Thread(() =>
+        _pollingThread = new Thread(() =>
         {
             while (_isPolling)
             {
-                lock (_activeJoysticks)
-                {
-                    for (int i = 0; i < _activeJoysticks.Count; i++)
-                    {
-                        var joystick = _activeJoysticks[i];
-                        try
-                        {
-                            joystick.Poll();
-                            var state = joystick.GetCurrentState();
-                            var info = _connectedDevices[i];
-
-                            bool[] rawButtons = state.Buttons;
-                            bool[] totalButtons = new bool[rawButtons.Length + 4];
-                            Array.Copy(rawButtons, totalButtons, rawButtons.Length);
-
-                            if (state.PointOfViewControllers.Length > 0)
-                            {
-                                int pov = state.PointOfViewControllers[0];
-                                if (pov >= 0)
-                                {
-                                    totalButtons[rawButtons.Length + 0] = (pov >= 31500 || pov <= 4500);  // POV Up
-                                    totalButtons[rawButtons.Length + 1] = (pov >= 4500 && pov <= 13500);  // POV Right
-                                    totalButtons[rawButtons.Length + 2] = (pov >= 13500 && pov <= 22500); // POV Down
-                                    totalButtons[rawButtons.Length + 3] = (pov >= 22500 && pov <= 31500); // POV Left
-                                }
-                            }
-
-                            var inputState = new RawDeviceInputState
-                            {
-                                InstanceGuid = info.InstanceGuid,
-                                DeviceName = info.InstanceName,
-                                Axes = new int[]
-                                {
-                                    state.X,
-                                    state.Y,
-                                    state.Z,
-                                    state.RotationX,
-                                    state.RotationY,
-                                    state.RotationZ,
-                                    state.Sliders.Length > 0 ? state.Sliders[0] : 0,
-                                    state.Sliders.Length > 1 ? state.Sliders[1] : 0
-                                },
-                                Buttons = totalButtons,
-                                PointOfViewControllers = state.PointOfViewControllers
-                            };
-
-                            OnInputPolled?.Invoke(inputState);
-                        }
-                        catch { }
-                    }
-                }
-
+                PollAllDevices();
                 Thread.Sleep(pollIntervalMs);
             }
         })
         {
-            IsBackground = true
+            IsBackground = true,
+            Priority = ThreadPriority.AboveNormal
         };
 
-        _pollThread.Start();
+        _pollingThread.Start();
+    }
+
+    private void PollAllDevices()
+    {
+        lock (_lock)
+        {
+            for (int i = 0; i < _activeJoysticks.Count; i++)
+            {
+                var joystick = _activeJoysticks[i];
+                try
+                {
+                    joystick.Poll();
+                    var state = joystick.GetCurrentState();
+
+                    var inputState = new RawDeviceInputState
+                    {
+                        InstanceGuid = joystick.Information.InstanceGuid,
+                        DeviceName = joystick.Information.InstanceName ?? string.Empty,
+                        Axes = new int[]
+                        {
+                            state.X,
+                            state.Y,
+                            state.Z,
+                            state.RotationX,
+                            state.RotationY,
+                            state.RotationZ,
+                            state.Sliders.Length > 0 ? state.Sliders[0] : 0,
+                            state.Sliders.Length > 1 ? state.Sliders[1] : 0
+                        }
+                    };
+
+                    bool[] rawButtons = state.Buttons;
+                    for (int b = 0; b < Math.Min(rawButtons.Length, 128); b++)
+                    {
+                        inputState.Buttons[b] = rawButtons[b];
+                    }
+
+                    if (state.PointOfViewControllers.Length > 0)
+                    {
+                        int pov = state.PointOfViewControllers[0];
+                        if (pov >= 0)
+                        {
+                            inputState.Buttons[128] = (pov >= 31500 || pov <= 4500);
+                            inputState.Buttons[129] = (pov >= 4500 && pov <= 13500);
+                            inputState.Buttons[130] = (pov >= 13500 && pov <= 22500);
+                            inputState.Buttons[131] = (pov >= 22500 && pov <= 31500);
+                        }
+                    }
+
+                    OnInputPolled?.Invoke(inputState);
+                }
+                catch
+                {
+                    try { joystick.Acquire(); } catch { }
+                }
+            }
+        }
     }
 
     public void StopPolling()
     {
         _isPolling = false;
+        _pollingThread?.Join(200);
+        _pollingThread = null;
     }
 
     public void Dispose()
     {
         StopPolling();
-        lock (_activeJoysticks)
+        lock (_lock)
         {
-            foreach (var js in _activeJoysticks)
+            foreach (var j in _activeJoysticks)
             {
-                try { js.Unacquire(); js.Dispose(); } catch { }
+                try
+                {
+                    j.Unacquire();
+                    j.Dispose();
+                }
+                catch { }
             }
             _activeJoysticks.Clear();
         }

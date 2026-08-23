@@ -25,3 +25,19 @@ $RECYCLE.BIN/
 ## Velopack local build cache
 .velopack/
 .aider*
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# .NET Build outputs
+[Bb]in/
+[Oo]bj/
+publish/
+Releases/
+*.user
+*.suo
+.vs/
+.idea/

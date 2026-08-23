@@ -11,14 +11,19 @@
         WindowStartupLocation="CenterOwner"
         Background="#10141E"
         Foreground="White"
-        Title="Auto-Detect &amp; Xbox Quick-Bind Wizard">
+        Title="Auto-Detect &amp; Controller Quick-Bind Wizard"
+        Icon="/Assets/ECCR-logo.ico">
+
+    <Window.Resources>
+        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
+    </Window.Resources>
 
     <Border Padding="22">
         <Grid RowDefinitions="Auto, Auto, *, Auto">
             
             <StackPanel Grid.Row="0" Spacing="3" Margin="0,0,0,14">
-                <TextBlock Text="⚡ Auto-Detect &amp; Xbox Face Button Setup" FontSize="18" FontWeight="Bold" Foreground="White"/>
-                <TextBlock Text="Select a connected device to automatically map physical face keys, paddles, and axes directly to Xbox navigation controls." 
+                <TextBlock Text="⚡ Auto-Detect &amp; Controller Quick-Bind Setup" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                <TextBlock Text="Select a connected device to automatically map physical keys, paddles, and axes directly to virtual Xbox controls." 
                            Foreground="#8B95A5" FontSize="12" TextWrapping="Wrap"/>
             </StackPanel>
 
@@ -65,7 +70,7 @@
                                             <Grid Grid.Column="0" ColumnDefinitions="Auto, *" VerticalAlignment="Center">
                                                 <Border Grid.Column="0" 
                                                         x:DataType="converters:BadgeInfo"
-                                                        DataContext="{Binding $parent[Border].((services:PresetBindingItem)DataContext).PhysicalName, Converter={StaticResource ButtonBadgeConverter}}"
+                                                        DataContext="{Binding PhysicalName, Converter={StaticResource ButtonBadgeConverter}}"
                                                         IsVisible="{Binding HasBadge}"
                                                         Background="{Binding Background}"
                                                         BorderBrush="{Binding Border}"

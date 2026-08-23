@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Avalonia.Controls;
 using ECCR.Models;
 using ECCR.ViewModels;
@@ -7,46 +6,35 @@ namespace ECCR.Views;
 
 public partial class MainWindow : Window
 {
-    public bool AllowFullClose { get; set; } = false;
-
     public MainWindow()
     {
         InitializeComponent();
+        Closing += OnWindowClosing;
     }
 
-    private void OnBulkTargetSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    public void OnBulkTargetSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is ComboBox comboBox && 
-            comboBox.SelectedItem is uint targetDeviceId &&
-            comboBox.DataContext is DeviceMappingGroup group &&
-            DataContext is MainWindowViewModel vm)
+        if (sender is ComboBox cb && cb.SelectedItem is uint targetId)
         {
-            vm.BulkChangeDeviceTarget(group.DeviceName, targetDeviceId);
+            if (cb.DataContext is DeviceMappingGroup group && DataContext is MainWindowViewModel vm)
+            {
+                vm.BulkChangeDeviceTarget(group.DeviceName, targetId);
+            }
         }
     }
 
-    protected override void OnClosing(WindowClosingEventArgs e)
+    private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (!AllowFullClose && DataContext is MainWindowViewModel vm && vm.CloseMinimizesToTray)
+        if (DataContext is MainWindowViewModel vm)
         {
-            e.Cancel = true;
-            Hide();
-            return;
-        }
+            if (vm.CloseMinimizesToTray && vm.RunInSystemTray)
+            {
+                e.Cancel = true;
+                Hide();
+                return;
+            }
 
-        base.OnClosing(e);
-    }
-
-    protected override void OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs change)
-    {
-        base.OnPropertyChanged(change);
-
-        if (change.Property == WindowStateProperty && 
-            WindowState == WindowState.Minimized && 
-            DataContext is MainWindowViewModel vm && 
-            vm.MinimizeToTray)
-        {
-            Hide();
+            vm.CleanupAndShutdown();
         }
     }
 }
