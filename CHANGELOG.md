@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2026-08-23
+
+### Fixed
+- **Velopack 1.x Lifecycle**: Restored non-blocking `VelopackApp.Build().Run()` initialization hook in `Program.cs` to enable smooth standalone installation and auto-updates.
+- **GitHub Release Metadata**: Updated update source handler to query GitHub releases for `releases.win.json` update assets.
+- **Application Teardown**: Ensured all background hooks, HidHide cloaks, and virtual feeder nodes terminate cleanly on app shutdown.
+
+---
+
 ## [1.0.2] - 2026-08-23
 
 ### Added
