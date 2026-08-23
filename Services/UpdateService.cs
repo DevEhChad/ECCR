@@ -13,9 +13,10 @@ public class UpdateService
     {
         try
         {
-            var source = new GithubUpdateSource(RepoUrl, string.Empty, false);
+            var source = new GithubUpdateSource(RepoUrl, accessToken: null, prerelease: false);
             var mgr = new UpdateManager(source);
 
+            // If running in development / loose debug folder, skip checking
             if (!mgr.IsInstalled)
             {
                 return null;
@@ -33,7 +34,7 @@ public class UpdateService
     {
         try
         {
-            var source = new GithubUpdateSource(RepoUrl, string.Empty, false);
+            var source = new GithubUpdateSource(RepoUrl, accessToken: null, prerelease: false);
             var mgr = new UpdateManager(source);
 
             await mgr.DownloadUpdatesAsync(updateInfo, progress =>
