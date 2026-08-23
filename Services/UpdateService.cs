@@ -7,18 +7,20 @@ namespace ECCR.Services;
 
 public class UpdateService
 {
-    private readonly string _githubRepoUrl;
-
-    public UpdateService(string githubRepoUrl = "https://github.com/ChadDoty/ECCR")
-    {
-        _githubRepoUrl = githubRepoUrl;
-    }
+    private const string RepoUrl = "https://github.com/DevEhChad/ECCR";
 
     public async Task<UpdateInfo?> CheckForUpdatesAsync()
     {
         try
         {
-            var mgr = new UpdateManager(new GithubSource(_githubRepoUrl, string.Empty, false));
+            var source = new GithubUpdateSource(RepoUrl, string.Empty, false);
+            var mgr = new UpdateManager(source);
+
+            if (!mgr.IsInstalled)
+            {
+                return null;
+            }
+
             return await mgr.CheckForUpdatesAsync();
         }
         catch
@@ -31,8 +33,14 @@ public class UpdateService
     {
         try
         {
-            var mgr = new UpdateManager(new GithubSource(_githubRepoUrl, string.Empty, false));
-            await mgr.DownloadUpdatesAsync(updateInfo, progressCallback);
+            var source = new GithubUpdateSource(RepoUrl, string.Empty, false);
+            var mgr = new UpdateManager(source);
+
+            await mgr.DownloadUpdatesAsync(updateInfo, progress =>
+            {
+                progressCallback?.Invoke(progress);
+            });
+
             mgr.ApplyUpdatesAndRestart(updateInfo);
             return true;
         }

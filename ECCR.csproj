@@ -7,6 +7,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
+    <!-- Versioning required by Velopack runtime & installer -->
+    <Version>1.0.2</Version>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <FileVersion>1.0.2.0</FileVersion>
+    <InformationalVersion>1.0.2</InformationalVersion>
+
     <!-- Embeds icon into ECCR.exe and Task Manager -->
     <ApplicationIcon>Assets\ECCR-logo.ico</ApplicationIcon>
   </PropertyGroup>
