@@ -9,7 +9,7 @@ internal sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // Must run first before any UI framework initializes
+        // Handles install/uninstall hooks and desktop shortcuts before UI initializes
         VelopackApp.Build().Run();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

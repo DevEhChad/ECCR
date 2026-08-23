@@ -1,0 +1,61 @@
+name: Build & Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
+
+      - name: Extract Tag Version
+        id: get_version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          echo "VERSION=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Publish .NET App
+        run: >
+          dotnet publish ECCR/ECCR.csproj 
+          -c Release 
+          -r win-x64 
+          --self-contained true 
+          -p:PublishSingleFile=false 
+          -o ./publish
+
+      - name: Package with Velopack
+        run: >
+          vpk pack 
+          -u ECCR 
+          -v ${{ steps.get_version.outputs.VERSION }} 
+          -p ./publish 
+          -e ECCR.exe 
+          --icon ECCR/Assets/ECCR-logo.ico 
+          -o ./releases
+
+      - name: Publish to GitHub Releases
+        run: >
+          vpk upload github 
+          --repoUrl https://github.com/${{ github.repository }} 
+          --token ${{ secrets.GITHUB_TOKEN }} 
+          --publish 
+          --outputDir ./releases
