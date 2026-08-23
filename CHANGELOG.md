@@ -1,9 +1,4 @@
-﻿---
-
-### 3. `CHANGELOG.md` (`F:\All Projects\Rider\ECCR\CHANGELOG.md`)
-
-```markdown
-# Changelog
+﻿# Changelog
 
 All notable changes to **EhChadsControllerRemapper (ECCR)** will be documented in this file.
 
@@ -15,8 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-08-23
 
 ### Added
-* Initial project launch and initial commit.
-* DirectInput polling engine using SharpDX with background worker threads.
+* DirectInput polling engine using SharpDX with dedicated background worker threads.
 * Simultaneous dual-engine feeder routing:
   * DirectInput virtual wheel routing via native `vJoy` P/Invoke.
   * Virtual Xbox 360 controller emulation via `ViGEmBus`.
