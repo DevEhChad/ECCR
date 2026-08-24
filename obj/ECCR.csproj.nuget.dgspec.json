@@ -5,7 +5,7 @@
   },
   "projects": {
     "F:\\All Projects\\Rider\\ECCR\\ECCR.csproj": {
-      "version": "1.0.4",
+      "version": "1.0.5",
       "restore": {
         "projectUniqueName": "F:\\All Projects\\Rider\\ECCR\\ECCR.csproj",
         "projectName": "ECCR",
@@ -87,6 +87,14 @@
             "System.Management": {
               "target": "Package",
               "version": "[9.0.0, )"
+            },
+            "System.ServiceProcess.ServiceController": {
+              "target": "Package",
+              "version": "[9.0.0, )"
+            },
+            "Tmds.DBus.Protocol": {
+              "target": "Package",
+              "version": "[0.21.3, )"
             },
             "Velopack": {
               "target": "Package",

@@ -1,138 +1,118 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="using:ECCR.Models"
-        x:DataType="models:MappingEntry"
         x:Class="ECCR.Views.CalibrationDialog"
-        Width="540" Height="620"
-        CanResize="False"
+        x:DataType="models:MappingEntry"
+        Title="Axis Calibration"
+        Width="540" Height="580"
         WindowStartupLocation="CenterOwner"
-        Background="#10141D"
-        Title="Axis &amp; Pedal Calibration"
-        Foreground="White">
+        Background="#0E1118"
+        Foreground="White"
+        CanResize="false">
 
-    <Border Padding="22">
-        <Grid RowDefinitions="Auto, *, Auto">
-            
-            <!-- Header Strip -->
-            <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
-                <StackPanel Spacing="2">
-                    <TextBlock Text="🎯 Advanced Axis Calibration" FontSize="17" FontWeight="Bold" Foreground="White"/>
+    <Grid RowDefinitions="Auto, *, Auto" Margin="22">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,14" BorderBrush="#20283C" BorderThickness="1">
+            <Grid ColumnDefinitions="*, Auto">
+                <StackPanel Grid.Column="0" Spacing="2">
+                    <TextBlock Text="🎯 Advanced Axis Calibration" FontWeight="Bold" FontSize="16" Foreground="White"/>
                     <TextBlock Text="{Binding SourceDisplayName, StringFormat='Calibrating: {0}'}" FontSize="12" Foreground="#8B95A5"/>
                 </StackPanel>
-
-                <!-- Live Raw Value Badge -->
-                <Border Grid.Column="1" Background="#1A2234" CornerRadius="6" Padding="10,4" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding LatestRawReading, StringFormat='Raw: {0} / 65535'}" 
-                               FontSize="11" FontWeight="Bold" Foreground="#3E7BFA"/>
+                <Border Grid.Column="1" Background="#10141E" CornerRadius="6" Padding="10,4" BorderBrush="#1F283C" BorderThickness="1">
+                    <TextBlock Text="{Binding LatestRawReading, StringFormat='Live Raw: {0}'}" FontSize="12" Foreground="#00E599" FontWeight="Bold" VerticalAlignment="Center"/>
                 </Border>
             </Grid>
+        </Border>
 
-            <!-- Scrollable Calibration Settings -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,14">
-                <StackPanel Spacing="14">
-                    
-                    <!-- Visual Position Gauges -->
-                    <Border Background="#161C28" CornerRadius="8" Padding="14" BorderBrush="#252F44" BorderThickness="1">
-                        <StackPanel Spacing="12">
-                            <!-- Live Raw Bar -->
-                            <StackPanel Spacing="4">
-                                <Grid ColumnDefinitions="*, Auto">
-                                    <TextBlock Text="Physical Sensor Position" FontSize="11" Foreground="#8B95A5"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" FontWeight="Bold"/>
-                                </Grid>
-                                <ProgressBar Minimum="0" Maximum="1" Value="{Binding LiveRawPercentage}" Height="12" CornerRadius="6" Foreground="#3E7BFA" Background="#0F131C"/>
+        <!-- Main Calibration Controls -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="12">
+                
+                <!-- Live Bar Visualizers -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Text="Raw DirectInput Signal" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                            <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                        </Grid>
+                        <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#3E7BFA"/>
+
+                        <Border Height="1" Background="#1F283C" Margin="0,4"/>
+
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Text="Calibrated Output Signal" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                            <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="12" Foreground="#00E599" FontWeight="Bold"/>
+                        </Grid>
+                        <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="10" CornerRadius="5" Foreground="#00E599"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Calibration Range Set Points (Min / Center / Max) -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Calibration Range Points" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+                        
+                        <Grid ColumnDefinitions="*, *, *">
+                            <!-- Min Point -->
+                            <StackPanel Grid.Column="0" Spacing="6" Margin="0,0,4,0">
+                                <TextBlock Text="Minimum Point" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Center"/>
+                                <Border Background="#10141E" CornerRadius="6" Padding="8,4" HorizontalAlignment="Stretch">
+                                    <TextBlock Text="{Binding RawMin}" FontWeight="Bold" FontSize="12" Foreground="White" HorizontalAlignment="Center"/>
+                                </Border>
+                                <Button Content="Set Min" Click="OnSetMinClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="8,5" CornerRadius="5"/>
                             </StackPanel>
 
-                            <!-- Calibrated Output Bar -->
-                            <StackPanel Spacing="4">
-                                <Grid ColumnDefinitions="*, Auto">
-                                    <TextBlock Text="Calibrated Game Output" FontSize="11" Foreground="#8B95A5"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" FontWeight="Bold" Foreground="#00E599"/>
-                                </Grid>
-                                <ProgressBar Minimum="0" Maximum="1" Value="{Binding LiveOutputPercentage}" Height="12" CornerRadius="6" Foreground="#00E599" Background="#0F131C"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Physical Range Points (Min / Rest & Max / Full Throw) -->
-                    <Border Background="#161C28" CornerRadius="8" Padding="14" BorderBrush="#252F44" BorderThickness="1">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Range Thresholds (Set Rest &amp; Full Throw)" FontWeight="SemiBold" FontSize="13" Foreground="#E0E0E0"/>
-
-                            <!-- Min / Rest Point -->
-                            <Grid ColumnDefinitions="*, 90, Auto">
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Rest Point (Min)" FontSize="12" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Sensor value when pedal/stick is released" FontSize="10" Foreground="#8B95A5"/>
-                                </StackPanel>
-                                <NumericUpDown Grid.Column="1" Value="{Binding RawMin}" Minimum="0" Maximum="65535" Increment="100" 
-                                               Background="#0F131C" BorderBrush="#252F44" CornerRadius="5" Margin="0,0,8,0"/>
-                                <Button Grid.Column="2" Content="Set Rest" Command="{Binding SetCurrentAsMinCommand}" 
-                                        Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" FontSize="11" Padding="10,6" CornerRadius="5"/>
-                            </Grid>
-
-                            <Border Height="1" Background="#222B3D"/>
-
-                            <!-- Max / Full Point -->
-                            <Grid ColumnDefinitions="*, 90, Auto">
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Full Point (Max)" FontSize="12" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Sensor value when pedal is bottomed out" FontSize="10" Foreground="#8B95A5"/>
-                                </StackPanel>
-                                <NumericUpDown Grid.Column="1" Value="{Binding RawMax}" Minimum="0" Maximum="65535" Increment="100" 
-                                               Background="#0F131C" BorderBrush="#252F44" CornerRadius="5" Margin="0,0,8,0"/>
-                                <Button Grid.Column="2" Content="Set Full" Command="{Binding SetCurrentAsMaxCommand}" 
-                                        Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" FontSize="11" Padding="10,6" CornerRadius="5"/>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Inversion & Deadzones -->
-                    <Border Background="#161C28" CornerRadius="8" Padding="14" BorderBrush="#252F44" BorderThickness="1">
-                        <StackPanel Spacing="12">
-                            
-                            <!-- Invert Axis Toggle -->
-                            <Grid ColumnDefinitions="*, Auto">
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Invert Axis Direction" FontWeight="SemiBold" FontSize="12"/>
-                                    <TextBlock Text="Enable if pedal registers 100% when foot is off" FontSize="10" Foreground="#8B95A5"/>
-                                </StackPanel>
-                                <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}"/>
-                            </Grid>
-
-                            <Border Height="1" Background="#222B3D"/>
-
-                            <!-- Inner Deadzone -->
-                            <StackPanel Spacing="4">
-                                <Grid ColumnDefinitions="*, Auto">
-                                    <TextBlock Text="Inner Deadzone (Start Threshold)" FontSize="12" FontWeight="SemiBold"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="12" Foreground="#8B95A5"/>
-                                </Grid>
-                                <Slider Minimum="0.0" Maximum="0.4" Value="{Binding Deadzone}"/>
+                            <!-- Center Point -->
+                            <StackPanel Grid.Column="1" Spacing="6" Margin="2,0,2,0">
+                                <TextBlock Text="Center Point" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Center"/>
+                                <Border Background="#10141E" CornerRadius="6" Padding="8,4" HorizontalAlignment="Stretch">
+                                    <TextBlock Text="{Binding RawCenter}" FontWeight="Bold" FontSize="12" Foreground="White" HorizontalAlignment="Center"/>
+                                </Border>
+                                <Button Content="Set Center" Click="OnSetCenterClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="8,5" CornerRadius="5"/>
                             </StackPanel>
 
-                            <!-- Outer Deadzone -->
-                            <StackPanel Spacing="4">
-                                <Grid ColumnDefinitions="*, Auto">
-                                    <TextBlock Text="Outer Deadzone (Early 100% Reach)" FontSize="12" FontWeight="SemiBold"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding OuterDeadzone, StringFormat='{}{0:P0}'}" FontSize="12" Foreground="#8B95A5"/>
-                                </Grid>
-                                <Slider Minimum="0.0" Maximum="0.4" Value="{Binding OuterDeadzone}"/>
+                            <!-- Max Point -->
+                            <StackPanel Grid.Column="2" Spacing="6" Margin="4,0,0,0">
+                                <TextBlock Text="Maximum Point" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Center"/>
+                                <Border Background="#10141E" CornerRadius="6" Padding="8,4" HorizontalAlignment="Stretch">
+                                    <TextBlock Text="{Binding RawMax}" FontWeight="Bold" FontSize="12" Foreground="White" HorizontalAlignment="Center"/>
+                                </Border>
+                                <Button Content="Set Max" Click="OnSetMaxClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="8,5" CornerRadius="5"/>
                             </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-                        </StackPanel>
-                    </Border>
+                <!-- Deadzone & Invert -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*, 40">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Dead Zone" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Eliminates input jitter near resting position." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontWeight="Bold" FontSize="12" Foreground="#00E599" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                        </Grid>
+                        <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}" HorizontalAlignment="Stretch"/>
 
-                </StackPanel>
-            </ScrollViewer>
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
 
-            <!-- Bottom Actions -->
-            <Grid Grid.Row="2" ColumnDefinitions="Auto, *">
-                <Button Grid.Column="0" Content="Reset Defaults" Command="{Binding ResetCalibrationCommand}" 
-                        Background="#2B1A20" Foreground="#FF7777" BorderBrush="#552229" Padding="14,6" CornerRadius="6"/>
-                <Button Grid.Column="1" Content="Done &amp; Save" Click="OnCloseClicked" 
-                        HorizontalAlignment="Right" Background="#00B074" Foreground="White" FontWeight="SemiBold" Padding="24,6" CornerRadius="6"/>
-            </Grid>
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Invert Axis Direction" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Reverse output direction (useful for inverted pedals or flight sticks)." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="Inverted" OffContent="Normal"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Grid Grid.Row="2" ColumnDefinitions="Auto, *, Auto" Margin="0,14,0,0">
+            <Button Grid.Column="0" Content="↺ Reset Calibration" Click="OnResetClick" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" Padding="14,8" CornerRadius="6" FontSize="12"/>
+            <Button Grid.Column="2" Content="Done &amp; Save" Click="OnDoneClick" Background="#00B074" Foreground="White" FontWeight="Bold" Padding="24,8" CornerRadius="6" FontSize="12"/>
         </Grid>
-    </Border>
+    </Grid>
 </Window>

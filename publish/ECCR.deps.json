@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v10.0": {},
     ".NETCoreApp,Version=v10.0/win-x64": {
-      "ECCR/1.0.4": {
+      "ECCR/1.0.5": {
         "dependencies": {
           "Avalonia": "11.2.0",
           "Avalonia.Desktop": "11.2.0",
@@ -18,6 +18,8 @@
           "Nefarius.ViGEm.Client": "1.21.256",
           "SharpDX.DirectInput": "4.2.0",
           "System.Management": "9.0.0",
+          "System.ServiceProcess.ServiceController": "9.0.0",
+          "Tmds.DBus.Protocol": "0.21.3",
           "Velopack": "1.2.0",
           "runtimepack.Microsoft.NETCore.App.Runtime.win-x64": "10.0.11"
         },
@@ -852,7 +854,7 @@
       "Avalonia.FreeDesktop/11.2.0": {
         "dependencies": {
           "Avalonia": "11.2.0",
-          "Tmds.DBus.Protocol": "0.20.0"
+          "Tmds.DBus.Protocol": "0.21.3"
         },
         "runtime": {
           "lib/net8.0/Avalonia.FreeDesktop.dll": {
@@ -1064,6 +1066,18 @@
           }
         }
       },
+      "System.Diagnostics.EventLog/9.0.0": {
+        "runtime": {
+          "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.Messages.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.24.52809"
+          }
+        }
+      },
       "System.Management/9.0.0": {
         "dependencies": {
           "System.CodeDom": "9.0.0"
@@ -1075,11 +1089,22 @@
           }
         }
       },
-      "Tmds.DBus.Protocol/0.20.0": {
+      "System.ServiceProcess.ServiceController/9.0.0": {
+        "dependencies": {
+          "System.Diagnostics.EventLog": "9.0.0"
+        },
+        "runtime": {
+          "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.24.52809"
+          }
+        }
+      },
+      "Tmds.DBus.Protocol/0.21.3": {
         "runtime": {
           "lib/net8.0/Tmds.DBus.Protocol.dll": {
-            "assemblyVersion": "0.20.0.0",
-            "fileVersion": "0.20.0.0"
+            "assemblyVersion": "0.21.3.0",
+            "fileVersion": "0.21.3.0"
           }
         }
       },
@@ -1094,7 +1119,7 @@
     }
   },
   "libraries": {
-    "ECCR/1.0.4": {
+    "ECCR/1.0.5": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
@@ -1286,6 +1311,13 @@
       "path": "system.codedom/9.0.0",
       "hashPath": "system.codedom.9.0.0.nupkg.sha512"
     },
+    "System.Diagnostics.EventLog/9.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-qd01+AqPhbAG14KtdtIqFk+cxHQFZ/oqRSCoxU1F+Q6Kv0cl726sl7RzU9yLFGd4BUOKdN4XojXF0pQf/R6YeA==",
+      "path": "system.diagnostics.eventlog/9.0.0",
+      "hashPath": "system.diagnostics.eventlog.9.0.0.nupkg.sha512"
+    },
     "System.Management/9.0.0": {
       "type": "package",
       "serviceable": true,
@@ -1293,12 +1325,19 @@
       "path": "system.management/9.0.0",
       "hashPath": "system.management.9.0.0.nupkg.sha512"
     },
-    "Tmds.DBus.Protocol/0.20.0": {
+    "System.ServiceProcess.ServiceController/9.0.0": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-2gkt2kuYPhDKd8gtl34jZSJOnn4nRJfFngCDcTZT/uySbK++ua0YQx2418l9Rn1Y4dE5XNq6zG9ZsE5ltLlNNw==",
-      "path": "tmds.dbus.protocol/0.20.0",
-      "hashPath": "tmds.dbus.protocol.0.20.0.nupkg.sha512"
+      "sha512": "sha512-ciFstNZEWYf40HbwzdQLdgQpgpnjkleC1z0jMqBKRdkEQqQ6I/Aht0x9fTBODnaQTtcF+scvrdimoDbfNap/aQ==",
+      "path": "system.serviceprocess.servicecontroller/9.0.0",
+      "hashPath": "system.serviceprocess.servicecontroller.9.0.0.nupkg.sha512"
+    },
+    "Tmds.DBus.Protocol/0.21.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-hDwB8WsQoyALQKqIbwzS68UKdlnafDm4T/DkO/JrA/YIneP/rKv96SxYPVXeh3FP4i/SXfShrYftKLtciJAIlw==",
+      "path": "tmds.dbus.protocol/0.21.3",
+      "hashPath": "tmds.dbus.protocol.0.21.3.nupkg.sha512"
     },
     "Velopack/1.2.0": {
       "type": "package",

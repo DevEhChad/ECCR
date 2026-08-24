@@ -2,177 +2,211 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using SharpDX.DirectInput;
 
 namespace ECCR.Services;
 
-public class RawDeviceInputState
+public class DeviceHardwareInfo
 {
     public Guid InstanceGuid { get; set; }
-    public string DeviceName { get; set; } = string.Empty;
-    public int[] Axes { get; set; } = new int[8];
-    public bool[] Buttons { get; set; } = Array.Empty<bool>();
-    public int[] PointOfViewControllers { get; set; } = Array.Empty<int>();
-}
-
-public class ConnectedDeviceInfo
-{
-    public Guid InstanceGuid { get; set; }
+    public Guid ProductGuid { get; set; }
     public string InstanceName { get; set; } = string.Empty;
-    public DeviceType Type { get; set; }
-    public int ButtonCount { get; set; } = 32;
-    public int AxisCount { get; set; } = 8;
+    public string ProductName { get; set; } = string.Empty;
+    public int ButtonCount { get; set; }
+    public int AxisCount { get; set; }
 }
 
 public class InputDeviceManager : IDisposable
 {
-    private readonly DirectInput _directInput = new();
-    private readonly List<Joystick> _activeJoysticks = new();
-    private readonly List<ConnectedDeviceInfo> _connectedDevices = new();
-    private Thread? _pollThread;
-    private bool _isPolling;
+    private readonly DirectInput _directInput;
+    private readonly Dictionary<Guid, Joystick> _acquiredJoysticks = new();
+    private CancellationTokenSource? _pollingCts;
+    private Task? _pollingTask;
 
-    public event Action<List<ConnectedDeviceInfo>>? OnDevicesRefreshed;
+    public event Action<List<DeviceHardwareInfo>>? OnDevicesRefreshed;
     public event Action<RawDeviceInputState>? OnInputPolled;
 
-    public List<ConnectedDeviceInfo> GetConnectedDevices()
+    public InputDeviceManager()
     {
-        lock (_connectedDevices)
+        _directInput = new DirectInput();
+    }
+
+    public List<DeviceHardwareInfo> GetConnectedDevices()
+    {
+        var list = new List<DeviceHardwareInfo>();
+        try
         {
-            return _connectedDevices.ToList();
+            var devices = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AttachedOnly);
+            foreach (var d in devices)
+            {
+                string name = d.InstanceName.ToLowerInvariant();
+                if (name.Contains("vjoy") || name.Contains("vigem") || name.Contains("virtual")) continue;
+
+                list.Add(new DeviceHardwareInfo
+                {
+                    InstanceGuid = d.InstanceGuid,
+                    ProductGuid = d.ProductGuid,
+                    InstanceName = d.InstanceName,
+                    ProductName = d.ProductName,
+                    ButtonCount = 32,
+                    AxisCount = 8
+                });
+            }
         }
+        catch { }
+        return list;
     }
 
     public void RefreshDevices()
     {
-        lock (_activeJoysticks)
+        var devices = GetConnectedDevices();
+        lock (_acquiredJoysticks)
         {
-            foreach (var js in _activeJoysticks)
+            var currentGuids = devices.Select(d => d.InstanceGuid).ToHashSet();
+            var toRemove = _acquiredJoysticks.Keys.Where(g => !currentGuids.Contains(g)).ToList();
+
+            foreach (var g in toRemove)
             {
-                try { js.Unacquire(); js.Dispose(); } catch { }
+                try
+                {
+                    _acquiredJoysticks[g].Unacquire();
+                    _acquiredJoysticks[g].Dispose();
+                }
+                catch { }
+                _acquiredJoysticks.Remove(g);
             }
-            _activeJoysticks.Clear();
 
-            lock (_connectedDevices)
+            foreach (var d in devices)
             {
-                _connectedDevices.Clear();
-
-                var devices = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AllDevices);
-
-                foreach (var deviceInstance in devices)
+                if (!_acquiredJoysticks.ContainsKey(d.InstanceGuid))
                 {
                     try
                     {
-                        var joystick = new Joystick(_directInput, deviceInstance.InstanceGuid);
+                        var joystick = new Joystick(_directInput, d.InstanceGuid);
+                        joystick.Properties.BufferSize = 128;
                         joystick.Acquire();
-                        _activeJoysticks.Add(joystick);
-
-                        var caps = joystick.Capabilities;
-
-                        _connectedDevices.Add(new ConnectedDeviceInfo
-                        {
-                            InstanceGuid = deviceInstance.InstanceGuid,
-                            InstanceName = deviceInstance.InstanceName,
-                            Type = deviceInstance.Type,
-                            ButtonCount = Math.Max(caps.ButtonCount, 32),
-                            AxisCount = Math.Max(caps.AxeCount, 8)
-                        });
+                        _acquiredJoysticks[d.InstanceGuid] = joystick;
                     }
                     catch { }
                 }
-
-                OnDevicesRefreshed?.Invoke(_connectedDevices.ToList());
             }
         }
+
+        OnDevicesRefreshed?.Invoke(devices);
     }
 
     public void StartPolling(int pollIntervalMs = 4)
     {
-        if (_isPolling) return;
-        _isPolling = true;
+        StopPolling();
+        _pollingCts = new CancellationTokenSource();
+        var token = _pollingCts.Token;
 
-        _pollThread = new Thread(() =>
+        _pollingTask = Task.Run(async () =>
         {
-            while (_isPolling)
+            while (!token.IsCancellationRequested)
             {
-                lock (_activeJoysticks)
+                List<KeyValuePair<Guid, Joystick>> joysticksCopy;
+                lock (_acquiredJoysticks)
                 {
-                    for (int i = 0; i < _activeJoysticks.Count; i++)
+                    joysticksCopy = _acquiredJoysticks.ToList();
+                }
+
+                foreach (var kvp in joysticksCopy)
+                {
+                    if (token.IsCancellationRequested) break;
+
+                    try
                     {
-                        var joystick = _activeJoysticks[i];
-                        try
+                        var joystick = kvp.Value;
+                        joystick.Poll();
+                        var state = joystick.GetCurrentState();
+
+                        int[] axes = [
+                            state.X,
+                            state.Y,
+                            state.Z,
+                            state.RotationX,
+                            state.RotationY,
+                            state.RotationZ,
+                            state.Sliders.Length > 0 ? state.Sliders[0] : 0,
+                            state.Sliders.Length > 1 ? state.Sliders[1] : 0
+                        ];
+
+                        bool[] buttons = state.Buttons;
+
+                        if (state.PointOfViewControllers.Length > 0)
                         {
-                            joystick.Poll();
-                            var state = joystick.GetCurrentState();
-                            var info = _connectedDevices[i];
+                            int pov = state.PointOfViewControllers[0];
+                            bool up = pov >= 0 && (pov == 0 || pov == 4500 || pov == 31500);
+                            bool right = pov >= 0 && (pov == 4500 || pov == 9000 || pov == 13500);
+                            bool down = pov >= 0 && (pov == 13500 || pov == 18000 || pov == 22500);
+                            bool left = pov >= 0 && (pov == 22500 || pov == 27000 || pov == 31500);
 
-                            bool[] rawButtons = state.Buttons;
-                            bool[] totalButtons = new bool[rawButtons.Length + 4];
-                            Array.Copy(rawButtons, totalButtons, rawButtons.Length);
-
-                            if (state.PointOfViewControllers.Length > 0)
-                            {
-                                int pov = state.PointOfViewControllers[0];
-                                if (pov >= 0)
-                                {
-                                    totalButtons[rawButtons.Length + 0] = (pov >= 31500 || pov <= 4500);  // POV Up
-                                    totalButtons[rawButtons.Length + 1] = (pov >= 4500 && pov <= 13500);  // POV Right
-                                    totalButtons[rawButtons.Length + 2] = (pov >= 13500 && pov <= 22500); // POV Down
-                                    totalButtons[rawButtons.Length + 3] = (pov >= 22500 && pov <= 31500); // POV Left
-                                }
-                            }
-
-                            var inputState = new RawDeviceInputState
-                            {
-                                InstanceGuid = info.InstanceGuid,
-                                DeviceName = info.InstanceName,
-                                Axes = new int[]
-                                {
-                                    state.X,
-                                    state.Y,
-                                    state.Z,
-                                    state.RotationX,
-                                    state.RotationY,
-                                    state.RotationZ,
-                                    state.Sliders.Length > 0 ? state.Sliders[0] : 0,
-                                    state.Sliders.Length > 1 ? state.Sliders[1] : 0
-                                },
-                                Buttons = totalButtons,
-                                PointOfViewControllers = state.PointOfViewControllers
-                            };
-
-                            OnInputPolled?.Invoke(inputState);
+                            var expandedButtons = new bool[132];
+                            Array.Copy(buttons, expandedButtons, Math.Min(buttons.Length, 128));
+                            expandedButtons[128] = up;
+                            expandedButtons[129] = right;
+                            expandedButtons[130] = down;
+                            expandedButtons[131] = left;
+                            buttons = expandedButtons;
                         }
-                        catch { }
+
+                        OnInputPolled?.Invoke(new RawDeviceInputState
+                        {
+                            InstanceGuid = kvp.Key,
+                            DeviceName = joystick.Information.InstanceName,
+                            Axes = axes,
+                            Buttons = buttons
+                        });
+                    }
+                    catch
+                    {
+                        try { kvp.Value.Acquire(); } catch { }
                     }
                 }
 
-                Thread.Sleep(pollIntervalMs);
+                try { await Task.Delay(pollIntervalMs, token); }
+                catch { break; }
             }
-        })
-        {
-            IsBackground = true
-        };
-
-        _pollThread.Start();
+        }, token);
     }
 
     public void StopPolling()
     {
-        _isPolling = false;
+        var cts = _pollingCts;
+        _pollingCts = null;
+        if (cts != null)
+        {
+            try
+            {
+                cts.Cancel();
+                _pollingTask?.Wait(100);
+            }
+            catch { }
+            finally
+            {
+                cts.Dispose();
+            }
+        }
     }
 
     public void Dispose()
     {
         StopPolling();
-        lock (_activeJoysticks)
+        lock (_acquiredJoysticks)
         {
-            foreach (var js in _activeJoysticks)
+            foreach (var j in _acquiredJoysticks.Values)
             {
-                try { js.Unacquire(); js.Dispose(); } catch { }
+                try
+                {
+                    j.Unacquire();
+                    j.Dispose();
+                }
+                catch { }
             }
-            _activeJoysticks.Clear();
+            _acquiredJoysticks.Clear();
         }
-        _directInput.Dispose();
+        try { _directInput.Dispose(); } catch { }
     }
 }

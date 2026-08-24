@@ -2,7 +2,7 @@
 
 namespace ECCR.Views;
 
-public partial class HidHideWindow : UserControl
+public partial class HidHideWindow : Window
 {
     public HidHideWindow()
     {

@@ -657,6 +657,32 @@
           }
         }
       },
+      "System.Diagnostics.EventLog/9.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/net9.0/System.Diagnostics.EventLog.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net9.0/System.Diagnostics.EventLog.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/_._": {}
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.Messages.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          },
+          "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          }
+        }
+      },
       "System.Management/9.0.0": {
         "type": "package",
         "dependencies": {
@@ -682,7 +708,32 @@
           }
         }
       },
-      "Tmds.DBus.Protocol/0.20.0": {
+      "System.ServiceProcess.ServiceController/9.0.0": {
+        "type": "package",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "9.0.0"
+        },
+        "compile": {
+          "lib/net9.0/System.ServiceProcess.ServiceController.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net9.0/System.ServiceProcess.ServiceController.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/_._": {}
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          }
+        }
+      },
+      "Tmds.DBus.Protocol/0.21.3": {
         "type": "package",
         "compile": {
           "lib/net8.0/Tmds.DBus.Protocol.dll": {}
@@ -1274,6 +1325,23 @@
           }
         }
       },
+      "System.Diagnostics.EventLog/9.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/net9.0/System.Diagnostics.EventLog.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.Messages.dll": {},
+          "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/_._": {}
+        }
+      },
       "System.Management/9.0.0": {
         "type": "package",
         "dependencies": {
@@ -1293,7 +1361,26 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "Tmds.DBus.Protocol/0.20.0": {
+      "System.ServiceProcess.ServiceController/9.0.0": {
+        "type": "package",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "9.0.0"
+        },
+        "compile": {
+          "lib/net9.0/System.ServiceProcess.ServiceController.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/_._": {}
+        }
+      },
+      "Tmds.DBus.Protocol/0.21.3": {
         "type": "package",
         "compile": {
           "lib/net8.0/Tmds.DBus.Protocol.dll": {}
@@ -2444,6 +2531,40 @@
         "version.txt"
       ]
     },
+    "System.Diagnostics.EventLog/9.0.0": {
+      "sha512": "qd01+AqPhbAG14KtdtIqFk+cxHQFZ/oqRSCoxU1F+Q6Kv0cl726sl7RzU9yLFGd4BUOKdN4XojXF0pQf/R6YeA==",
+      "type": "package",
+      "path": "system.diagnostics.eventlog/9.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "PACKAGE.md",
+        "THIRD-PARTY-NOTICES.TXT",
+        "buildTransitive/net461/System.Diagnostics.EventLog.targets",
+        "buildTransitive/net462/_._",
+        "buildTransitive/net8.0/_._",
+        "buildTransitive/netcoreapp2.0/System.Diagnostics.EventLog.targets",
+        "lib/net462/System.Diagnostics.EventLog.dll",
+        "lib/net462/System.Diagnostics.EventLog.xml",
+        "lib/net8.0/System.Diagnostics.EventLog.dll",
+        "lib/net8.0/System.Diagnostics.EventLog.xml",
+        "lib/net9.0/System.Diagnostics.EventLog.dll",
+        "lib/net9.0/System.Diagnostics.EventLog.xml",
+        "lib/netstandard2.0/System.Diagnostics.EventLog.dll",
+        "lib/netstandard2.0/System.Diagnostics.EventLog.xml",
+        "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.Messages.dll",
+        "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.dll",
+        "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.xml",
+        "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.Messages.dll",
+        "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.dll",
+        "runtimes/win/lib/net9.0/System.Diagnostics.EventLog.xml",
+        "system.diagnostics.eventlog.9.0.0.nupkg.sha512",
+        "system.diagnostics.eventlog.nuspec",
+        "useSharedDesignerContext.txt"
+      ]
+    },
     "System.Management/9.0.0": {
       "sha512": "bVh4xAMI5grY5GZoklKcMBLirhC8Lqzp63Ft3zXJacwGAlLyFdF4k0qz4pnKIlO6HyL2Z4zqmHm9UkzEo6FFsA==",
       "type": "package",
@@ -2473,10 +2594,42 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "Tmds.DBus.Protocol/0.20.0": {
-      "sha512": "2gkt2kuYPhDKd8gtl34jZSJOnn4nRJfFngCDcTZT/uySbK++ua0YQx2418l9Rn1Y4dE5XNq6zG9ZsE5ltLlNNw==",
+    "System.ServiceProcess.ServiceController/9.0.0": {
+      "sha512": "ciFstNZEWYf40HbwzdQLdgQpgpnjkleC1z0jMqBKRdkEQqQ6I/Aht0x9fTBODnaQTtcF+scvrdimoDbfNap/aQ==",
       "type": "package",
-      "path": "tmds.dbus.protocol/0.20.0",
+      "path": "system.serviceprocess.servicecontroller/9.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "PACKAGE.md",
+        "THIRD-PARTY-NOTICES.TXT",
+        "buildTransitive/net461/System.ServiceProcess.ServiceController.targets",
+        "buildTransitive/net462/_._",
+        "buildTransitive/net8.0/_._",
+        "buildTransitive/netcoreapp2.0/System.ServiceProcess.ServiceController.targets",
+        "lib/net462/System.ServiceProcess.ServiceController.dll",
+        "lib/net462/System.ServiceProcess.ServiceController.xml",
+        "lib/net8.0/System.ServiceProcess.ServiceController.dll",
+        "lib/net8.0/System.ServiceProcess.ServiceController.xml",
+        "lib/net9.0/System.ServiceProcess.ServiceController.dll",
+        "lib/net9.0/System.ServiceProcess.ServiceController.xml",
+        "lib/netstandard2.0/System.ServiceProcess.ServiceController.dll",
+        "lib/netstandard2.0/System.ServiceProcess.ServiceController.xml",
+        "runtimes/win/lib/net8.0/System.ServiceProcess.ServiceController.dll",
+        "runtimes/win/lib/net8.0/System.ServiceProcess.ServiceController.xml",
+        "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.dll",
+        "runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.xml",
+        "system.serviceprocess.servicecontroller.9.0.0.nupkg.sha512",
+        "system.serviceprocess.servicecontroller.nuspec",
+        "useSharedDesignerContext.txt"
+      ]
+    },
+    "Tmds.DBus.Protocol/0.21.3": {
+      "sha512": "hDwB8WsQoyALQKqIbwzS68UKdlnafDm4T/DkO/JrA/YIneP/rKv96SxYPVXeh3FP4i/SXfShrYftKLtciJAIlw==",
+      "type": "package",
+      "path": "tmds.dbus.protocol/0.21.3",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -2484,7 +2637,7 @@
         "lib/net8.0/Tmds.DBus.Protocol.dll",
         "lib/netstandard2.0/Tmds.DBus.Protocol.dll",
         "lib/netstandard2.1/Tmds.DBus.Protocol.dll",
-        "tmds.dbus.protocol.0.20.0.nupkg.sha512",
+        "tmds.dbus.protocol.0.21.3.nupkg.sha512",
         "tmds.dbus.protocol.nuspec"
       ]
     },
@@ -2523,6 +2676,8 @@
       "Nefarius.ViGEm.Client >= 1.21.256",
       "SharpDX.DirectInput >= 4.2.0",
       "System.Management >= 9.0.0",
+      "System.ServiceProcess.ServiceController >= 9.0.0",
+      "Tmds.DBus.Protocol >= 0.21.3",
       "Velopack >= 1.2.0"
     ]
   },
@@ -2531,7 +2686,7 @@
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
-    "version": "1.0.4",
+    "version": "1.0.5",
     "restore": {
       "projectUniqueName": "F:\\All Projects\\Rider\\ECCR\\ECCR.csproj",
       "projectName": "ECCR",
@@ -2613,6 +2768,14 @@
           "System.Management": {
             "target": "Package",
             "version": "[9.0.0, )"
+          },
+          "System.ServiceProcess.ServiceController": {
+            "target": "Package",
+            "version": "[9.0.0, )"
+          },
+          "Tmds.DBus.Protocol": {
+            "target": "Package",
+            "version": "[0.21.3, )"
           },
           "Velopack": {
             "target": "Package",
@@ -2931,18 +3094,5 @@
         "#import": []
       }
     }
-  },
-  "logs": [
-    {
-      "code": "NU1903",
-      "level": "Warning",
-      "warningLevel": 1,
-      "message": "Package 'Tmds.DBus.Protocol' 0.20.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-xrw6-gwf8-vvr9",
-      "libraryId": "Tmds.DBus.Protocol",
-      "targetGraphs": [
-        "net10.0-windows",
-        "net10.0-windows/win-x64"
-      ]
-    }
-  ]
+  }
 }

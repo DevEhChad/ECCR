@@ -1,4 +1,6 @@
-﻿namespace ECCR.Models;
+﻿using System.Collections.Generic;
+
+namespace ECCR.Models;
 
 public class AppSettings
 {
@@ -9,4 +11,7 @@ public class AppSettings
     public bool MinimizeToTray { get; set; } = true;
     public bool CloseMinimizesToTray { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
+    public bool IsHidHideActive { get; set; } = false;
+    public bool IsAppListInverted { get; set; } = false;
+    public List<string> BlockedInstanceIds { get; set; } = new();
 }

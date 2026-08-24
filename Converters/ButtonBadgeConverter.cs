@@ -7,136 +7,145 @@ namespace ECCR.Converters;
 
 public class BadgeInfo
 {
+    public bool HasBadge { get; set; } = false;
     public string Glyph { get; set; } = string.Empty;
-    public string Label { get; set; } = string.Empty;
-    public IBrush Background { get; set; } = new SolidColorBrush(Color.Parse("#1F283C"));
-    public IBrush Foreground { get; set; } = new SolidColorBrush(Colors.White);
-    public IBrush Border { get; set; } = new SolidColorBrush(Color.Parse("#3D4B6E"));
-    public bool HasBadge => !string.IsNullOrEmpty(Glyph);
+    public IBrush Background { get; set; } = Brushes.Transparent;
+    public IBrush Border { get; set; } = Brushes.Transparent;
+    public IBrush Foreground { get; set; } = Brushes.White;
 }
 
 public class ButtonBadgeConverter : IValueConverter
 {
-    public static readonly ButtonBadgeConverter Instance = new();
-
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        string text = value?.ToString() ?? string.Empty;
-        string lower = text.ToLowerInvariant();
-        var badge = new BadgeInfo { Label = text };
+        if (value is not string name || string.IsNullOrWhiteSpace(name))
+            return new BadgeInfo();
 
-        // === PLAYSTATION FACE BUTTONS ===
-        if (lower.Contains("cross") || lower.Contains("✕") || lower.Contains("ps-cross"))
-        {
-            badge.Glyph = "✕";
-            badge.Background = new SolidColorBrush(Color.Parse("#1A2B4C"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#00A2FF")); // PlayStation Blue Cross
-            badge.Border = new SolidColorBrush(Color.Parse("#0066CC"));
-            return badge;
-        }
-        if (lower.Contains("circle") || lower.Contains("◯") || lower.Contains("ps-circle"))
-        {
-            badge.Glyph = "◯";
-            badge.Background = new SolidColorBrush(Color.Parse("#3D1D24"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#FF4D6D")); // PlayStation Red Circle
-            badge.Border = new SolidColorBrush(Color.Parse("#B31938"));
-            return badge;
-        }
-        if (lower.Contains("square") || lower.Contains("◻") || lower.Contains("ps-square"))
-        {
-            badge.Glyph = "◻";
-            badge.Background = new SolidColorBrush(Color.Parse("#381D35"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#FF66CC")); // PlayStation Pink Square
-            badge.Border = new SolidColorBrush(Color.Parse("#B32D80"));
-            return badge;
-        }
-        if (lower.Contains("triangle") || lower.Contains("△") || lower.Contains("ps-triangle"))
-        {
-            badge.Glyph = "△";
-            badge.Background = new SolidColorBrush(Color.Parse("#143529"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#00E599")); // PlayStation Green Triangle
-            badge.Border = new SolidColorBrush(Color.Parse("#00995E"));
-            return badge;
-        }
+        string lower = name.ToLowerInvariant();
 
-        // === XBOX BUTTONS ===
-        if (lower.StartsWith("xbox a") || lower.Contains("(a)"))
+        // ==========================================
+        // 1. EMULATED VIRTUAL CHANNELS: [Xbox]
+        // ==========================================
+        if (name.StartsWith("[Xbox]", StringComparison.OrdinalIgnoreCase))
         {
-            badge.Glyph = "A";
-            badge.Background = new SolidColorBrush(Color.Parse("#133624"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#107C10")); // Xbox Green A
-            badge.Border = new SolidColorBrush(Color.Parse("#0E5E0E"));
-            return badge;
-        }
-        if (lower.StartsWith("xbox b") || lower.Contains("(b)"))
-        {
-            badge.Glyph = "B";
-            badge.Background = new SolidColorBrush(Color.Parse("#3D1A1F"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#E81123")); // Xbox Red B
-            badge.Border = new SolidColorBrush(Color.Parse("#A80010"));
-            return badge;
-        }
-        if (lower.StartsWith("xbox x") || lower.Contains("(x)"))
-        {
-            badge.Glyph = "X";
-            badge.Background = new SolidColorBrush(Color.Parse("#142B47"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#0078D7")); // Xbox Blue X
-            badge.Border = new SolidColorBrush(Color.Parse("#00509E"));
-            return badge;
-        }
-        if (lower.StartsWith("xbox y") || lower.Contains("(y)"))
-        {
-            badge.Glyph = "Y";
-            badge.Background = new SolidColorBrush(Color.Parse("#3D3314"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#FFB900")); // Xbox Yellow Y
-            badge.Border = new SolidColorBrush(Color.Parse("#B38200"));
-            return badge;
+            if (name.Contains("Xbox A")) return CreateBadge("Ⓐ", "#193627", "#00E599", "#5CFFBE"); // Green
+            if (name.Contains("Xbox B")) return CreateBadge("Ⓑ", "#3D1D24", "#FA3E5E", "#FF7088"); // Red
+            if (name.Contains("Xbox X")) return CreateBadge("Ⓧ", "#1A2E4C", "#3E7BFA", "#70A0FF"); // Blue
+            if (name.Contains("Xbox Y")) return CreateBadge("Ⓨ", "#3D3418", "#FFB900", "#FFD254"); // Yellow
+
+            if (name.Contains("Xbox LB")) return CreateBadge("LB", "#232A3B", "#4A587A", "#BAC2DE");
+            if (name.Contains("Xbox RB")) return CreateBadge("RB", "#232A3B", "#4A587A", "#BAC2DE");
+            if (name.Contains("Left Trigger")) return CreateBadge("LT", "#232A3B", "#4A587A", "#BAC2DE");
+            if (name.Contains("Right Trigger")) return CreateBadge("RT", "#232A3B", "#4A587A", "#BAC2DE");
+
+            if (name.Contains("Left Stick X")) return CreateBadge("LX", "#1A2E4C", "#3E7BFA", "#70A0FF");
+            if (name.Contains("Left Stick Y")) return CreateBadge("LY", "#1A2E4C", "#3E7BFA", "#70A0FF");
+            if (name.Contains("Right Stick X")) return CreateBadge("RX", "#1A2E4C", "#3E7BFA", "#70A0FF");
+            if (name.Contains("Right Stick Y")) return CreateBadge("RY", "#1A2E4C", "#3E7BFA", "#70A0FF");
+            if (name.Contains("Xbox LSB")) return CreateBadge("LS", "#232A3B", "#4A587A", "#BAC2DE");
+            if (name.Contains("Xbox RSB")) return CreateBadge("RS", "#232A3B", "#4A587A", "#BAC2DE");
+
+            if (name.Contains("D-Pad Up")) return CreateBadge("▲", "#161B26", "#3D4B6E", "#FFFFFF");
+            if (name.Contains("D-Pad Down")) return CreateBadge("▼", "#161B26", "#3D4B6E", "#FFFFFF");
+            if (name.Contains("D-Pad Left")) return CreateBadge("◄", "#161B26", "#3D4B6E", "#FFFFFF");
+            if (name.Contains("D-Pad Right")) return CreateBadge("►", "#161B26", "#3D4B6E", "#FFFFFF");
+            if (name.Contains("Xbox View")) return CreateBadge("⧉", "#1E2B45", "#3E7BFA", "#70A0FF");
+            if (name.Contains("Xbox Menu")) return CreateBadge("☰", "#1E2B45", "#3E7BFA", "#70A0FF");
+            if (name.Contains("Xbox Guide")) return CreateBadge("⨂", "#193627", "#00E599", "#5CFFBE");
+
+            return new BadgeInfo();
         }
 
-        // === TRANSMISSION & SIM RACING BADGES ===
-        if (lower.Contains("shifter"))
+        // ==========================================
+        // 2. EMULATED VIRTUAL CHANNELS: [Wheel]
+        // ==========================================
+        if (name.StartsWith("[Wheel]", StringComparison.OrdinalIgnoreCase))
         {
-            badge.Glyph = "⚙";
-            badge.Background = new SolidColorBrush(Color.Parse("#2C223D"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#B68CFF"));
-            badge.Border = new SolidColorBrush(Color.Parse("#6842A6"));
-            return badge;
-        }
-        if (lower.Contains("paddle"))
-        {
-            badge.Glyph = "⚡";
-            badge.Background = new SolidColorBrush(Color.Parse("#20343D"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#38BDF8"));
-            badge.Border = new SolidColorBrush(Color.Parse("#0284C7"));
-            return badge;
-        }
-        if (lower.Contains("throttle") || lower.Contains("gas"))
-        {
-            badge.Glyph = "▲";
-            badge.Background = new SolidColorBrush(Color.Parse("#163A2D"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#00E599"));
-            badge.Border = new SolidColorBrush(Color.Parse("#00995E"));
-            return badge;
-        }
-        if (lower.Contains("brake"))
-        {
-            badge.Glyph = "▼";
-            badge.Background = new SolidColorBrush(Color.Parse("#3D1A1F"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#FF5C5C"));
-            badge.Border = new SolidColorBrush(Color.Parse("#A80010"));
-            return badge;
-        }
-        if (lower.Contains("handbrake") || lower.Contains("ebrake"))
-        {
-            badge.Glyph = "⛔";
-            badge.Background = new SolidColorBrush(Color.Parse("#3D2914"));
-            badge.Foreground = new SolidColorBrush(Color.Parse("#FB923C"));
-            badge.Border = new SolidColorBrush(Color.Parse("#C2410C"));
-            return badge;
+            if (lower.Contains("steering")) return CreateBadge("⎈", "#1E2B45", "#3E7BFA", "#70A0FF");
+            if (lower.Contains("gas") || lower.Contains("throttle")) return CreateBadge("🗲", "#193627", "#00E599", "#5CFFBE");
+            if (lower.Contains("brake") && !lower.Contains("handbrake")) return CreateBadge("⛔", "#3D1D24", "#FA3E5E", "#FF7088");
+            if (lower.Contains("clutch") && !lower.Contains("slider")) return CreateBadge("⚙", "#36291C", "#FA8B3E", "#FFAF70");
+            if (lower.Contains("handbrake")) return CreateBadge("⎊", "#361D38", "#C33EFA", "#DB70FF");
+            if (lower.Contains("paddle up")) return CreateBadge("▶", "#1F283C", "#5A6B8C", "#B0C0E0");
+            if (lower.Contains("paddle down")) return CreateBadge("◀", "#1F283C", "#5A6B8C", "#B0C0E0");
+
+            if (lower.Contains("1st gear")) return CreateBadge("1", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("2nd gear")) return CreateBadge("2", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("3rd gear")) return CreateBadge("3", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("4th gear")) return CreateBadge("4", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("5th gear")) return CreateBadge("5", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("6th gear")) return CreateBadge("6", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("7th gear")) return CreateBadge("7", "#252B3B", "#4D5B7A", "#C2CEE8");
+            if (lower.Contains("reverse gear")) return CreateBadge("R", "#3D1D24", "#FA3E5E", "#FF7088");
+
+            return new BadgeInfo();
         }
 
-        return badge;
+        // ==========================================
+        // 3. PHYSICAL INPUTS (Detected Hardware)
+        // ==========================================
+
+        // --- Standard Xbox & Moza Wheels (Xbox Scheme) ---
+        if (name.Contains("Moza A Button") || name.StartsWith("A Button") || name.Contains("Cross / A") || lower.Contains("(a / cross)"))
+            return CreateBadge("Ⓐ", "#193627", "#00E599", "#5CFFBE"); // Green
+
+        if (name.Contains("Moza B Button") || name.StartsWith("B Button") || name.Contains("Circle / B") || lower.Contains("(b / circle)"))
+            return CreateBadge("Ⓑ", "#3D1D24", "#FA3E5E", "#FF7088"); // Red
+
+        if (name.Contains("Moza X Button") || name.StartsWith("X Button") || name.Contains("Square / X") || lower.Contains("(x / square)"))
+            return CreateBadge("Ⓧ", "#1A2E4C", "#3E7BFA", "#70A0FF"); // Blue
+
+        if (name.Contains("Moza Y Button") || name.StartsWith("Y Button") || name.Contains("Triangle / Y") || lower.Contains("(y / triangle)"))
+            return CreateBadge("Ⓨ", "#3D3418", "#FFB900", "#FFD254"); // Yellow
+
+        if (name.Contains("Moza Xbox Guide Button") || name.Contains("Xbox Guide Button"))
+            return CreateBadge("⨂", "#193627", "#00E599", "#5CFFBE");
+
+        // --- PlayStation Face Buttons ---
+        if (name.Contains("Cross (✕)") || name.Contains("✕")) return CreateBadge("✕", "#1A2E4C", "#3E7BFA", "#70A0FF");
+        if (name.Contains("Circle (○)") || name.Contains("○")) return CreateBadge("○", "#3D1D24", "#FA3E5E", "#FF7088");
+        if (name.Contains("Square (□)") || name.Contains("□")) return CreateBadge("□", "#381E3D", "#D43EFA", "#EA70FF");
+        if (name.Contains("Triangle (△)") || name.Contains("△")) return CreateBadge("△", "#193627", "#00E599", "#5CFFBE");
+
+        // --- PlayStation Triggers & Bumpers ---
+        if (name.Contains("L1 Bumper")) return CreateBadge("L1", "#232A3B", "#4A587A", "#BAC2DE");
+        if (name.Contains("R1 Bumper")) return CreateBadge("R1", "#232A3B", "#4A587A", "#BAC2DE");
+        if (name.Contains("L2 Trigger")) return CreateBadge("L2", "#232A3B", "#4A587A", "#BAC2DE");
+        if (name.Contains("R2 Trigger")) return CreateBadge("R2", "#232A3B", "#4A587A", "#BAC2DE");
+        if (name.Contains("L3 Stick Click")) return CreateBadge("L3", "#232A3B", "#4A587A", "#BAC2DE");
+        if (name.Contains("R3 Stick Click")) return CreateBadge("R3", "#232A3B", "#4A587A", "#BAC2DE");
+        if (name.Contains("PS Guide Button")) return CreateBadge("PS", "#1A2E4C", "#3E7BFA", "#70A0FF");
+
+        // --- Sim Wheel Hardware & Pedals ---
+        if (lower.Contains("steering")) return CreateBadge("⎈", "#1E2B45", "#3E7BFA", "#70A0FF");
+        if (lower.Contains("throttle") || lower.Contains("gas")) return CreateBadge("🗲", "#193627", "#00E599", "#5CFFBE");
+        if (lower.Contains("brake") && !lower.Contains("handbrake")) return CreateBadge("⛔", "#3D1D24", "#FA3E5E", "#FF7088");
+        if (lower.Contains("clutch")) return CreateBadge("⚙", "#36291C", "#FA8B3E", "#FFAF70");
+        if (lower.Contains("handbrake") || lower.Contains("ebrake")) return CreateBadge("⎊", "#361D38", "#C33EFA", "#DB70FF");
+        if (lower.Contains("right paddle")) return CreateBadge("▶", "#1F283C", "#5A6B8C", "#B0C0E0");
+        if (lower.Contains("left paddle")) return CreateBadge("◀", "#1F283C", "#5A6B8C", "#B0C0E0");
+        if (lower.Contains("shifter 1st gear")) return CreateBadge("1", "#252B3B", "#4D5B7A", "#C2CEE8");
+        if (lower.Contains("shifter 2nd gear")) return CreateBadge("2", "#252B3B", "#4D5B7A", "#C2CEE8");
+        if (lower.Contains("shifter 3rd gear")) return CreateBadge("3", "#252B3B", "#4D5B7A", "#C2CEE8");
+        if (lower.Contains("shifter 4th gear")) return CreateBadge("4", "#252B3B", "#4D5B7A", "#C2CEE8");
+        if (lower.Contains("shifter 5th gear")) return CreateBadge("5", "#252B3B", "#4D5B7A", "#C2CEE8");
+        if (lower.Contains("shifter 6th gear")) return CreateBadge("6", "#252B3B", "#4D5B7A", "#C2CEE8");
+        if (lower.Contains("shifter reverse gear")) return CreateBadge("R", "#3D1D24", "#FA3E5E", "#FF7088");
+
+        return new BadgeInfo();
     }
 
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotImplementedException();
+    private static BadgeInfo CreateBadge(string glyph, string bgHex, string borderHex, string fgHex)
+    {
+        return new BadgeInfo
+        {
+            HasBadge = true,
+            Glyph = glyph,
+            Background = Brush.Parse(bgHex),
+            Border = Brush.Parse(borderHex),
+            Foreground = Brush.Parse(fgHex)
+        };
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => null;
 }

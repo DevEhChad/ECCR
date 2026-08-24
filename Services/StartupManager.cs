@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using Microsoft.Win32;
 
 namespace ECCR.Services;
@@ -7,13 +8,12 @@ namespace ECCR.Services;
 public static class StartupManager
 {
     private const string AppName = "EhChadsControllerRemapper";
-    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     public static bool IsStartupEnabled()
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
+            using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false);
             return key?.GetValue(AppName) != null;
         }
         catch
@@ -26,12 +26,12 @@ public static class StartupManager
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
+            using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
             if (key == null) return;
 
             if (enable)
             {
-                string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
+                string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
                 if (!string.IsNullOrEmpty(exePath))
                 {
                     key.SetValue(AppName, $"\"{exePath}\" --minimized");

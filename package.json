@@ -1,6 +1,13 @@
 {
-  "dependencies": {
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
-  }
+  "name": "eccr",
+  "version": "1.0.5",
+  "description": "EhChadsControllerRemapper - High-performance DirectInput controller & sim-rig remapper",
+  "main": "publish/ECCR.exe",
+  "scripts": {
+    "build": "dotnet build -c Release",
+    "publish:win": "dotnet publish ECCR.csproj -c Release -r win-x64 --self-contained true -o ./publish",
+    "pack": "vpk pack -u ECCR -v 1.0.5 -p ./publish -e ECCR.exe -i ./Assets/ECCR-logo.ico -o ./Releases"
+  },
+  "author": "Chad Doty",
+  "license": "MIT"
 }

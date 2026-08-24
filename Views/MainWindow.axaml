@@ -22,7 +22,6 @@
     </Window.Resources>
 
     <Grid>
-        <!-- Main Application Layout -->
         <Grid RowDefinitions="Auto, Auto, Auto, *, Auto" Margin="16,10">
             
             <!-- ROW 0: Top Header -->
@@ -106,15 +105,16 @@
             </Border>
 
             <!-- ROW 2: Column Headers -->
-            <Grid Grid.Row="2" ColumnDefinitions="1.8*, 0.9*, 1.1*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
-                <Border Grid.ColumnSpan="7" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,6"/>
-                <Label Grid.Column="0" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Physical Key / Axis"/>
-                <Label Grid.Column="1" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Type"/>
-                <Label Grid.Column="2" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Virtual Target"/>
-                <Label Grid.Column="3" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Channel"/>
-                <Label Grid.Column="4" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Dead Zone"/>
-                <Label Grid.Column="5" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Calibration"/>
-                <Label Grid.Column="6"/>
+            <Grid Grid.Row="2" ColumnDefinitions="32, 1.8*, 0.9*, 1.1*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
+                <Border Grid.ColumnSpan="8" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,6"/>
+                <TextBlock Grid.Column="0" Text="Select" FontSize="11" FontWeight="SemiBold" Foreground="#8B95A5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Label Grid.Column="1" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Physical Key / Axis"/>
+                <Label Grid.Column="2" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Type"/>
+                <Label Grid.Column="3" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Virtual Target"/>
+                <Label Grid.Column="4" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Channel"/>
+                <Label Grid.Column="5" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Dead Zone"/>
+                <Label Grid.Column="6" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Calibration"/>
+                <Label Grid.Column="7"/>
             </Grid>
 
             <!-- ROW 3: Collapsible Device Mapping Groups -->
@@ -144,10 +144,10 @@
                                             </StackPanel>
 
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,14,0">
-                                                <TextBlock Text="Set All Target:" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Set Target:" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
                                                 <ComboBox ItemsSource="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AvailableTargetDevices}"
                                                           PlaceholderText="Target #"
-                                                          Width="120"
+                                                          Width="110"
                                                           CornerRadius="5"
                                                           Background="#10141E"
                                                           FontSize="11"
@@ -160,28 +160,41 @@
                                                 </ComboBox>
                                             </StackPanel>
 
-                                            <Button Grid.Column="3" 
-                                                    Content="+ Add Key" 
-                                                    Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AddMappingToDeviceCommand}"
-                                                    CommandParameter="{Binding DeviceName}"
-                                                    Background="#1F283C" 
-                                                    BorderBrush="#3D4B6E" 
-                                                    Foreground="White" 
-                                                    FontSize="11" 
-                                                    Padding="10,4" 
-                                                    CornerRadius="5" 
-                                                    Margin="0,0,12,0"/>
+                                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <Button Content="Select All" 
+                                                        Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).SelectAllInGroupCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#161B26" Foreground="#BAC2DE" FontSize="10" Padding="6,4" CornerRadius="4"/>
+                                                <Button Content="Deselect" 
+                                                        Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).DeselectAllInGroupCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#161B26" Foreground="#BAC2DE" FontSize="10" Padding="6,4" CornerRadius="4"/>
+                                                <Button Content="🗑 Remove" 
+                                                        Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).RemoveSelectedInGroupCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="10" Padding="6,4" CornerRadius="4"/>
+                                                <Button Content="+ Add Key" 
+                                                        Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AddMappingToDeviceCommand}"
+                                                        CommandParameter="{Binding DeviceName}"
+                                                        Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" FontSize="11" Padding="10,4" CornerRadius="5"/>
+                                            </StackPanel>
                                         </Grid>
                                     </Expander.Header>
 
                                     <ItemsControl ItemsSource="{Binding Entries}" HorizontalAlignment="Stretch" Margin="8,4,8,10">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="models:MappingEntry">
-                                                <Grid ColumnDefinitions="1.8*, 0.9*, 1.1*, 1.8*, 1.4*, 1*, 36" 
+                                                <Grid ColumnDefinitions="32, 1.8*, 0.9*, 1.1*, 1.8*, 1.4*, 1*, 36" 
                                                       HorizontalAlignment="Stretch" 
                                                       Margin="0,3">
                                                     
-                                                    <Button Grid.Column="0" 
+                                                    <!-- Row Select Checkbox -->
+                                                    <CheckBox Grid.Column="0" 
+                                                              IsChecked="{Binding IsSelected}" 
+                                                              HorizontalAlignment="Center" 
+                                                              VerticalAlignment="Center"/>
+
+                                                    <Button Grid.Column="1" 
                                                             Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).StartListeningCommand}"
                                                             CommandParameter="{Binding}"
                                                             HorizontalAlignment="Stretch" 
@@ -220,7 +233,7 @@
                                                         </Grid>
                                                     </Button>
 
-                                                    <ComboBox Grid.Column="1" 
+                                                    <ComboBox Grid.Column="2" 
                                                               SelectedItem="{Binding SourceType}" 
                                                               HorizontalAlignment="Stretch" 
                                                               Margin="3,0" 
@@ -230,7 +243,7 @@
                                                         <models:InputType>Button</models:InputType>
                                                     </ComboBox>
 
-                                                    <ComboBox Grid.Column="2" 
+                                                    <ComboBox Grid.Column="3" 
                                                               ItemsSource="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AvailableTargetDevices}"
                                                               SelectedItem="{Binding TargetDeviceId}"
                                                               HorizontalAlignment="Stretch" 
@@ -244,7 +257,7 @@
                                                         </ComboBox.ItemTemplate>
                                                     </ComboBox>
 
-                                                    <ComboBox Grid.Column="3" 
+                                                    <ComboBox Grid.Column="4" 
                                                               ItemsSource="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AvailableVirtualOutputs}"
                                                               SelectedItem="{Binding TargetOutput}" 
                                                               MaxDropDownHeight="300"
@@ -282,7 +295,7 @@
                                                         </ComboBox.ItemTemplate>
                                                     </ComboBox>
 
-                                                    <Panel Grid.Column="4" Margin="4,0" HorizontalAlignment="Stretch">
+                                                    <Panel Grid.Column="5" Margin="4,0" HorizontalAlignment="Stretch">
                                                         <Grid ColumnDefinitions="*, 36" IsVisible="{Binding IsAxis}" HorizontalAlignment="Stretch">
                                                             <Slider Grid.Column="0" 
                                                                     Minimum="0.0" 
@@ -304,7 +317,7 @@
                                                                    IsVisible="{Binding !IsAxis}"/>
                                                     </Panel>
 
-                                                    <Panel Grid.Column="5" Margin="3,0" HorizontalAlignment="Stretch">
+                                                    <Panel Grid.Column="6" Margin="3,0" HorizontalAlignment="Stretch">
                                                         <Button Content="Calibrate" 
                                                                 Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).OpenCalibrationCommand}"
                                                                 CommandParameter="{Binding}"
@@ -321,7 +334,7 @@
                                                                    IsVisible="{Binding !IsAxis}"/>
                                                     </Panel>
 
-                                                    <Button Grid.Column="6" 
+                                                    <Button Grid.Column="7" 
                                                             Content="✕" 
                                                             Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).RemoveMappingCommand}"
                                                             CommandParameter="{Binding}"
@@ -342,7 +355,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- ROW 4: Main Footer Controls (Clean) -->
+            <!-- ROW 4: Main Footer Controls -->
             <Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="#262D3D" Padding="0,12,0,4">
                 <StackPanel Spacing="12">
                     
@@ -367,7 +380,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <Grid ColumnDefinitions="Auto, 140, Auto, Auto, *, 170">
+                    <Grid ColumnDefinitions="Auto, 140, Auto, Auto, *, Auto, 170">
                         <TextBlock Grid.Column="0" Text="Profile" VerticalAlignment="Center" Margin="0,0,6,0" FontWeight="SemiBold" Foreground="#BAC2DE"/>
                         
                         <ComboBox Grid.Column="1" 
@@ -397,7 +410,14 @@
                                 Background="#1A4A38"
                                 BorderBrush="#266D53"/>
 
-                        <Button Grid.Column="5" 
+                        <!-- Bulk Selection Bar -->
+                        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" Margin="0,0,10,0" VerticalAlignment="Center">
+                            <Button Content="Select All" Command="{Binding SelectAllMappingsCommand}" Background="#1F283C" Foreground="#BAC2DE" FontSize="11" Padding="8,6" CornerRadius="5"/>
+                            <Button Content="Deselect" Command="{Binding DeselectAllMappingsCommand}" Background="#1F283C" Foreground="#BAC2DE" FontSize="11" Padding="8,6" CornerRadius="5"/>
+                            <Button Content="🗑 Delete Selected" Command="{Binding RemoveSelectedMappingsCommand}" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,6" CornerRadius="5"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="6" 
                                 Command="{Binding AddMappingCommand}"
                                 Content="+ Add Mapping" 
                                 HorizontalAlignment="Stretch" 
@@ -416,7 +436,7 @@
             </Border>
         </Grid>
 
-        <!-- UPDATE CONFIRMATION MODAL (YES / NO) -->
+        <!-- UPDATE CONFIRMATION MODAL -->
         <Border IsVisible="{Binding IsUpdatePromptOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
             <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="24" Width="440" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <StackPanel Spacing="16">
@@ -566,7 +586,7 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <!-- SETTINGS FOOTER: Bottom-Left Version Label + Done Button -->
+                    <!-- SETTINGS FOOTER -->
                     <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="0,16,0,0">
                         <TextBlock Grid.Column="0" 
                                    Text="{Binding DisplayVersionText}" 
@@ -598,7 +618,7 @@
                         <Grid ColumnDefinitions="*, Auto, Auto">
                             <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                                 <TextBlock Text="🛡️ HidHide Device Cloaking &amp; Application Rules" FontWeight="Bold" FontSize="16" Foreground="White"/>
-                                <TextBlock Text="Hide physical hardware to eliminate double inputs. Whitelist games like Assetto Corsa to bypass cloaking." Foreground="#8B95A5" FontSize="12"/>
+                                <TextBlock Text="Hide physical hardware to eliminate double inputs. Whitelist games to bypass cloaking." Foreground="#8B95A5" FontSize="12"/>
                             </StackPanel>
                             <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsHidHideActive}" OnContent="Cloaking Active" OffContent="Disabled" Margin="0,0,14,0"/>
                             <Button Grid.Column="2" Content="✕" Command="{Binding CloseHidHideMenuCommand}" Width="32" Height="32" CornerRadius="6"/>

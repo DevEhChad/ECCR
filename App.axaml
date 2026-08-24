@@ -1,12 +1,11 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:converters="using:ECCR.Converters"
+             xmlns:local="using:ECCR"
              x:Class="ECCR.App"
              RequestedThemeVariant="Dark">
-
-    <Application.Resources>
-        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
-    </Application.Resources>
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
 
     <Application.Styles>
         <FluentTheme />
@@ -14,14 +13,12 @@
 
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon Icon="/Assets/ECCR-logo.ico" 
-                      ToolTipText="EhChadsControllerRemapper - ECCR"
-                      Clicked="OnTrayIconClicked">
+            <TrayIcon Icon="/Assets/ECCR-logo.ico" ToolTipText="EhChadsControllerRemapper (ECCR)" Clicked="OnTrayIconClicked">
                 <TrayIcon.Menu>
                     <NativeMenu>
-                        <NativeMenuItem Header="Open ECCR" Click="OnOpenClicked"/>
+                        <NativeMenuItem Header="Show ECCR" Click="OnShowAppClick"/>
                         <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Exit ECCR" Click="OnExitClicked"/>
+                        <NativeMenuItem Header="Exit ECCR" Click="OnExitAppClick"/>
                     </NativeMenu>
                 </TrayIcon.Menu>
             </TrayIcon>

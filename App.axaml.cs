@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -10,7 +11,8 @@ namespace ECCR;
 
 public partial class App : Application
 {
-    public static MainWindow? AppMainWindow { get; private set; }
+    private MainWindowViewModel? _mainViewModel;
+    private MainWindow? _mainWindow;
 
     public override void Initialize()
     {
@@ -21,11 +23,25 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            AppMainWindow = new MainWindow
+            _mainViewModel = new MainWindowViewModel();
+            _mainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel()
+                DataContext = _mainViewModel
             };
-            desktop.MainWindow = AppMainWindow;
+
+            desktop.MainWindow = _mainWindow;
+
+            // Handle start on Windows boot minimized
+            bool startMinimized = desktop.Args != null && desktop.Args.Any(a => a.Contains("minimized", StringComparison.OrdinalIgnoreCase));
+            if (startMinimized)
+            {
+                _mainWindow.WindowState = WindowState.Minimized;
+            }
+
+            desktop.Exit += (sender, args) =>
+            {
+                PerformFullExit();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -33,33 +49,47 @@ public partial class App : Application
 
     private void OnTrayIconClicked(object? sender, EventArgs e)
     {
-        ShowMainWindow();
+        ShowWindow();
     }
 
-    private void OnOpenClicked(object? sender, EventArgs e)
+    private void OnShowAppClick(object? sender, EventArgs e)
     {
-        ShowMainWindow();
+        ShowWindow();
     }
 
-    private void OnExitClicked(object? sender, EventArgs e)
+    private void OnExitAppClick(object? sender, EventArgs e)
     {
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        PerformFullExit();
+    }
+
+    private void PerformFullExit()
+    {
+        try
         {
-            if (AppMainWindow != null)
+            if (_mainViewModel != null)
             {
-                AppMainWindow.AllowFullClose = true;
+                _mainViewModel.IsShuttingDown = true;
+                _mainViewModel.CleanupAndShutdown();
             }
-            desktop.Shutdown();
+        }
+        catch { }
+        finally
+        {
+            // Forcefully terminate unmanaged driver threads and exit immediately
+            Environment.Exit(0);
         }
     }
 
-    public static void ShowMainWindow()
+    private void ShowWindow()
     {
-        if (AppMainWindow != null)
+        if (_mainWindow == null) return;
+
+        if (!_mainWindow.IsVisible)
         {
-            AppMainWindow.Show();
-            AppMainWindow.WindowState = WindowState.Normal;
-            AppMainWindow.Activate();
+            _mainWindow.Show();
         }
+
+        _mainWindow.WindowState = WindowState.Normal;
+        _mainWindow.Activate();
     }
 }

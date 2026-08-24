@@ -9,12 +9,12 @@
 
     <!-- Versioning -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>1.0.4</Version>
-    <AssemblyVersion>1.0.4.0</AssemblyVersion>
-    <FileVersion>1.0.4.0</FileVersion>
-    <InformationalVersion>1.0.4</InformationalVersion>
+    <Version>1.0.5</Version>
+    <AssemblyVersion>1.0.5.0</AssemblyVersion>
+    <FileVersion>1.0.5.0</FileVersion>
+    <InformationalVersion>1.0.5</InformationalVersion>
 
-    <!-- Exclude output and release folders from source compilation -->
+    <!-- Exclude release and nested folders -->
     <DefaultItemExcludes>$(DefaultItemExcludes);publish/**;Releases/**;ECCR/**</DefaultItemExcludes>
 
     <ApplicationIcon>Assets\ECCR-logo.ico</ApplicationIcon>
@@ -34,6 +34,9 @@
     <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
     <PackageReference Include="SharpDX.DirectInput" Version="4.2.0" />
     <PackageReference Include="System.Management" Version="9.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" />
     <PackageReference Include="Velopack" Version="1.2.0" />
+    <!-- Overrides transitive Avalonia dependency to clear vulnerability warning -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 </Project>

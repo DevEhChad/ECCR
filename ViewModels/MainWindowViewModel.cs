@@ -33,10 +33,15 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly string _settingsFilePath;
 
     private bool _isLoadingProfile = false;
+    private bool _isLoadingSettings = false;
     private UpdateInfo? _availableUpdateInfo;
     private ECCR.Models.AppSettings _currentSettings = new();
 
-    // --- Dynamic Version & Clean Window Title ---
+    // Shutdown Signal
+    [ObservableProperty]
+    private bool _isShuttingDown = false;
+
+    // Dynamic Version & Clean Window Title
     [ObservableProperty]
     private string _appVersion = "v1.0.4";
 
@@ -46,7 +51,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _windowTitle = "EhChadsControllerRemapper - ECCR";
 
-    // --- Update Modals ---
+    // Update Modals
     [ObservableProperty]
     private bool _isUpdatePromptOpen = false;
 
@@ -80,7 +85,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isCreatingProfile = false;
 
-    // --- Settings Modal & Toggles ---
+    // Settings Modal & Toggles
     [ObservableProperty]
     private bool _isSettingsOpen = false;
 
@@ -99,7 +104,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _autoCheckForUpdates = true;
 
-    // --- Live Update Manager State ---
+    // Live Update Manager State
     [ObservableProperty]
     private string _updateStatusText = "App is up to date";
 
@@ -115,16 +120,16 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private int _updateDownloadProgress = 0;
 
-    // --- Auto-Bind Wizard Properties ---
+    // Auto-Bind Wizard Properties
     [ObservableProperty]
     private string _wizardSelectedDevice = string.Empty;
 
     [ObservableProperty]
-    private bool _wizardTargetIsWheel = true;
+    private bool _wizardTargetIsWheel = false;
 
     public ObservableCollection<PresetBindingItem> WizardBindings { get; } = new();
 
-    // --- Driver Status States ---
+    // Driver Status States
     [ObservableProperty]
     private bool _isDependencyBannerOpen = false;
 
@@ -149,7 +154,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusyWithDriverAction = false;
 
-    // --- HidHide Modal Controls ---
+    // HidHide Modal Controls
     [ObservableProperty]
     private bool _isHidHideMenuOpen = false;
 
@@ -192,8 +197,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
         _hidHideManager = new HidHideManager();
         IsHidHideServiceInstalled = _hidHideManager.IsInstalled;
-        IsHidHideActive = _hidHideManager.IsGlobalActive;
-        IsAppListInverted = _hidHideManager.IsAppListInverted;
 
         LoadProfileListFromDisk();
         LoadAppSettings();
@@ -234,7 +237,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            // 1. Read directly from app.manifest
             string[] manifestCandidates = [
                 Path.Combine(AppContext.BaseDirectory, "app.manifest"),
                 Path.Combine(Directory.GetCurrentDirectory(), "app.manifest"),
@@ -257,7 +259,6 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
             }
 
-            // 2. Read directly from ECCR.csproj
             if (string.IsNullOrWhiteSpace(resolved))
             {
                 string[] csprojCandidates = [
@@ -281,7 +282,6 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
             }
 
-            // 3. Fallback to Assembly metadata
             if (string.IsNullOrWhiteSpace(resolved))
             {
                 var assembly = Assembly.GetEntryAssembly() ?? typeof(MainWindowViewModel).Assembly;
@@ -325,18 +325,18 @@ public partial class MainWindowViewModel : ViewModelBase
         AvailableVirtualOutputs.Clear();
 
         string[] xboxBinds = [
-            "[Xbox] Xbox A (Cross / South)",
-            "[Xbox] Xbox B (Circle / East)",
-            "[Xbox] Xbox X (Square / West)",
-            "[Xbox] Xbox Y (Triangle / North)",
-            "[Xbox] Xbox LB (Left Bumper / L1)",
-            "[Xbox] Xbox RB (Right Bumper / R1)",
-            "[Xbox] Left Trigger (LT / L2 Axis)",
-            "[Xbox] Right Trigger (RT / R2 Axis)",
             "[Xbox] Left Stick X (Steer / Horizontal)",
-            "[Xbox] Left Stick Y (Vertical)",
-            "[Xbox] Right Stick X (Camera Horizontal)",
-            "[Xbox] Right Stick Y (Camera Vertical)",
+            "[Xbox] Left Stick Y (Steer / Vertical)",
+            "[Xbox] Right Stick X (Camera / Look Horizontal)",
+            "[Xbox] Right Stick Y (Camera / Look Vertical)",
+            "[Xbox] Left Trigger (LT / Brake Axis)",
+            "[Xbox] Right Trigger (RT / Gas Axis)",
+            "[Xbox] Xbox A (Cross / South / Handbrake)",
+            "[Xbox] Xbox B (Circle / East)",
+            "[Xbox] Xbox X (Square / West / Shift Down)",
+            "[Xbox] Xbox Y (Triangle / North / Shift Up)",
+            "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
+            "[Xbox] Xbox RB (Right Bumper / R1)",
             "[Xbox] Xbox LSB (Left Stick Click / L3)",
             "[Xbox] Xbox RSB (Right Stick Click / R3)",
             "[Xbox] D-Pad Up",
@@ -344,8 +344,8 @@ public partial class MainWindowViewModel : ViewModelBase
             "[Xbox] D-Pad Left",
             "[Xbox] D-Pad Right",
             "[Xbox] Xbox Menu (Start / Options)",
-            "[Xbox] Xbox View (Back / Share)",
-            "[Xbox] Xbox Guide (Home / PS)"
+            "[Xbox] Xbox View (Back / Map / Share)",
+            "[Xbox] Xbox Guide (Home / Guide)"
         ];
         foreach (var bind in xboxBinds) AvailableVirtualOutputs.Add(bind);
 
@@ -355,10 +355,10 @@ public partial class MainWindowViewModel : ViewModelBase
             "[Wheel] Brake (Axis Z)",
             "[Wheel] Clutch (Axis Rx)",
             "[Wheel] Handbrake (Axis Ry)",
-            "[Wheel] Slider 0",
-            "[Wheel] Slider 1",
-            "[Wheel] Paddle Up",
-            "[Wheel] Paddle Down",
+            "[Wheel] Combined Slider 0",
+            "[Wheel] Dual Clutch Slider 1",
+            "[Wheel] Paddle Up (Right Shift)",
+            "[Wheel] Paddle Down (Left Shift)",
             "[Wheel] 1st Gear",
             "[Wheel] 2nd Gear",
             "[Wheel] 3rd Gear",
@@ -388,6 +388,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ProcessInputPolling(ECCR.Services.RawDeviceInputState state)
     {
+        if (IsShuttingDown) return;
+
         long elapsedUs = _pollStopwatch.ElapsedTicks * 1_000_000 / Stopwatch.Frequency;
         _pollStopwatch.Restart();
         double latencyMs = elapsedUs / 1000.0;
@@ -484,120 +486,151 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private static string GuessBestTargetChannel(string deviceName, InputType type, int index)
     {
-        string dev = deviceName.ToLowerInvariant();
-        bool isPlayStation = dev.Contains("dualsense") || dev.Contains("dualshock") || dev.Contains("sony") || dev.Contains("wireless controller") || dev.Contains("ps5") || dev.Contains("ps4");
-        bool isGenericGamepad = dev.Contains("gamepad") || dev.Contains("controller") || dev.Contains("8bitdo") || dev.Contains("pro controller");
+        var category = DevicePresetService.DetectCategory(deviceName);
 
-        if (isPlayStation)
+        bool isMoza = category == DeviceHardwareCategory.MozaEsxWheel || category == DeviceHardwareCategory.MozaWheel;
+
+        if (isMoza)
         {
             if (type == InputType.Axis)
             {
                 return index switch
                 {
                     0 => "[Xbox] Left Stick X (Steer / Horizontal)",
-                    1 => "[Xbox] Left Stick Y (Vertical)",
-                    2 => "[Xbox] Right Stick X (Camera Horizontal)",
-                    3 => "[Xbox] Left Trigger (LT / L2 Axis)",
-                    4 => "[Xbox] Right Trigger (RT / R2 Axis)",
-                    5 => "[Xbox] Right Stick Y (Camera Vertical)",
+                    1 => "[Xbox] Right Trigger (RT / Gas Axis)",
+                    2 => "[Xbox] Left Trigger (LT / Brake Axis)",
+                    3 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
+                    4 => "[Xbox] Xbox A (Cross / South / Handbrake)",
                     _ => "[Xbox] Left Stick X (Steer / Horizontal)"
                 };
             }
 
             return index switch
             {
-                0 => "[Xbox] Xbox X (Square / West)",
-                1 => "[Xbox] Xbox A (Cross / South)",
-                2 => "[Xbox] Xbox B (Circle / East)",
-                3 => "[Xbox] Xbox Y (Triangle / North)",
-                4 => "[Xbox] Xbox LB (Left Bumper / L1)",
-                5 => "[Xbox] Xbox RB (Right Bumper / R1)",
-                8 => "[Xbox] Xbox View (Back / Share)",
-                9 => "[Xbox] Xbox Menu (Start / Options)",
-                10 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
-                11 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
-                12 => "[Xbox] Xbox Guide (Home / PS)",
+                0 => "[Xbox] Xbox A (Cross / South / Handbrake)",
+                1 => "[Xbox] Xbox B (Circle / East)",
+                2 => "[Xbox] Xbox X (Square / West / Shift Down)",
+                3 => "[Xbox] Xbox Y (Triangle / North / Shift Up)",
+                4 => "[Xbox] Xbox View (Back / Map / Share)",
+                5 => "[Xbox] Xbox Menu (Start / Options)",
+                6 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
+                7 => "[Xbox] Xbox RB (Right Bumper / R1)",
+                8 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
+                9 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
+                10 => "[Xbox] Xbox Guide (Home / Guide)",
                 128 => "[Xbox] D-Pad Up",
                 129 => "[Xbox] D-Pad Right",
                 130 => "[Xbox] D-Pad Down",
                 131 => "[Xbox] D-Pad Left",
-                _ => "[Xbox] Xbox A (Cross / South)"
+                _ => $"[Xbox] Xbox A (Cross / South / Handbrake)"
             };
         }
 
-        if (isGenericGamepad)
+        bool isSimHardware = category == DeviceHardwareCategory.LogitechRig || 
+                             category == DeviceHardwareCategory.FanatecRig || 
+                             category == DeviceHardwareCategory.ThrustmasterRig || 
+                             category == DeviceHardwareCategory.SimagicRig || 
+                             category == DeviceHardwareCategory.GenericWheelOrPedals;
+
+        if (isSimHardware)
+        {
+            if (type == InputType.Axis)
+            {
+                return index switch
+                {
+                    0 => "[Wheel] Steering (Axis X)",
+                    1 => "[Wheel] Gas / Throttle (Axis Y)",
+                    2 => "[Wheel] Brake (Axis Z)",
+                    3 => "[Wheel] Clutch (Axis Rx)",
+                    4 => "[Wheel] Handbrake (Axis Ry)",
+                    _ => "[Wheel] Gas / Throttle (Axis Y)"
+                };
+            }
+
+            return index switch
+            {
+                4 => "[Wheel] Paddle Down (Left Shift)",
+                5 => "[Wheel] Paddle Up (Right Shift)",
+                12 => "[Wheel] 1st Gear",
+                13 => "[Wheel] 2nd Gear",
+                14 => "[Wheel] 3rd Gear",
+                15 => "[Wheel] 4th Gear",
+                16 => "[Wheel] 5th Gear",
+                17 => "[Wheel] 6th Gear",
+                18 => "[Wheel] Reverse Gear",
+                _ => $"[Wheel] Button {index + 1}"
+            };
+        }
+
+        if (category == DeviceHardwareCategory.PlayStationController || category == DeviceHardwareCategory.NintendoController)
         {
             if (type == InputType.Axis)
             {
                 return index switch
                 {
                     0 => "[Xbox] Left Stick X (Steer / Horizontal)",
-                    1 => "[Xbox] Left Stick Y (Vertical)",
-                    2 => "[Xbox] Left Trigger (LT / L2 Axis)",
-                    3 => "[Xbox] Right Stick X (Camera Horizontal)",
-                    4 => "[Xbox] Right Stick Y (Camera Vertical)",
-                    5 => "[Xbox] Right Trigger (RT / R2 Axis)",
+                    1 => "[Xbox] Left Stick Y (Steer / Vertical)",
+                    2 => "[Xbox] Right Stick X (Camera / Look Horizontal)",
+                    3 => "[Xbox] Left Trigger (LT / Brake Axis)",
+                    4 => "[Xbox] Right Trigger (RT / Gas Axis)",
+                    5 => "[Xbox] Right Stick Y (Camera / Look Vertical)",
                     _ => "[Xbox] Left Stick X (Steer / Horizontal)"
                 };
             }
 
             return index switch
             {
-                0 => "[Xbox] Xbox A (Cross / South)",
-                1 => "[Xbox] Xbox B (Circle / East)",
-                2 => "[Xbox] Xbox X (Square / West)",
-                3 => "[Xbox] Xbox Y (Triangle / North)",
-                4 => "[Xbox] Xbox LB (Left Bumper / L1)",
+                0 => "[Xbox] Xbox X (Square / West / Shift Down)",
+                1 => "[Xbox] Xbox A (Cross / South / Handbrake)",
+                2 => "[Xbox] Xbox B (Circle / East)",
+                3 => "[Xbox] Xbox Y (Triangle / North / Shift Up)",
+                4 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
                 5 => "[Xbox] Xbox RB (Right Bumper / R1)",
-                6 => "[Xbox] Xbox View (Back / Share)",
-                7 => "[Xbox] Xbox Menu (Start / Options)",
-                8 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
-                9 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
+                8 => "[Xbox] Xbox View (Back / Map / Share)",
+                9 => "[Xbox] Xbox Menu (Start / Options)",
+                10 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
+                11 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
+                12 => "[Xbox] Xbox Guide (Home / Guide)",
                 128 => "[Xbox] D-Pad Up",
                 129 => "[Xbox] D-Pad Right",
                 130 => "[Xbox] D-Pad Down",
                 131 => "[Xbox] D-Pad Left",
-                _ => "[Xbox] Xbox A (Cross / South)"
+                _ => "[Xbox] Xbox A (Cross / South / Handbrake)"
             };
         }
 
         if (type == InputType.Axis)
         {
-            if (dev.Contains("handbrake") || dev.Contains("ebrake")) return "[Wheel] Handbrake (Axis Ry)";
             return index switch
             {
-                0 => "[Wheel] Steering (Axis X)",
-                1 => "[Wheel] Gas / Throttle (Axis Y)",
-                2 => "[Wheel] Brake (Axis Z)",
-                3 => "[Wheel] Brake (Axis Z)",
-                5 => "[Wheel] Gas / Throttle (Axis Y)",
-                6 => "[Wheel] Clutch (Axis Rx)",
-                _ => "[Wheel] Gas / Throttle (Axis Y)"
+                0 => "[Xbox] Left Stick X (Steer / Horizontal)",
+                1 => "[Xbox] Left Stick Y (Steer / Vertical)",
+                2 => "[Xbox] Left Trigger (LT / Brake Axis)",
+                3 => "[Xbox] Right Stick X (Camera / Look Horizontal)",
+                4 => "[Xbox] Right Stick Y (Camera / Look Vertical)",
+                5 => "[Xbox] Right Trigger (RT / Gas Axis)",
+                _ => "[Xbox] Left Stick X (Steer / Horizontal)"
             };
         }
 
-        if (type == InputType.Button)
+        return index switch
         {
-            if (index >= 11 && index <= 17)
-            {
-                return index switch
-                {
-                    11 => "[Wheel] Reverse Gear",
-                    12 => "[Wheel] 1st Gear",
-                    13 => "[Wheel] 2nd Gear",
-                    14 => "[Wheel] 3rd Gear",
-                    15 => "[Wheel] 4th Gear",
-                    16 => "[Wheel] 5th Gear",
-                    17 => "[Wheel] 6th Gear",
-                    _ => $"[Wheel] Button {index + 1}"
-                };
-            }
-            if (index == 4) return "[Wheel] Paddle Down";
-            if (index == 5) return "[Wheel] Paddle Up";
-            return $"[Wheel] Button {index + 1}";
-        }
-
-        return "[Wheel] Button 1";
+            0 => "[Xbox] Xbox A (Cross / South / Handbrake)",
+            1 => "[Xbox] Xbox B (Circle / East)",
+            2 => "[Xbox] Xbox X (Square / West / Shift Down)",
+            3 => "[Xbox] Xbox Y (Triangle / North / Shift Up)",
+            4 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
+            5 => "[Xbox] Xbox RB (Right Bumper / R1)",
+            6 => "[Xbox] Xbox View (Back / Map / Share)",
+            7 => "[Xbox] Xbox Menu (Start / Options)",
+            8 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
+            9 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
+            128 => "[Xbox] D-Pad Up",
+            129 => "[Xbox] D-Pad Right",
+            130 => "[Xbox] D-Pad Down",
+            131 => "[Xbox] D-Pad Left",
+            _ => "[Xbox] Xbox A (Cross / South / Handbrake)"
+        };
     }
 
     [RelayCommand]
@@ -629,7 +662,64 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // --- Settings Modal Commands ---
+    // Bulk Selection & Removal Commands
+    [RelayCommand]
+    public void SelectAllMappings()
+    {
+        foreach (var m in Mappings) m.IsSelected = true;
+    }
+
+    [RelayCommand]
+    public void DeselectAllMappings()
+    {
+        foreach (var m in Mappings) m.IsSelected = false;
+    }
+
+    [RelayCommand]
+    public void RemoveSelectedMappings()
+    {
+        var selected = Mappings.Where(m => m.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        foreach (var item in selected)
+        {
+            if (_listeningEntry == item) _listeningEntry = null;
+            Mappings.Remove(item);
+        }
+
+        RebuildGroupedMappings();
+        AutoSaveCurrentProfile();
+    }
+
+    [RelayCommand]
+    public void SelectAllInGroup(DeviceMappingGroup group)
+    {
+        foreach (var entry in group.Entries) entry.IsSelected = true;
+    }
+
+    [RelayCommand]
+    public void DeselectAllInGroup(DeviceMappingGroup group)
+    {
+        foreach (var entry in group.Entries) entry.IsSelected = false;
+    }
+
+    [RelayCommand]
+    public void RemoveSelectedInGroup(DeviceMappingGroup group)
+    {
+        var selected = group.Entries.Where(e => e.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        foreach (var item in selected)
+        {
+            if (_listeningEntry == item) _listeningEntry = null;
+            Mappings.Remove(item);
+        }
+
+        RebuildGroupedMappings();
+        AutoSaveCurrentProfile();
+    }
+
+    // Settings Modal Commands
     [RelayCommand]
     public void OpenSettings() => IsSettingsOpen = true;
 
@@ -642,16 +732,36 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnStartWithWindowsChanged(bool value)
     {
+        if (_isLoadingSettings) return;
         StartupManager.SetStartup(value);
         SaveAppSettings();
     }
 
-    partial void OnRunInSystemTrayChanged(bool value) => SaveAppSettings();
-    partial void OnMinimizeToTrayChanged(bool value) => SaveAppSettings();
-    partial void OnCloseMinimizesToTrayChanged(bool value) => SaveAppSettings();
-    partial void OnAutoCheckForUpdatesChanged(bool value) => SaveAppSettings();
+    partial void OnRunInSystemTrayChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
+    }
 
-    // --- Velopack Update Methods & Dialogs ---
+    partial void OnMinimizeToTrayChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
+    }
+
+    partial void OnCloseMinimizesToTrayChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
+    }
+
+    partial void OnAutoCheckForUpdatesChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
+    }
+
+    // Velopack Update Methods
     [RelayCommand]
     public async Task CheckForUpdatesManual()
     {
@@ -726,13 +836,25 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // --- Auto-Bind Wizard Commands ---
+    // Auto-Bind Wizard Commands
     [RelayCommand]
     public async Task OpenAutoBindWizard()
     {
         if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(WizardSelectedDevice))
         {
             WizardSelectedDevice = ConnectedDevices[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(WizardSelectedDevice))
+        {
+            var cat = DevicePresetService.DetectCategory(WizardSelectedDevice);
+            WizardTargetIsWheel = (cat == DeviceHardwareCategory.MozaEsxWheel ||
+                                   cat == DeviceHardwareCategory.MozaWheel || 
+                                   cat == DeviceHardwareCategory.LogitechRig || 
+                                   cat == DeviceHardwareCategory.FanatecRig || 
+                                   cat == DeviceHardwareCategory.ThrustmasterRig || 
+                                   cat == DeviceHardwareCategory.SimagicRig || 
+                                   cat == DeviceHardwareCategory.GenericWheelOrPedals);
         }
 
         PopulateWizardPreset();
@@ -802,7 +924,7 @@ public partial class MainWindowViewModel : ViewModelBase
         AutoSaveCurrentProfile();
     }
 
-    // --- Device Grouping & Row Controls ---
+    // Device Grouping & Row Controls
     public void RebuildGroupedMappings()
     {
         var expandedStates = GroupedMappings.ToDictionary(g => g.DeviceName, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
@@ -824,9 +946,13 @@ public partial class MainWindowViewModel : ViewModelBase
     public void AddMappingToDevice(string deviceName)
     {
         var targetDevice = _deviceManager.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
-        bool isGamepad = deviceName.Contains("DualSense", StringComparison.OrdinalIgnoreCase) ||
-                         deviceName.Contains("Controller", StringComparison.OrdinalIgnoreCase) ||
-                         deviceName.Contains("Gamepad", StringComparison.OrdinalIgnoreCase);
+        var category = DevicePresetService.DetectCategory(deviceName);
+
+        string defaultTarget = category switch
+        {
+            DeviceHardwareCategory.PlayStationController or DeviceHardwareCategory.NintendoController or DeviceHardwareCategory.XboxGamepad => "[Xbox] Xbox A (Cross / South / Handbrake)",
+            _ => "[Wheel] Gas / Throttle (Axis Y)"
+        };
 
         Mappings.Add(new MappingEntry
         {
@@ -834,7 +960,7 @@ public partial class MainWindowViewModel : ViewModelBase
             SourceDeviceGuid = targetDevice?.InstanceGuid ?? Guid.Empty,
             SourceDisplayName = "Click to Bind",
             TargetDeviceId = 1,
-            TargetOutput = isGamepad ? "[Xbox] Xbox A (Cross / South)" : "[Wheel] Gas / Throttle (Axis Y)"
+            TargetOutput = defaultTarget
         });
         RebuildGroupedMappings();
         AutoSaveCurrentProfile();
@@ -845,9 +971,13 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         string defaultDevice = ConnectedDevices.Count > 0 ? ConnectedDevices[0] : "Select Device...";
         var targetDevice = _deviceManager.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == defaultDevice);
-        bool isGamepad = defaultDevice.Contains("DualSense", StringComparison.OrdinalIgnoreCase) ||
-                         defaultDevice.Contains("Controller", StringComparison.OrdinalIgnoreCase) ||
-                         defaultDevice.Contains("Gamepad", StringComparison.OrdinalIgnoreCase);
+        var category = DevicePresetService.DetectCategory(defaultDevice);
+
+        string defaultTarget = category switch
+        {
+            DeviceHardwareCategory.PlayStationController or DeviceHardwareCategory.NintendoController or DeviceHardwareCategory.XboxGamepad => "[Xbox] Xbox A (Cross / South / Handbrake)",
+            _ => "[Wheel] Gas / Throttle (Axis Y)"
+        };
 
         Mappings.Add(new MappingEntry
         {
@@ -855,7 +985,7 @@ public partial class MainWindowViewModel : ViewModelBase
             SourceDeviceGuid = targetDevice?.InstanceGuid ?? Guid.Empty,
             SourceDisplayName = "Click to Bind",
             TargetDeviceId = 1,
-            TargetOutput = isGamepad ? "[Xbox] Xbox A (Cross / South)" : "[Wheel] Gas / Throttle (Axis Y)"
+            TargetOutput = defaultTarget
         });
         RebuildGroupedMappings();
         AutoSaveCurrentProfile();
@@ -870,7 +1000,7 @@ public partial class MainWindowViewModel : ViewModelBase
         AutoSaveCurrentProfile();
     }
 
-    // --- Dependency Controls ---
+    // Dependency Controls
     public void RefreshDependencyStates()
     {
         var status = DependencyManager.GetCurrentStatus();
@@ -940,7 +1070,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void DismissDependencyBanner() => IsDependencyBannerOpen = false;
 
-    // --- HidHide Controls ---
+    // HidHide Controls
     [RelayCommand]
     public void OpenHidHideMenu()
     {
@@ -950,12 +1080,24 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void CloseHidHideMenu() => IsHidHideMenuOpen = false;
+    public void CloseHidHideMenu()
+    {
+        IsHidHideMenuOpen = false;
+        SaveAppSettings();
+    }
 
     public void RefreshHidDevices()
     {
         HidDevices.Clear();
-        foreach (var item in _hidHideManager.GetConnectedHidDevices()) HidDevices.Add(item);
+        foreach (var item in _hidHideManager.GetConnectedHidDevices())
+        {
+            if (_currentSettings.BlockedInstanceIds.Contains(item.DeviceInstanceId, StringComparer.OrdinalIgnoreCase))
+            {
+                item.IsHidden = true;
+                _hidHideManager.ToggleDeviceHiding(item, true);
+            }
+            HidDevices.Add(item);
+        }
     }
 
     public void RefreshHidApplications()
@@ -966,7 +1108,11 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void ToggleHidDevice(HidDeviceItem item) => _hidHideManager.ToggleDeviceHiding(item, item.IsHidden);
+    public void ToggleHidDevice(HidDeviceItem item)
+    {
+        _hidHideManager.ToggleDeviceHiding(item, item.IsHidden);
+        SaveAppSettings();
+    }
 
     [RelayCommand]
     public void SelectAllHidDevices()
@@ -979,6 +1125,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 _hidHideManager.ToggleDeviceHiding(device, true);
             }
         }
+        SaveAppSettings();
     }
 
     [RelayCommand]
@@ -992,10 +1139,22 @@ public partial class MainWindowViewModel : ViewModelBase
                 _hidHideManager.ToggleDeviceHiding(device, false);
             }
         }
+        SaveAppSettings();
     }
 
-    partial void OnIsHidHideActiveChanged(bool value) => _hidHideManager.SetGlobalHidingState(value);
-    partial void OnIsAppListInvertedChanged(bool value) => _hidHideManager.IsAppListInverted = value;
+    partial void OnIsHidHideActiveChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        _hidHideManager.SetGlobalHidingState(value);
+        SaveAppSettings();
+    }
+
+    partial void OnIsAppListInvertedChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        _hidHideManager.IsAppListInverted = value;
+        SaveAppSettings();
+    }
 
     [RelayCommand]
     public async Task AddApplicationToHidHide(IStorageProvider? storageProvider)
@@ -1011,6 +1170,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             foreach (var f in files) _hidHideManager.AddApplicationExemption(f.Path.LocalPath);
             RefreshHidApplications();
+            SaveAppSettings();
         }
     }
 
@@ -1023,6 +1183,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             _hidHideManager.AddDirectoryExemptions(folders[0].Path.LocalPath);
             RefreshHidApplications();
+            SaveAppSettings();
         }
     }
 
@@ -1031,6 +1192,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _hidHideManager.RemoveApplicationExemption(appPath);
         RefreshHidApplications();
+        SaveAppSettings();
     }
 
     [RelayCommand]
@@ -1038,9 +1200,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _hidHideManager.ClearAllApplicationExemptions();
         RefreshHidApplications();
+        SaveAppSettings();
     }
 
-    // --- Profile & Settings Persistence ---
+    // Profile & Settings Persistence
     private void OnMappingsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.NewItems != null) foreach (MappingEntry item in e.NewItems) item.PropertyChanged += OnMappingEntryPropertyChanged;
@@ -1051,7 +1214,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (e.PropertyName == nameof(MappingEntry.LiveRawPercentage) ||
             e.PropertyName == nameof(MappingEntry.LiveOutputPercentage) ||
-            e.PropertyName == nameof(MappingEntry.LatestRawReading)) return;
+            e.PropertyName == nameof(MappingEntry.LatestRawReading) ||
+            e.PropertyName == nameof(MappingEntry.IsSelected)) return;
 
         if (e.PropertyName == nameof(MappingEntry.SourceDeviceName)) RebuildGroupedMappings();
         AutoSaveCurrentProfile();
@@ -1059,12 +1223,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void AutoSaveCurrentProfile()
     {
-        if (_isLoadingProfile || string.IsNullOrWhiteSpace(SelectedProfile)) return;
+        if (_isLoadingProfile || _isLoadingSettings || string.IsNullOrWhiteSpace(SelectedProfile)) return;
         SaveProfileToDisk(SelectedProfile);
     }
 
     private void LoadAppSettings()
     {
+        _isLoadingSettings = true;
         try
         {
             if (File.Exists(_settingsFilePath))
@@ -1073,24 +1238,41 @@ public partial class MainWindowViewModel : ViewModelBase
                 if (settings != null)
                 {
                     _currentSettings = settings;
-                    if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
-                    {
-                        SelectedProfile = settings.LastActiveProfile;
-                    }
 
-                    StartWithWindows = StartupManager.IsStartupEnabled();
+                    StartWithWindows = settings.StartWithWindows;
                     RunInSystemTray = settings.RunInSystemTray;
                     MinimizeToTray = settings.MinimizeToTray;
                     CloseMinimizesToTray = settings.CloseMinimizesToTray;
                     AutoCheckForUpdates = settings.AutoCheckForUpdates;
+
+                    IsHidHideActive = settings.IsHidHideActive;
+                    _hidHideManager.SetGlobalHidingState(IsHidHideActive);
+
+                    IsAppListInverted = settings.IsAppListInverted;
+                    _hidHideManager.IsAppListInverted = IsAppListInverted;
+
+                    if (settings.BlockedInstanceIds != null && settings.BlockedInstanceIds.Count > 0)
+                    {
+                        _hidHideManager.ApplyBlockedInstances(settings.BlockedInstanceIds);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
+                    {
+                        SelectedProfile = settings.LastActiveProfile;
+                    }
                 }
             }
         }
         catch { }
+        finally
+        {
+            _isLoadingSettings = false;
+        }
     }
 
     public void SaveAppSettings()
     {
+        if (_isLoadingSettings) return;
         try
         {
             _currentSettings.LastActiveProfile = SelectedProfile;
@@ -1100,6 +1282,9 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.MinimizeToTray = MinimizeToTray;
             _currentSettings.CloseMinimizesToTray = CloseMinimizesToTray;
             _currentSettings.AutoCheckForUpdates = AutoCheckForUpdates;
+            _currentSettings.IsHidHideActive = IsHidHideActive;
+            _currentSettings.IsAppListInverted = IsAppListInverted;
+            _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
 
             File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -1121,6 +1306,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnSelectedProfileChanged(string value)
     {
+        if (_isLoadingSettings) return;
         SaveAppSettings();
         LoadSelectedProfile();
     }
@@ -1221,8 +1407,6 @@ public partial class MainWindowViewModel : ViewModelBase
             _deviceManager.StopPolling();
             _deviceManager.Dispose();
             _feeder.Dispose();
-            _hidHideManager.SetGlobalHidingState(false);
-            IsHidHideActive = false;
             SaveAppSettings();
             AutoSaveCurrentProfile();
         }
