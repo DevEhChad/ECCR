@@ -4,137 +4,153 @@ using ECCR.Models;
 
 namespace ECCR.Services;
 
-public class PresetBindingItem
-{
-    public string PhysicalName { get; set; } = string.Empty;
-    public int PhysicalIndex { get; set; }
-    public InputType Type { get; set; } = InputType.Button;
-    public string DefaultTargetOutput { get; set; } = "[Wheel] Button 1";
-    public string Description { get; set; } = string.Empty;
-}
-
 public static class DevicePresetService
 {
-    public static List<PresetBindingItem> GeneratePreset(string deviceName, int detectedButtons = 32, int detectedAxes = 8)
+    public static string GetButtonDisplayName(string deviceName, int index)
     {
         string dev = deviceName.ToLowerInvariant();
-        var list = new List<PresetBindingItem>();
-
-        bool isMoza = dev.Contains("moza");
-        bool isLogitech = dev.Contains("g920") || dev.Contains("g29") || dev.Contains("g27") || dev.Contains("g923") || dev.Contains("logitech");
-        bool isPlayStation = dev.Contains("dualsense") || dev.Contains("dualshock") || dev.Contains("sony") || dev.Contains("wireless controller");
-        bool isHandbrake = dev.Contains("handbrake") || dev.Contains("ebrake") || dev.Contains("手柄");
-
-        // === 1. MOZA RACING WHEEL BASE & RIMS ===
-        if (isMoza)
+        if (dev.Contains("dualsense") || dev.Contains("dualshock") || dev.Contains("sony") || dev.Contains("wireless controller") || dev.Contains("ps5") || dev.Contains("ps4"))
         {
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-X", PhysicalIndex = 0, Type = InputType.Axis, DefaultTargetOutput = "[Wheel] Steering (Axis X)", Description = "Direct Wheel Axis" });
-
-            list.Add(new PresetBindingItem { PhysicalName = "B1", PhysicalIndex = 0, DefaultTargetOutput = "[Wheel] Button 1", Description = "A Button / Select" });
-            list.Add(new PresetBindingItem { PhysicalName = "B2", PhysicalIndex = 1, DefaultTargetOutput = "[Wheel] Button 2", Description = "B Button / Cancel" });
-            list.Add(new PresetBindingItem { PhysicalName = "B3", PhysicalIndex = 2, DefaultTargetOutput = "[Wheel] Button 3", Description = "X Button / Action" });
-            list.Add(new PresetBindingItem { PhysicalName = "B4", PhysicalIndex = 3, DefaultTargetOutput = "[Wheel] Button 4", Description = "Y Button / Camera" });
-            list.Add(new PresetBindingItem { PhysicalName = "B5", PhysicalIndex = 4, DefaultTargetOutput = "[Wheel] Paddle Down", Description = "Left Paddle Shift" });
-            list.Add(new PresetBindingItem { PhysicalName = "B6", PhysicalIndex = 5, DefaultTargetOutput = "[Wheel] Paddle Up", Description = "Right Paddle Shift" });
-            list.Add(new PresetBindingItem { PhysicalName = "B7", PhysicalIndex = 6, DefaultTargetOutput = "[Wheel] Button 7", Description = "Start / Menu" });
-            list.Add(new PresetBindingItem { PhysicalName = "B8", PhysicalIndex = 7, DefaultTargetOutput = "[Wheel] Button 8", Description = "View / Telemetry" });
-
-            for (int i = 8; i < Math.Min(detectedButtons, 24); i++)
+            return index switch
             {
-                list.Add(new PresetBindingItem
-                {
-                    PhysicalName = $"B{i + 1}",
-                    PhysicalIndex = i,
-                    Type = InputType.Button,
-                    DefaultTargetOutput = $"[Wheel] Button {i + 1}",
-                    Description = $"Aux Button {i + 1}"
-                });
-            }
-            return list;
+                0 => "Square (□)",
+                1 => "Cross (✕)",
+                2 => "Circle (○)",
+                3 => "Triangle (△)",
+                4 => "L1 Bumper",
+                5 => "R1 Bumper",
+                6 => "L2 Trigger",
+                7 => "R2 Trigger",
+                8 => "Create / Share",
+                9 => "Options / Menu",
+                10 => "L3 Stick Click",
+                11 => "R3 Stick Click",
+                12 => "PS Guide Button",
+                13 => "Touchpad Click",
+                128 => "D-Pad Up",
+                129 => "D-Pad Right",
+                130 => "D-Pad Down",
+                131 => "D-Pad Left",
+                _ => $"Button {index + 1}"
+            };
         }
 
-        // === 2. LOGITECH WHEEL, PEDALS & GATED SHIFTER ===
-        if (isLogitech)
+        if (dev.Contains("gamepad") || dev.Contains("controller") || dev.Contains("xbox"))
         {
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-X", PhysicalIndex = 0, Type = InputType.Axis, DefaultTargetOutput = "[Wheel] Steering (Axis X)", Description = "Steering Axis" });
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-Y", PhysicalIndex = 1, Type = InputType.Axis, DefaultTargetOutput = "[Wheel] Gas / Throttle (Axis Y)", Description = "Throttle Pedal" });
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-Rx", PhysicalIndex = 3, Type = InputType.Axis, DefaultTargetOutput = "[Wheel] Brake (Axis Z)", Description = "Brake Pedal" });
-            list.Add(new PresetBindingItem { PhysicalName = "Slider-1", PhysicalIndex = 6, Type = InputType.Axis, DefaultTargetOutput = "[Wheel] Clutch (Axis Rx)", Description = "Clutch Pedal" });
-
-            list.Add(new PresetBindingItem { PhysicalName = "B1", PhysicalIndex = 0, DefaultTargetOutput = "[Wheel] Button 1", Description = "A Button" });
-            list.Add(new PresetBindingItem { PhysicalName = "B2", PhysicalIndex = 1, DefaultTargetOutput = "[Wheel] Button 2", Description = "B Button" });
-            list.Add(new PresetBindingItem { PhysicalName = "B3", PhysicalIndex = 2, DefaultTargetOutput = "[Wheel] Button 3", Description = "X Button" });
-            list.Add(new PresetBindingItem { PhysicalName = "B4", PhysicalIndex = 3, DefaultTargetOutput = "[Wheel] Button 4", Description = "Y Button" });
-            list.Add(new PresetBindingItem { PhysicalName = "B5", PhysicalIndex = 4, DefaultTargetOutput = "[Wheel] Paddle Down", Description = "Downshift (LB)" });
-            list.Add(new PresetBindingItem { PhysicalName = "B6", PhysicalIndex = 5, DefaultTargetOutput = "[Wheel] Paddle Up", Description = "Upshift (RB)" });
-
-            list.Add(new PresetBindingItem { PhysicalName = "B12", PhysicalIndex = 11, DefaultTargetOutput = "[Wheel] Reverse Gear", Description = "Reverse Gate" });
-            list.Add(new PresetBindingItem { PhysicalName = "B13", PhysicalIndex = 12, DefaultTargetOutput = "[Wheel] 1st Gear", Description = "1st Gate" });
-            list.Add(new PresetBindingItem { PhysicalName = "B14", PhysicalIndex = 13, DefaultTargetOutput = "[Wheel] 2nd Gear", Description = "2nd Gate" });
-            list.Add(new PresetBindingItem { PhysicalName = "B15", PhysicalIndex = 14, DefaultTargetOutput = "[Wheel] 3rd Gear", Description = "3rd Gate" });
-            list.Add(new PresetBindingItem { PhysicalName = "B16", PhysicalIndex = 15, DefaultTargetOutput = "[Wheel] 4th Gear", Description = "4th Gate" });
-            list.Add(new PresetBindingItem { PhysicalName = "B17", PhysicalIndex = 16, DefaultTargetOutput = "[Wheel] 5th Gear", Description = "5th Gate" });
-            list.Add(new PresetBindingItem { PhysicalName = "B18", PhysicalIndex = 17, DefaultTargetOutput = "[Wheel] 6th Gear", Description = "6th Gate" });
-            return list;
+            return index switch
+            {
+                0 => "A Button",
+                1 => "B Button",
+                2 => "X Button",
+                3 => "Y Button",
+                4 => "LB Bumper",
+                5 => "RB Bumper",
+                6 => "View / Back",
+                7 => "Menu / Start",
+                8 => "Left Stick Click (LSB)",
+                9 => "Right Stick Click (RSB)",
+                128 => "D-Pad Up",
+                129 => "D-Pad Right",
+                130 => "D-Pad Down",
+                131 => "D-Pad Left",
+                _ => $"Button {index + 1}"
+            };
         }
 
-        // === 3. PLAYSTATION CONTROLLERS (DirectInput DualSense/DS4) ===
+        return $"Button {index + 1}";
+    }
+
+    public static string GetAxisDisplayName(string deviceName, int index)
+    {
+        string dev = deviceName.ToLowerInvariant();
+        if (dev.Contains("dualsense") || dev.Contains("dualshock") || dev.Contains("sony") || dev.Contains("wireless controller") || dev.Contains("ps5") || dev.Contains("ps4"))
+        {
+            return index switch
+            {
+                0 => "Left Stick Horizontal",
+                1 => "Left Stick Vertical",
+                2 => "Right Stick Horizontal",
+                3 => "L2 Trigger Axis",
+                4 => "R2 Trigger Axis",
+                5 => "Right Stick Vertical",
+                _ => $"Axis {index + 1}"
+            };
+        }
+
+        if (dev.Contains("gamepad") || dev.Contains("controller") || dev.Contains("xbox"))
+        {
+            return index switch
+            {
+                0 => "Left Stick X",
+                1 => "Left Stick Y",
+                2 => "Left Trigger (LT)",
+                3 => "Right Stick X",
+                4 => "Right Stick Y",
+                5 => "Right Trigger (RT)",
+                _ => $"Axis {index + 1}"
+            };
+        }
+
+        return index switch
+        {
+            0 => "Steering Wheel (Axis X)",
+            1 => "Throttle Pedal (Axis Y)",
+            2 => "Brake Pedal (Axis Z)",
+            3 => "Clutch Pedal (Axis Rx)",
+            4 => "Handbrake (Axis Ry)",
+            5 => "Slider 0",
+            6 => "Slider 1",
+            _ => $"Axis {index + 1}"
+        };
+    }
+
+    public static List<PresetBindingItem> GeneratePreset(string deviceName, int buttonCount, int axisCount, bool targetIsWheel)
+    {
+        var list = new List<PresetBindingItem>();
+        string dev = deviceName.ToLowerInvariant();
+        bool isPlayStation = dev.Contains("dualsense") || dev.Contains("dualshock") || dev.Contains("sony") || dev.Contains("wireless controller") || dev.Contains("ps5") || dev.Contains("ps4");
+
         if (isPlayStation)
         {
-            list.Add(new PresetBindingItem { PhysicalName = "B2", PhysicalIndex = 1, DefaultTargetOutput = "[Xbox] Xbox A (Cross)", Description = "Cross (✕)" });
-            list.Add(new PresetBindingItem { PhysicalName = "B3", PhysicalIndex = 2, DefaultTargetOutput = "[Xbox] Xbox B (Circle)", Description = "Circle (◯)" });
-            list.Add(new PresetBindingItem { PhysicalName = "B1", PhysicalIndex = 0, DefaultTargetOutput = "[Xbox] Xbox X (Square)", Description = "Square (◻)" });
-            list.Add(new PresetBindingItem { PhysicalName = "B4", PhysicalIndex = 3, DefaultTargetOutput = "[Xbox] Xbox Y (Triangle)", Description = "Triangle (△)" });
-            list.Add(new PresetBindingItem { PhysicalName = "B5", PhysicalIndex = 4, DefaultTargetOutput = "[Xbox] Xbox LB (Left Bumper)", Description = "L1 Bumper" });
-            list.Add(new PresetBindingItem { PhysicalName = "B6", PhysicalIndex = 5, DefaultTargetOutput = "[Xbox] Xbox RB (Right Bumper)", Description = "R1 Bumper" });
-            list.Add(new PresetBindingItem { PhysicalName = "B9", PhysicalIndex = 8, DefaultTargetOutput = "[Xbox] Xbox View (Back)", Description = "Share / Create" });
-            list.Add(new PresetBindingItem { PhysicalName = "B10", PhysicalIndex = 9, DefaultTargetOutput = "[Xbox] Xbox Menu (Start)", Description = "Options" });
-            list.Add(new PresetBindingItem { PhysicalName = "B11", PhysicalIndex = 10, DefaultTargetOutput = "[Xbox] Xbox LSB (Left Stick Click)", Description = "L3 Click" });
-            list.Add(new PresetBindingItem { PhysicalName = "B12", PhysicalIndex = 11, DefaultTargetOutput = "[Xbox] Xbox RSB (Right Stick Click)", Description = "R3 Click" });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Horizontal", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = "[Xbox] Left Stick X (Steer / Horizontal)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Vertical", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = "[Xbox] Left Stick Y (Vertical)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Horizontal", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = "[Xbox] Right Stick X (Camera Horizontal)" });
+            list.Add(new PresetBindingItem { PhysicalName = "L2 Trigger Axis", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = "[Xbox] Left Trigger (LT / L2 Axis)" });
+            list.Add(new PresetBindingItem { PhysicalName = "R2 Trigger Axis", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = "[Xbox] Right Trigger (RT / R2 Axis)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Vertical", Type = InputType.Axis, PhysicalIndex = 5, DefaultTargetOutput = "[Xbox] Right Stick Y (Camera Vertical)" });
 
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-X", PhysicalIndex = 0, Type = InputType.Axis, DefaultTargetOutput = "[Xbox] Left Stick X (Steer)", Description = "Left Stick X" });
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-Y", PhysicalIndex = 1, Type = InputType.Axis, DefaultTargetOutput = "[Xbox] Left Stick Y", Description = "Left Stick Y" });
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-Z", PhysicalIndex = 2, Type = InputType.Axis, DefaultTargetOutput = "[Xbox] Left Trigger (LT / Brake)", Description = "L2 Analog Trigger" });
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-Rz", PhysicalIndex = 5, Type = InputType.Axis, DefaultTargetOutput = "[Xbox] Right Trigger (RT / Gas)", Description = "R2 Analog Trigger" });
+            list.Add(new PresetBindingItem { PhysicalName = "Cross (✕)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = "[Xbox] Xbox A (Cross / South)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Circle (○)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = "[Xbox] Xbox B (Circle / East)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Square (□)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = "[Xbox] Xbox X (Square / West)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Triangle (△)", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = "[Xbox] Xbox Y (Triangle / North)" });
+            list.Add(new PresetBindingItem { PhysicalName = "L1 Bumper", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = "[Xbox] Xbox LB (Left Bumper / L1)" });
+            list.Add(new PresetBindingItem { PhysicalName = "R1 Bumper", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = "[Xbox] Xbox RB (Right Bumper / R1)" });
+            list.Add(new PresetBindingItem { PhysicalName = "L3 Stick Click", Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = "[Xbox] Xbox LSB (Left Stick Click / L3)" });
+            list.Add(new PresetBindingItem { PhysicalName = "R3 Stick Click", Type = InputType.Button, PhysicalIndex = 11, DefaultTargetOutput = "[Xbox] Xbox RSB (Right Stick Click / R3)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Create / Share", Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = "[Xbox] Xbox View (Back / Share)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Options / Menu", Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = "[Xbox] Xbox Menu (Start / Options)" });
+            list.Add(new PresetBindingItem { PhysicalName = "PS Guide Button", Type = InputType.Button, PhysicalIndex = 12, DefaultTargetOutput = "[Xbox] Xbox Guide (Home / PS)" });
 
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Up", PhysicalIndex = 128, DefaultTargetOutput = "[Xbox] D-Pad Up", Description = "D-Pad Up" });
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Right", PhysicalIndex = 129, DefaultTargetOutput = "[Xbox] D-Pad Right", Description = "D-Pad Right" });
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Down", PhysicalIndex = 130, DefaultTargetOutput = "[Xbox] D-Pad Down", Description = "D-Pad Down" });
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Left", PhysicalIndex = 131, DefaultTargetOutput = "[Xbox] D-Pad Left", Description = "D-Pad Left" });
-            return list;
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Up", Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = "[Xbox] D-Pad Up" });
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Down", Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = "[Xbox] D-Pad Down" });
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Left", Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = "[Xbox] D-Pad Left" });
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Right", Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = "[Xbox] D-Pad Right" });
         }
-
-        // === 4. USB HANDBRAKES ===
-        if (isHandbrake)
+        else
         {
-            list.Add(new PresetBindingItem { PhysicalName = "Axis-Rz", PhysicalIndex = 5, Type = InputType.Axis, DefaultTargetOutput = "[Wheel] Handbrake (Axis Ry)", Description = "Handbrake Axis" });
-            return list;
-        }
-
-        // === 5. HARDWARE-DISCOVERED DYNAMIC BINDINGS ===
-        string prefix = dev.Contains("controller") || dev.Contains("pad") ? "[Xbox]" : "[Wheel]";
-        
-        for (int i = 0; i < Math.Min(detectedButtons, 32); i++)
-        {
-            string target = prefix == "[Xbox]" ? (i switch
+            for (int i = 0; i < Math.Min(axisCount, 6); i++)
             {
-                0 => "[Xbox] Xbox A (Cross)",
-                1 => "[Xbox] Xbox B (Circle)",
-                2 => "[Xbox] Xbox X (Square)",
-                3 => "[Xbox] Xbox Y (Triangle)",
-                4 => "[Xbox] Xbox LB (Left Bumper)",
-                5 => "[Xbox] Xbox RB (Right Bumper)",
-                _ => $"[Xbox] Xbox A (Cross)"
-            }) : $"[Wheel] Button {i + 1}";
+                string axisName = GetAxisDisplayName(deviceName, i);
+                string target = targetIsWheel ? (i == 0 ? "[Wheel] Steering (Axis X)" : (i == 1 ? "[Wheel] Gas / Throttle (Axis Y)" : "[Wheel] Brake (Axis Z)")) : "[Xbox] Left Stick X (Steer / Horizontal)";
+                list.Add(new PresetBindingItem { PhysicalName = axisName, Type = InputType.Axis, PhysicalIndex = i, DefaultTargetOutput = target });
+            }
 
-            list.Add(new PresetBindingItem
+            for (int i = 0; i < Math.Min(buttonCount, 16); i++)
             {
-                PhysicalName = $"B{i + 1}",
-                PhysicalIndex = i,
-                Type = InputType.Button,
-                DefaultTargetOutput = target,
-                Description = $"Button #{i + 1}"
-            });
+                string btnName = GetButtonDisplayName(deviceName, i);
+                string target = targetIsWheel ? $"[Wheel] Button {i + 1}" : "[Xbox] Xbox A (Cross / South)";
+                list.Add(new PresetBindingItem { PhysicalName = btnName, Type = InputType.Button, PhysicalIndex = i, DefaultTargetOutput = target });
+            }
         }
 
         return list;

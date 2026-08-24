@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.4] - 2026-08-23
+
+### Added
+- **Interactive Update Dialog**: Added an update prompt modal allowing users to confirm or postpone incoming update downloads.
+- **Post-Update Welcome Modal**: Integrated an automated launch dialog confirming successful installation and version changes upon application restart.
+- **Dynamic Version Resolution**: Implemented runtime manifest and project metadata resolution for accurate version reflection across builds.
+
+### Changed
+- **Minimalist UI Version Scoping**: Cleaned up version indicators across the UI—removed redundant version chips from the native window title bar, header banner, and main window footer, consolidating version information cleanly to the bottom-left of the Settings window.
+
+### Fixed
+- **Velopack 1.x Source Integration**: Configured `GithubSource` using `Velopack.Sources` to ensure seamless release package discovery without external locator dependencies.
+- **Preset Model Source Generation**: Decoupled `PresetBindingItem` from service wrappers to eliminate MVVM source generator compilation collisions.
+
+---
+
 ## [1.0.3] - 2026-08-23
 
 ### Fixed

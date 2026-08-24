@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "2UDURYkUbs8=",
+  "dgSpecHash": "u8HmQyc09AI=",
   "success": true,
-  "projectFilePath": "F:\\All Projects\\Rider\\ECCR\\ECCR\\ECCR.csproj",
+  "projectFilePath": "F:\\All Projects\\Rider\\ECCR\\ECCR.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\chadm\\.nuget\\packages\\avalonia\\11.2.0\\avalonia.11.2.0.nupkg.sha512",
     "C:\\Users\\chadm\\.nuget\\packages\\avalonia.angle.windows.natives\\2.1.22045.20230930\\avalonia.angle.windows.natives.2.1.22045.20230930.nupkg.sha512",
@@ -42,19 +42,23 @@
     "C:\\Users\\chadm\\.nuget\\packages\\system.componentmodel.annotations\\5.0.0\\system.componentmodel.annotations.5.0.0.nupkg.sha512",
     "C:\\Users\\chadm\\.nuget\\packages\\system.management\\9.0.0\\system.management.9.0.0.nupkg.sha512",
     "C:\\Users\\chadm\\.nuget\\packages\\tmds.dbus.protocol\\0.20.0\\tmds.dbus.protocol.0.20.0.nupkg.sha512",
-    "C:\\Users\\chadm\\.nuget\\packages\\velopack\\1.2.0\\velopack.1.2.0.nupkg.sha512"
+    "C:\\Users\\chadm\\.nuget\\packages\\velopack\\1.2.0\\velopack.1.2.0.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\10.0.11\\microsoft.netcore.app.runtime.win-x64.10.0.11.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\10.0.11\\microsoft.windowsdesktop.app.runtime.win-x64.10.0.11.nupkg.sha512",
+    "C:\\Users\\chadm\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\10.0.11\\microsoft.aspnetcore.app.runtime.win-x64.10.0.11.nupkg.sha512"
   ],
   "logs": [
     {
       "code": "NU1903",
       "level": "Warning",
       "message": "Package 'Tmds.DBus.Protocol' 0.20.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-xrw6-gwf8-vvr9",
-      "projectPath": "F:\\All Projects\\Rider\\ECCR\\ECCR\\ECCR.csproj",
+      "projectPath": "F:\\All Projects\\Rider\\ECCR\\ECCR.csproj",
       "warningLevel": 1,
-      "filePath": "F:\\All Projects\\Rider\\ECCR\\ECCR\\ECCR.csproj",
+      "filePath": "F:\\All Projects\\Rider\\ECCR\\ECCR.csproj",
       "libraryId": "Tmds.DBus.Protocol",
       "targetGraphs": [
-        "net10.0-windows"
+        "net10.0-windows",
+        "net10.0-windows/win-x64"
       ]
     }
   ]

@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ECCR.ViewModels"
         xmlns:models="using:ECCR.Models"
@@ -10,39 +10,71 @@
         Background="#0E1118"
         Foreground="White"
         Icon="/Assets/ECCR-logo.ico"
-        Title="EhChadsControllerRemapper - ECCR"
+        Title="{Binding WindowTitle}"
         FontSize="14">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <Window.Resources>
+        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
+    </Window.Resources>
+
     <Grid>
         <!-- Main Application Layout -->
-        <Grid RowDefinitions="Auto, Auto, *, Auto" Margin="16,12">
+        <Grid RowDefinitions="Auto, Auto, Auto, *, Auto" Margin="16,10">
             
-            <!-- ROW 0: Dependency Banner -->
-            <Border Grid.Row="0" 
+            <!-- ROW 0: Top Header -->
+            <Border Grid.Row="0" Background="#121622" BorderBrush="#20283C" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,10">
+                <Grid ColumnDefinitions="Auto, *, Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Viewbox Width="26" Height="26" VerticalAlignment="Center">
+                            <Canvas Width="48" Height="48">
+                                <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
+                                <Rectangle Canvas.Left="12" Canvas.Top="14" Width="24" Height="20" RadiusX="6" RadiusY="6" Fill="#1E2B45" Stroke="#00E599" StrokeThickness="1.5"/>
+                                <Rectangle Canvas.Left="16" Canvas.Top="21" Width="4" Height="6" Fill="#BAC2DE"/>
+                                <Rectangle Canvas.Left="15" Canvas.Top="22" Width="6" Height="4" Fill="#BAC2DE"/>
+                                <Ellipse Canvas.Left="28" Canvas.Top="20" Width="3" Height="3" Fill="#FF4D6D"/>
+                                <Ellipse Canvas.Left="26" Canvas.Top="23" Width="3" Height="3" Fill="#3E7BFA"/>
+                                <Ellipse Canvas.Left="30" Canvas.Top="23" Width="3" Height="3" Fill="#00E599"/>
+                                <Ellipse Canvas.Left="28" Canvas.Top="26" Width="3" Height="3" Fill="#FFB900"/>
+                            </Canvas>
+                        </Viewbox>
+                        
+                        <TextBlock Text="EhChadsControllerRemapper" FontWeight="Bold" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button Content="🛡 HidHide" Command="{Binding OpenHidHideMenuCommand}" Background="#2A1B3D" BorderBrush="#5E3B8A" FontSize="11" Padding="8,4" CornerRadius="5"/>
+                        <Button Content="⚡ Auto-Bind" Command="{Binding OpenAutoBindWizardCommand}" Background="#1E2B45" BorderBrush="#3E7BFA" Foreground="#70A0FF" FontSize="11" Padding="8,4" CornerRadius="5"/>
+                        <Button Content="⚙️ Settings" Command="{Binding OpenSettingsCommand}" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" FontSize="11" Padding="8,4" CornerRadius="5"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ROW 1: Dependency Banner -->
+            <Border Grid.Row="1" 
                     IsVisible="{Binding IsDependencyBannerOpen}" 
                     Background="#241519" 
                     BorderBrush="#552229" 
                     BorderThickness="1" 
                     CornerRadius="8" 
-                    Padding="14,10" 
+                    Padding="14,8" 
                     Margin="0,0,0,10">
                 <Grid ColumnDefinitions="Auto, *, Auto, Auto">
-                    <TextBlock Grid.Column="0" Text="⚠️" FontSize="18" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock Grid.Column="0" Text="⚠️" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
                     
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                        <TextBlock Text="System Driver Status &amp; Missing Services" FontWeight="Bold" FontSize="13" Foreground="#FFAAAA"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="System Driver Status &amp; Missing Services" FontWeight="Bold" FontSize="12" Foreground="#FFAAAA"/>
                         <WrapPanel Orientation="Horizontal">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,14,0">
                                 <TextBlock Text="ViGEmBus: " FontSize="11" Foreground="#888899"/>
                                 <TextBlock Text="Not Installed" Foreground="#FF6B6B" FontSize="11" FontWeight="SemiBold" IsVisible="{Binding !IsViGEmInstalled}"/>
                                 <TextBlock Text="Active" Foreground="#00E599" FontSize="11" FontWeight="SemiBold" IsVisible="{Binding IsViGEmInstalled}"/>
                             </StackPanel>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,14,0">
                                 <TextBlock Text="HidHide: " FontSize="11" Foreground="#888899"/>
                                 <TextBlock Text="Not Installed" Foreground="#FF6B6B" FontSize="11" FontWeight="SemiBold" IsVisible="{Binding !IsHidHideServiceInstalled}"/>
                                 <TextBlock Text="Active" Foreground="#00E599" FontSize="11" FontWeight="SemiBold" IsVisible="{Binding IsHidHideServiceInstalled}"/>
@@ -73,27 +105,10 @@
                 </Grid>
             </Border>
 
-            <!-- ROW 1: Headers with Native Vector Logo -->
-            <Grid Grid.Row="1" ColumnDefinitions="1.8*, 0.9*, 1.1*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
-                <Border Grid.ColumnSpan="7" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,8"/>
-
-                <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                    <!-- Native XAML ECCR Vector Logo -->
-                    <Viewbox Width="22" Height="22" VerticalAlignment="Center">
-                        <Canvas Width="48" Height="48">
-                            <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
-                            <Rectangle Canvas.Left="12" Canvas.Top="14" Width="24" Height="20" RadiusX="6" RadiusY="6" Fill="#1E2B45" Stroke="#00E599" StrokeThickness="1.5"/>
-                            <Rectangle Canvas.Left="16" Canvas.Top="21" Width="4" Height="6" Fill="#BAC2DE"/>
-                            <Rectangle Canvas.Left="15" Canvas.Top="22" Width="6" Height="4" Fill="#BAC2DE"/>
-                            <Ellipse Canvas.Left="28" Canvas.Top="20" Width="3" Height="3" Fill="#FF4D6D"/>
-                            <Ellipse Canvas.Left="26" Canvas.Top="23" Width="3" Height="3" Fill="#3E7BFA"/>
-                            <Ellipse Canvas.Left="30" Canvas.Top="23" Width="3" Height="3" Fill="#00E599"/>
-                            <Ellipse Canvas.Left="28" Canvas.Top="26" Width="3" Height="3" Fill="#FFB900"/>
-                        </Canvas>
-                    </Viewbox>
-                    <Label FontWeight="SemiBold" Content="Physical Key / Axis" VerticalAlignment="Center"/>
-                </StackPanel>
-
+            <!-- ROW 2: Column Headers -->
+            <Grid Grid.Row="2" ColumnDefinitions="1.8*, 0.9*, 1.1*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
+                <Border Grid.ColumnSpan="7" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,6"/>
+                <Label Grid.Column="0" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Physical Key / Axis"/>
                 <Label Grid.Column="1" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Type"/>
                 <Label Grid.Column="2" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Virtual Target"/>
                 <Label Grid.Column="3" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Channel"/>
@@ -102,8 +117,8 @@
                 <Label Grid.Column="6"/>
             </Grid>
 
-            <!-- ROW 2: Collapsible Device Mapping Groups -->
-            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,4">
+            <!-- ROW 3: Collapsible Device Mapping Groups -->
+            <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Margin="0,4">
                 <ItemsControl ItemsSource="{Binding GroupedMappings}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:DeviceMappingGroup">
@@ -128,7 +143,6 @@
                                                 </Border>
                                             </StackPanel>
 
-                                            <!-- Bulk Change All Targets for Device -->
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,14,0">
                                                 <TextBlock Text="Set All Target:" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
                                                 <ComboBox ItemsSource="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AvailableTargetDevices}"
@@ -160,7 +174,6 @@
                                         </Grid>
                                     </Expander.Header>
 
-                                    <!-- Grouped Mapping Matrix Rows -->
                                     <ItemsControl ItemsSource="{Binding Entries}" HorizontalAlignment="Stretch" Margin="8,4,8,10">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="models:MappingEntry">
@@ -168,7 +181,6 @@
                                                       HorizontalAlignment="Stretch" 
                                                       Margin="0,3">
                                                     
-                                                    <!-- Physical Bind Button with Badge -->
                                                     <Button Grid.Column="0" 
                                                             Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).StartListeningCommand}"
                                                             CommandParameter="{Binding}"
@@ -183,7 +195,7 @@
                                                         <Grid ColumnDefinitions="Auto, *">
                                                             <Border Grid.Column="0" 
                                                                     x:DataType="converters:BadgeInfo"
-                                                                    DataContext="{Binding $parent[Button].((models:MappingEntry)DataContext).SourceDisplayName, Converter={StaticResource ButtonBadgeConverter}}"
+                                                                    DataContext="{Binding SourceDisplayName, Converter={StaticResource ButtonBadgeConverter}}"
                                                                     IsVisible="{Binding HasBadge}"
                                                                     Background="{Binding Background}"
                                                                     BorderBrush="{Binding Border}"
@@ -208,7 +220,6 @@
                                                         </Grid>
                                                     </Button>
 
-                                                    <!-- Input Type -->
                                                     <ComboBox Grid.Column="1" 
                                                               SelectedItem="{Binding SourceType}" 
                                                               HorizontalAlignment="Stretch" 
@@ -219,7 +230,6 @@
                                                         <models:InputType>Button</models:InputType>
                                                     </ComboBox>
 
-                                                    <!-- Target Device ID -->
                                                     <ComboBox Grid.Column="2" 
                                                               ItemsSource="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AvailableTargetDevices}"
                                                               SelectedItem="{Binding TargetDeviceId}"
@@ -234,7 +244,6 @@
                                                         </ComboBox.ItemTemplate>
                                                     </ComboBox>
 
-                                                    <!-- Target Output Channel with Badge -->
                                                     <ComboBox Grid.Column="3" 
                                                               ItemsSource="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).AvailableVirtualOutputs}"
                                                               SelectedItem="{Binding TargetOutput}" 
@@ -266,14 +275,13 @@
                                                                     </Border>
                                                                     <TextBlock Grid.Column="1" 
                                                                                Text="{Binding}" 
-                                                                               VerticalAlignment="Center"
+                                                                               VerticalAlignment="Center" 
                                                                                TextTrimming="CharacterEllipsis"/>
                                                                 </Grid>
                                                             </DataTemplate>
                                                         </ComboBox.ItemTemplate>
                                                     </ComboBox>
 
-                                                    <!-- Deadzone -->
                                                     <Panel Grid.Column="4" Margin="4,0" HorizontalAlignment="Stretch">
                                                         <Grid ColumnDefinitions="*, 36" IsVisible="{Binding IsAxis}" HorizontalAlignment="Stretch">
                                                             <Slider Grid.Column="0" 
@@ -296,7 +304,6 @@
                                                                    IsVisible="{Binding !IsAxis}"/>
                                                     </Panel>
 
-                                                    <!-- Calibration -->
                                                     <Panel Grid.Column="5" Margin="3,0" HorizontalAlignment="Stretch">
                                                         <Button Content="Calibrate" 
                                                                 Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).OpenCalibrationCommand}"
@@ -314,7 +321,6 @@
                                                                    IsVisible="{Binding !IsAxis}"/>
                                                     </Panel>
 
-                                                    <!-- Delete Row -->
                                                     <Button Grid.Column="6" 
                                                             Content="✕" 
                                                             Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).RemoveMappingCommand}"
@@ -336,33 +342,32 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- ROW 3: Footer -->
-            <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="#262D3D" Padding="0,14,0,4">
-                <StackPanel Spacing="14">
+            <!-- ROW 4: Main Footer Controls (Clean) -->
+            <Border Grid.Row="4" BorderThickness="0,1,0,0" BorderBrush="#262D3D" Padding="0,12,0,4">
+                <StackPanel Spacing="12">
                     
                     <Grid ColumnDefinitions="*, Auto, *, Auto, *">
                         <StackPanel Grid.Column="0" HorizontalAlignment="Center" Spacing="2">
                             <TextBlock Text="ACTIVE VIRTUAL TARGET" FontSize="10" FontWeight="Bold" Foreground="#8B95A5" HorizontalAlignment="Center"/>
-                            <TextBlock Text="{Binding VirtualDeviceSummary}" FontSize="15" FontWeight="SemiBold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                            <TextBlock Text="{Binding VirtualDeviceSummary}" FontSize="14" FontWeight="SemiBold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
                         </StackPanel>
 
-                        <Border Grid.Column="1" Width="1" Height="26" Background="#262D3D"/>
+                        <Border Grid.Column="1" Width="1" Height="24" Background="#262D3D"/>
 
                         <StackPanel Grid.Column="2" HorizontalAlignment="Center" Spacing="2">
                             <TextBlock Text="MAPPING STATUS" FontSize="10" FontWeight="Bold" Foreground="#8B95A5" HorizontalAlignment="Center"/>
-                            <TextBlock Text="{Binding MappingStatus}" FontSize="15" FontWeight="SemiBold" Foreground="#00E599" HorizontalAlignment="Center"/>
+                            <TextBlock Text="{Binding MappingStatus}" FontSize="14" FontWeight="SemiBold" Foreground="#00E599" HorizontalAlignment="Center"/>
                         </StackPanel>
 
-                        <Border Grid.Column="3" Width="1" Height="26" Background="#262D3D"/>
+                        <Border Grid.Column="3" Width="1" Height="24" Background="#262D3D"/>
 
                         <StackPanel Grid.Column="4" HorizontalAlignment="Center" Spacing="2">
                             <TextBlock Text="POLL LATENCY" FontSize="10" FontWeight="Bold" Foreground="#8B95A5" HorizontalAlignment="Center"/>
-                            <TextBlock Text="{Binding Latency}" FontSize="15" FontWeight="SemiBold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                            <TextBlock Text="{Binding Latency}" FontSize="14" FontWeight="SemiBold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Grid>
 
-                    <!-- Control Bar with Settings Button -->
-                    <Grid ColumnDefinitions="Auto, 130, Auto, Auto, Auto, Auto, Auto, *, 170">
+                    <Grid ColumnDefinitions="Auto, 140, Auto, Auto, *, 170">
                         <TextBlock Grid.Column="0" Text="Profile" VerticalAlignment="Center" Margin="0,0,6,0" FontWeight="SemiBold" Foreground="#BAC2DE"/>
                         
                         <ComboBox Grid.Column="1" 
@@ -377,7 +382,7 @@
                                 Content="+ New"
                                 Command="{Binding OpenCreateProfileDialogCommand}"
                                 Margin="6,0,0,0"
-                                Padding="8,6"
+                                Padding="10,6"
                                 CornerRadius="6"
                                 Background="#232A3B"
                                 BorderBrush="#3D4B6E"/>
@@ -386,55 +391,22 @@
                                 Content="Save"
                                 Command="{Binding SaveCurrentProfileCommand}"
                                 Margin="6,0,0,0"
-                                Padding="10,6"
+                                Padding="12,6"
                                 FontWeight="SemiBold"
                                 CornerRadius="6"
                                 Background="#1A4A38"
                                 BorderBrush="#266D53"/>
 
-                        <Button Grid.Column="4" 
-                                Content="🛡 HidHide"
-                                Command="{Binding OpenHidHideMenuCommand}"
-                                Margin="6,0,0,0"
-                                Padding="10,6"
-                                CornerRadius="6"
-                                Background="#2A1B3D"
-                                BorderBrush="#5E3B8A"
-                                FontWeight="SemiBold"/>
-
                         <Button Grid.Column="5" 
-                                Command="{Binding OpenAutoBindWizardCommand}"
-                                Content="⚡ Auto-Bind" 
-                                Margin="6,0,0,0"
-                                Padding="10,6"
-                                CornerRadius="6"
-                                Background="#1E2B45"
-                                BorderBrush="#3E7BFA"
-                                Foreground="#70A0FF"
-                                FontWeight="SemiBold"/>
-
-                        <!-- Settings Button -->
-                        <Button Grid.Column="6" 
-                                Command="{Binding OpenSettingsCommand}"
-                                Content="⚙️ Settings" 
-                                Margin="6,0,0,0"
-                                Padding="10,6"
-                                CornerRadius="6"
-                                Background="#1F283C" 
-                                BorderBrush="#3D4B6E" 
-                                Foreground="White"
-                                FontWeight="SemiBold"/>
-
-                        <Button Grid.Column="8" 
                                 Command="{Binding AddMappingCommand}"
                                 Content="+ Add Mapping" 
                                 HorizontalAlignment="Stretch" 
                                 HorizontalContentAlignment="Center"
                                 VerticalContentAlignment="Center"
-                                Height="40"
+                                Height="38"
                                 FontSize="13"
                                 FontWeight="SemiBold"
-                                CornerRadius="20" 
+                                CornerRadius="19" 
                                 Background="#2A303F" 
                                 Foreground="#FFFFFF" 
                                 BorderBrush="#3D4559"
@@ -444,13 +416,67 @@
             </Border>
         </Grid>
 
+        <!-- UPDATE CONFIRMATION MODAL (YES / NO) -->
+        <Border IsVisible="{Binding IsUpdatePromptOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="24" Width="440" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <TextBlock Grid.Column="0" Text="🚀" FontSize="26" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="New Update Available!" FontWeight="Bold" FontSize="16" Foreground="White"/>
+                            <TextBlock Text="{Binding NewVersionNumber, StringFormat='Version {0} is ready to download.'}" FontSize="12" Foreground="#8B95A5"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="A new version of ECCR is available. Would you like to update and restart now? The app will relaunch with the latest features." 
+                               TextWrapping="Wrap" FontSize="13" Foreground="#D0D0E0"/>
+
+                    <ProgressBar IsVisible="{Binding IsInstallingUpdate}" Value="{Binding UpdateDownloadProgress}" Maximum="100" Height="6" CornerRadius="3"/>
+                    <TextBlock IsVisible="{Binding IsInstallingUpdate}" Text="{Binding UpdateStatusText}" FontSize="11" Foreground="#00E599" HorizontalAlignment="Center"/>
+
+                    <Grid ColumnDefinitions="*, *" Margin="0,8,0,0">
+                        <Button Grid.Column="0" Content="Later" Command="{Binding DismissUpdatePromptCommand}" 
+                                IsEnabled="{Binding !IsInstallingUpdate}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,6,0" 
+                                Background="#262D3D" Foreground="White" Padding="12,8" CornerRadius="6"/>
+                        
+                        <Button Grid.Column="1" Content="Update Now" Command="{Binding InstallUpdateAndRestartCommand}" 
+                                IsEnabled="{Binding !IsInstallingUpdate}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="6,0,0,0" 
+                                FontWeight="Bold" Background="#00B074" Foreground="White" Padding="12,8" CornerRadius="6"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- POST-UPDATE CONFIRMATION MODAL -->
+        <Border IsVisible="{Binding IsPostUpdateOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="24" Width="420" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <TextBlock Grid.Column="0" Text="🎉" FontSize="28" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Update Successful!" FontWeight="Bold" FontSize="16" Foreground="White"/>
+                            <TextBlock Text="{Binding PostUpdateMessage}" FontSize="13" Foreground="#00E599" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="ECCR has been updated to the latest build. Your profiles, device configurations, and calibrations are intact." 
+                               TextWrapping="Wrap" FontSize="12" Foreground="#BAC2DE"/>
+
+                    <Button Content="Close &amp; Continue" Command="{Binding DismissPostUpdateCommand}" 
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" 
+                            FontWeight="SemiBold" Background="#3E7BFA" Foreground="White" Padding="14,8" CornerRadius="6"/>
+                </StackPanel>
+            </Border>
+        </Border>
+
         <!-- SETTINGS MODAL -->
         <Border IsVisible="{Binding IsSettingsOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
             <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="24" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid RowDefinitions="Auto, *, Auto">
                     <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,16">
                         <Grid ColumnDefinitions="Auto, *, Auto">
-                            <!-- Native Vector Icon in Modal Header -->
                             <Viewbox Grid.Column="0" Width="28" Height="28" Margin="0,0,12,0" VerticalAlignment="Center">
                                 <Canvas Width="48" Height="48">
                                     <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
@@ -514,6 +540,7 @@
                             <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="Software Updates (Velopack)" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+                                    
                                     <Grid ColumnDefinitions="*, Auto">
                                         <StackPanel Grid.Column="0">
                                             <TextBlock Text="Check for Updates on Startup" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
@@ -521,6 +548,7 @@
                                         </StackPanel>
                                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoCheckForUpdates}" OnContent="Enabled" OffContent="Disabled"/>
                                     </Grid>
+                                    
                                     <Border Background="#10141E" CornerRadius="6" Padding="12" Margin="0,4,0,0" BorderBrush="#1F283C" BorderThickness="1">
                                         <Grid ColumnDefinitions="*, Auto">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
@@ -538,8 +566,25 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <Grid Grid.Row="2" Margin="0,16,0,0">
-                        <Button Content="Done &amp; Save Preferences" Command="{Binding CloseSettingsCommand}" HorizontalAlignment="Right" Background="#00B074" Foreground="White" FontWeight="SemiBold" Padding="20,8" CornerRadius="6"/>
+                    <!-- SETTINGS FOOTER: Bottom-Left Version Label + Done Button -->
+                    <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="0,16,0,0">
+                        <TextBlock Grid.Column="0" 
+                                   Text="{Binding DisplayVersionText}" 
+                                   FontSize="12" 
+                                   FontWeight="SemiBold" 
+                                   Foreground="#70A0FF" 
+                                   VerticalAlignment="Center" 
+                                   HorizontalAlignment="Left"/>
+                        
+                        <Button Grid.Column="1" 
+                                Content="Done &amp; Save Preferences" 
+                                Command="{Binding CloseSettingsCommand}" 
+                                HorizontalAlignment="Right" 
+                                Background="#00B074" 
+                                Foreground="White" 
+                                FontWeight="SemiBold" 
+                                Padding="20,8" 
+                                CornerRadius="6"/>
                     </Grid>
                 </Grid>
             </Border>
@@ -594,7 +639,7 @@
                                     <Button Content="+ Add Game (.exe)" Command="{Binding AddApplicationToHidHideCommand}" CommandParameter="{Binding #RootWindow.StorageProvider}" FontSize="11"/>
                                     <Button Content="Clear All" Command="{Binding ClearAllApplicationsFromHidHideCommand}" FontSize="11"/>
                                 </StackPanel>
-                                <ScrollViewer Grid.Row="3">
+                                <ScrollViewer Grid.Row="2">
                                     <ItemsControl ItemsSource="{Binding WhitelistedApplications}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="x:String">

@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v10.0": {},
     ".NETCoreApp,Version=v10.0/win-x64": {
-      "ECCR/1.0.0": {
+      "ECCR/1.0.4": {
         "dependencies": {
           "Avalonia": "11.2.0",
           "Avalonia.Desktop": "11.2.0",
@@ -1094,7 +1094,7 @@
     }
   },
   "libraries": {
-    "ECCR/1.0.0": {
+    "ECCR/1.0.4": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

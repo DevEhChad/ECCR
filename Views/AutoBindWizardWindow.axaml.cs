@@ -10,7 +10,12 @@ public partial class AutoBindWizardWindow : Window
         InitializeComponent();
     }
 
-    private void OnCancelClicked(object? sender, RoutedEventArgs e)
+    private void OnCancelClick(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void OnApplyClick(object? sender, RoutedEventArgs e)
     {
         Close();
     }

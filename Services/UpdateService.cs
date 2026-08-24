@@ -9,19 +9,18 @@ public class UpdateService
 {
     private const string RepoUrl = "https://github.com/DevEhChad/ECCR";
 
+    private UpdateManager CreateManager()
+    {
+        var source = new GithubSource(RepoUrl, string.Empty, false);
+        return new UpdateManager(source);
+    }
+
     public async Task<UpdateInfo?> CheckForUpdatesAsync()
     {
         try
         {
-            var source = new GithubUpdateSource(RepoUrl, accessToken: null, prerelease: false);
-            var mgr = new UpdateManager(source);
-
-            // If running in development / loose debug folder, skip checking
-            if (!mgr.IsInstalled)
-            {
-                return null;
-            }
-
+            var mgr = CreateManager();
+            if (!mgr.IsInstalled) return null;
             return await mgr.CheckForUpdatesAsync();
         }
         catch
@@ -34,14 +33,10 @@ public class UpdateService
     {
         try
         {
-            var source = new GithubUpdateSource(RepoUrl, accessToken: null, prerelease: false);
-            var mgr = new UpdateManager(source);
+            var mgr = CreateManager();
+            if (!mgr.IsInstalled) return false;
 
-            await mgr.DownloadUpdatesAsync(updateInfo, progress =>
-            {
-                progressCallback?.Invoke(progress);
-            });
-
+            await mgr.DownloadUpdatesAsync(updateInfo, progress => progressCallback?.Invoke(progress));
             mgr.ApplyUpdatesAndRestart(updateInfo);
             return true;
         }

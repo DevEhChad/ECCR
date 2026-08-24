@@ -7,13 +7,16 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
-    <!-- Versioning for Velopack and Assembly reflection -->
-    <Version>1.0.3</Version>
-    <AssemblyVersion>1.0.3.0</AssemblyVersion>
-    <FileVersion>1.0.3.0</FileVersion>
-    <InformationalVersion>1.0.3</InformationalVersion>
+    <!-- Versioning -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>1.0.4</Version>
+    <AssemblyVersion>1.0.4.0</AssemblyVersion>
+    <FileVersion>1.0.4.0</FileVersion>
+    <InformationalVersion>1.0.4</InformationalVersion>
 
-    <!-- Embeds icon into ECCR.exe and Task Manager -->
+    <!-- Exclude output and release folders from source compilation -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);publish/**;Releases/**;ECCR/**</DefaultItemExcludes>
+
     <ApplicationIcon>Assets\ECCR-logo.ico</ApplicationIcon>
   </PropertyGroup>
 
