@@ -1,9 +1,9 @@
-name: Build & Publish Release
+name: Build and Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
 
 permissions:
   contents: write
@@ -13,49 +13,45 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup .NET
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install Velopack CLI
+      - name: Install Velopack CLI (vpk)
         run: dotnet tool install -g vpk
 
       - name: Extract Tag Version
         id: get_version
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          echo "VERSION=$tag" >> $env:GITHUB_OUTPUT
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Publish .NET App
-        run: >
-          dotnet publish ECCR/ECCR.csproj 
-          -c Release 
-          -r win-x64 
-          --self-contained true 
-          -p:PublishSingleFile=false 
-          -o ./publish
+      - name: Publish Windows x64 Binary
+        run: |
+          dotnet publish ./ECCR.csproj -c Release -r win-x64 --self-contained true -o ./publish
 
       - name: Package with Velopack
-        run: >
-          vpk pack 
-          -u ECCR 
-          -v ${{ steps.get_version.outputs.VERSION }} 
-          -p ./publish 
-          -e ECCR.exe 
-          --icon ECCR/Assets/ECCR-logo.ico 
-          -o ./releases
+        run: |
+          vpk pack -u ECCR -v ${{ steps.get_version.outputs.VERSION }} -p ./publish -e ECCR.exe -i ./Assets/ECCR-logo.ico -o ./Releases
 
-      - name: Publish to GitHub Releases
-        run: >
-          vpk upload github 
-          --repoUrl https://github.com/${{ github.repository }} 
-          --token ${{ secrets.GITHUB_TOKEN }} 
-          --publish 
-          --outputDir ./releases
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ECCR v${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            ./Releases/*-Setup.exe
+            ./Releases/*-full.nupkg
+            ./Releases/releases.win.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
