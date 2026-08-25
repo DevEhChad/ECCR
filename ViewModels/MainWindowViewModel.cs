@@ -41,12 +41,16 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isShuttingDown = false;
 
+    // Virtual Output Master Toggle
+    [ObservableProperty]
+    private bool _isVirtualOutputActive = true;
+
     // Dynamic Version & Clean Window Title
     [ObservableProperty]
-    private string _appVersion = "v1.0.4";
+    private string _appVersion = "v1.0.5";
 
     [ObservableProperty]
-    private string _displayVersionText = "Version 1.0.4";
+    private string _displayVersionText = "Version 1.0.5";
 
     [ObservableProperty]
     private string _windowTitle = "EhChadsControllerRemapper - ECCR";
@@ -71,7 +75,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _latency = "0.0ms";
 
     [ObservableProperty]
-    private string _virtualDeviceSummary = "vJoy Virtual Wheel + Xbox 360 Controller (Active)";
+    private string _virtualDeviceSummary = "Player 1 (Active)";
 
     [ObservableProperty]
     private string _selectedProfile = "Default";
@@ -175,7 +179,14 @@ public partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<DeviceMappingGroup> GroupedMappings { get; } = new();
     public ObservableCollection<string> ConnectedDevices { get; } = new();
     public ObservableCollection<string> AvailableVirtualOutputs { get; } = new();
-    public ObservableCollection<uint> AvailableTargetDevices { get; } = new() { 1, 2, 3, 4, 5, 6, 7, 8 };
+    public ObservableCollection<PlayerTargetOption> PlayerTargets { get; } = new()
+    {
+        new PlayerTargetOption { Id = 1, DisplayName = "Player 1 (Primary / Rig)", ShortBadge = "P1", Description = "Combined Wheel, Pedals, Shifter & Controller", TextColorHex = "#5CFFBE", BgColorHex = "#122A1E", BorderColorHex = "#00E599" },
+        new PlayerTargetOption { Id = 2, DisplayName = "Player 2 (Split-Screen)", ShortBadge = "P2", Description = "Independent Virtual Controller #2", TextColorHex = "#FFAF70", BgColorHex = "#2B1D12", BorderColorHex = "#FA8B3E" },
+        new PlayerTargetOption { Id = 3, DisplayName = "Player 3", ShortBadge = "P3", Description = "Independent Virtual Controller #3", TextColorHex = "#DB70FF", BgColorHex = "#26142E", BorderColorHex = "#C33EFA" },
+        new PlayerTargetOption { Id = 4, DisplayName = "Player 4", ShortBadge = "P4", Description = "Independent Virtual Controller #4", TextColorHex = "#FF7088", BgColorHex = "#2A141A", BorderColorHex = "#FA3E5E" }
+    };
+
     public ObservableCollection<HidDeviceItem> HidDevices { get; } = new();
     public ObservableCollection<string> WhitelistedApplications { get; } = new();
 
@@ -224,6 +235,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         LoadSelectedProfile();
         RefreshDependencyStates();
+        UpdateVirtualDeviceSummary();
 
         if (AutoCheckForUpdates)
         {
@@ -300,7 +312,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(resolved))
         {
-            resolved = "1.0.4";
+            resolved = "1.0.5";
         }
 
         AppVersion = $"v{resolved}";
@@ -318,6 +330,38 @@ public partial class MainWindowViewModel : ViewModelBase
 
         _currentSettings.LastRunVersion = AppVersion;
         SaveAppSettings();
+    }
+
+    partial void OnIsVirtualOutputActiveChanged(bool value)
+    {
+        _feeder.SetActive(value);
+        UpdateVirtualDeviceSummary();
+        MappingStatus = value ? "Active" : "Standby (Disabled)";
+        SaveAppSettings();
+    }
+
+    public void UpdateVirtualDeviceSummary()
+    {
+        if (!IsVirtualOutputActive)
+        {
+            VirtualDeviceSummary = "Virtual Devices Disabled (Standby)";
+            return;
+        }
+
+        var activeTargetCounts = Mappings
+            .GroupBy(m => m.TargetDeviceId)
+            .OrderBy(g => g.Key)
+            .Select(g => $"P{g.Key} ({g.Select(e => e.SourceDeviceName).Distinct().Count()} dev)")
+            .ToList();
+
+        if (activeTargetCounts.Count == 0)
+        {
+            VirtualDeviceSummary = "P1 (Standby)";
+        }
+        else
+        {
+            VirtualDeviceSummary = string.Join(" • ", activeTargetCounts) + " Active";
+        }
     }
 
     private void InitializeVirtualOutputs()
@@ -383,6 +427,7 @@ public partial class MainWindowViewModel : ViewModelBase
             entry.TargetDeviceId = targetDeviceId;
         }
 
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
@@ -401,6 +446,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (_listeningEntry == null)
         {
+            if (!IsVirtualOutputActive) return;
+
             for (int i = 0; i < Mappings.Count; i++)
             {
                 var mapping = Mappings[i];
@@ -477,7 +524,8 @@ public partial class MainWindowViewModel : ViewModelBase
             entry.IsInverted = (type == InputType.Axis && (displayName.Contains("Stick Y") || displayName.Contains("Vertical") || displayName.Contains("Brake") || displayName.Contains("Throttle")));
 
             RebuildGroupedMappings();
-            MappingStatus = "Active";
+            UpdateVirtualDeviceSummary();
+            MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
             _listeningEntry = null;
             _axisBaselines.Clear();
             AutoSaveCurrentProfile();
@@ -487,6 +535,43 @@ public partial class MainWindowViewModel : ViewModelBase
     private static string GuessBestTargetChannel(string deviceName, InputType type, int index)
     {
         var category = DevicePresetService.DetectCategory(deviceName);
+
+        if (category == DeviceHardwareCategory.PlayStationController)
+        {
+            if (type == InputType.Axis)
+            {
+                return index switch
+                {
+                    0 => "[Xbox] Left Stick X (Steer / Horizontal)",
+                    1 => "[Xbox] Left Stick Y (Steer / Vertical)",
+                    2 => "[Xbox] Right Stick X (Camera / Look Horizontal)",
+                    3 => "[Xbox] Left Trigger (LT / Brake Axis)",
+                    4 => "[Xbox] Right Trigger (RT / Gas Axis)",
+                    5 => "[Xbox] Right Stick Y (Camera / Look Vertical)",
+                    _ => "[Xbox] Left Stick X (Steer / Horizontal)"
+                };
+            }
+
+            return index switch
+            {
+                0 => "[Xbox] Xbox X (Square / West / Shift Down)",
+                1 => "[Xbox] Xbox A (Cross / South / Handbrake)",
+                2 => "[Xbox] Xbox B (Circle / East)",
+                3 => "[Xbox] Xbox Y (Triangle / North / Shift Up)",
+                4 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
+                5 => "[Xbox] Xbox RB (Right Bumper / R1)",
+                8 => "[Xbox] Xbox View (Back / Map / Share)",
+                9 => "[Xbox] Xbox Menu (Start / Options)",
+                10 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
+                11 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
+                12 => "[Xbox] Xbox Guide (Home / Guide)",
+                128 => "[Xbox] D-Pad Up",
+                129 => "[Xbox] D-Pad Right",
+                130 => "[Xbox] D-Pad Down",
+                131 => "[Xbox] D-Pad Left",
+                _ => "[Xbox] Xbox A (Cross / South / Handbrake)"
+            };
+        }
 
         bool isMoza = category == DeviceHardwareCategory.MozaEsxWheel || category == DeviceHardwareCategory.MozaWheel;
 
@@ -562,43 +647,6 @@ public partial class MainWindowViewModel : ViewModelBase
             };
         }
 
-        if (category == DeviceHardwareCategory.PlayStationController || category == DeviceHardwareCategory.NintendoController)
-        {
-            if (type == InputType.Axis)
-            {
-                return index switch
-                {
-                    0 => "[Xbox] Left Stick X (Steer / Horizontal)",
-                    1 => "[Xbox] Left Stick Y (Steer / Vertical)",
-                    2 => "[Xbox] Right Stick X (Camera / Look Horizontal)",
-                    3 => "[Xbox] Left Trigger (LT / Brake Axis)",
-                    4 => "[Xbox] Right Trigger (RT / Gas Axis)",
-                    5 => "[Xbox] Right Stick Y (Camera / Look Vertical)",
-                    _ => "[Xbox] Left Stick X (Steer / Horizontal)"
-                };
-            }
-
-            return index switch
-            {
-                0 => "[Xbox] Xbox X (Square / West / Shift Down)",
-                1 => "[Xbox] Xbox A (Cross / South / Handbrake)",
-                2 => "[Xbox] Xbox B (Circle / East)",
-                3 => "[Xbox] Xbox Y (Triangle / North / Shift Up)",
-                4 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
-                5 => "[Xbox] Xbox RB (Right Bumper / R1)",
-                8 => "[Xbox] Xbox View (Back / Map / Share)",
-                9 => "[Xbox] Xbox Menu (Start / Options)",
-                10 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
-                11 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
-                12 => "[Xbox] Xbox Guide (Home / Guide)",
-                128 => "[Xbox] D-Pad Up",
-                129 => "[Xbox] D-Pad Right",
-                130 => "[Xbox] D-Pad Down",
-                131 => "[Xbox] D-Pad Left",
-                _ => "[Xbox] Xbox A (Cross / South / Handbrake)"
-            };
-        }
-
         if (type == InputType.Axis)
         {
             return index switch
@@ -639,7 +687,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (_listeningEntry == entry)
         {
             entry.SourceDisplayName = "Click to Bind";
-            MappingStatus = "Active";
+            MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
             _listeningEntry = null;
             _axisBaselines.Clear();
             return;
@@ -662,7 +710,6 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Bulk Selection & Removal Commands
     [RelayCommand]
     public void SelectAllMappings()
     {
@@ -688,6 +735,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
@@ -716,10 +764,10 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
-    // Settings Modal Commands
     [RelayCommand]
     public void OpenSettings() => IsSettingsOpen = true;
 
@@ -761,7 +809,6 @@ public partial class MainWindowViewModel : ViewModelBase
         SaveAppSettings();
     }
 
-    // Velopack Update Methods
     [RelayCommand]
     public async Task CheckForUpdatesManual()
     {
@@ -836,7 +883,6 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Auto-Bind Wizard Commands
     [RelayCommand]
     public async Task OpenAutoBindWizard()
     {
@@ -921,10 +967,10 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
-    // Device Grouping & Row Controls
     public void RebuildGroupedMappings()
     {
         var expandedStates = GroupedMappings.ToDictionary(g => g.DeviceName, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
@@ -963,6 +1009,7 @@ public partial class MainWindowViewModel : ViewModelBase
             TargetOutput = defaultTarget
         });
         RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
@@ -988,6 +1035,7 @@ public partial class MainWindowViewModel : ViewModelBase
             TargetOutput = defaultTarget
         });
         RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
@@ -997,10 +1045,10 @@ public partial class MainWindowViewModel : ViewModelBase
         if (_listeningEntry == entry) _listeningEntry = null;
         Mappings.Remove(entry);
         RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
 
-    // Dependency Controls
     public void RefreshDependencyStates()
     {
         var status = DependencyManager.GetCurrentStatus();
@@ -1070,7 +1118,6 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void DismissDependencyBanner() => IsDependencyBannerOpen = false;
 
-    // HidHide Controls
     [RelayCommand]
     public void OpenHidHideMenu()
     {
@@ -1082,16 +1129,33 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void CloseHidHideMenu()
     {
-        IsHidHideMenuOpen = false;
+        var blockedIds = HidDevices
+            .Where(d => d.IsHidden && !HidHideManager.IsVirtualDevice(d.FriendlyName, d.DeviceInstanceId))
+            .Select(d => d.DeviceInstanceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _hidHideManager.SyncBlockedInstances(blockedIds);
+
+        _currentSettings.BlockedInstanceIds = blockedIds;
+        _currentSettings.WhitelistedApplications = _hidHideManager.GetApplicationExemptions();
+        _currentSettings.IsHidHideActive = IsHidHideActive;
+        _currentSettings.IsAppListInverted = IsAppListInverted;
+
         SaveAppSettings();
+        IsHidHideMenuOpen = false;
     }
 
     public void RefreshHidDevices()
     {
         HidDevices.Clear();
-        foreach (var item in _hidHideManager.GetConnectedHidDevices())
+        var devices = _hidHideManager.GetConnectedHidDevices();
+        var currentDriverBlocked = new HashSet<string>(_hidHideManager.GetBlockedInstanceIds(), StringComparer.OrdinalIgnoreCase);
+        var savedBlocked = new HashSet<string>(_currentSettings.BlockedInstanceIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in devices)
         {
-            if (_currentSettings.BlockedInstanceIds.Contains(item.DeviceInstanceId, StringComparer.OrdinalIgnoreCase))
+            if (currentDriverBlocked.Contains(item.DeviceInstanceId) || savedBlocked.Contains(item.DeviceInstanceId))
             {
                 item.IsHidden = true;
                 _hidHideManager.ToggleDeviceHiding(item, true);
@@ -1111,6 +1175,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public void ToggleHidDevice(HidDeviceItem item)
     {
         _hidHideManager.ToggleDeviceHiding(item, item.IsHidden);
+        _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         SaveAppSettings();
     }
 
@@ -1119,12 +1184,13 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         foreach (var device in HidDevices)
         {
-            if (!device.IsHidden)
+            if (!HidHideManager.IsVirtualDevice(device.FriendlyName, device.DeviceInstanceId))
             {
                 device.IsHidden = true;
                 _hidHideManager.ToggleDeviceHiding(device, true);
             }
         }
+        _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         SaveAppSettings();
     }
 
@@ -1133,12 +1199,11 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         foreach (var device in HidDevices)
         {
-            if (device.IsHidden)
-            {
-                device.IsHidden = false;
-                _hidHideManager.ToggleDeviceHiding(device, false);
-            }
+            device.IsHidden = false;
+            _hidHideManager.ToggleDeviceHiding(device, false);
         }
+        _currentSettings.BlockedInstanceIds = new List<string>();
+        _hidHideManager.SyncBlockedInstances(new List<string>());
         SaveAppSettings();
     }
 
@@ -1203,7 +1268,6 @@ public partial class MainWindowViewModel : ViewModelBase
         SaveAppSettings();
     }
 
-    // Profile & Settings Persistence
     private void OnMappingsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.NewItems != null) foreach (MappingEntry item in e.NewItems) item.PropertyChanged += OnMappingEntryPropertyChanged;
@@ -1218,6 +1282,8 @@ public partial class MainWindowViewModel : ViewModelBase
             e.PropertyName == nameof(MappingEntry.IsSelected)) return;
 
         if (e.PropertyName == nameof(MappingEntry.SourceDeviceName)) RebuildGroupedMappings();
+        if (e.PropertyName == nameof(MappingEntry.TargetDeviceId)) UpdateVirtualDeviceSummary();
+
         AutoSaveCurrentProfile();
     }
 
@@ -1245,6 +1311,9 @@ public partial class MainWindowViewModel : ViewModelBase
                     CloseMinimizesToTray = settings.CloseMinimizesToTray;
                     AutoCheckForUpdates = settings.AutoCheckForUpdates;
 
+                    IsVirtualOutputActive = settings.IsVirtualOutputActive;
+                    _feeder.SetActive(IsVirtualOutputActive);
+
                     IsHidHideActive = settings.IsHidHideActive;
                     _hidHideManager.SetGlobalHidingState(IsHidHideActive);
 
@@ -1253,7 +1322,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     if (settings.BlockedInstanceIds != null && settings.BlockedInstanceIds.Count > 0)
                     {
-                        _hidHideManager.ApplyBlockedInstances(settings.BlockedInstanceIds);
+                        _hidHideManager.SyncBlockedInstances(settings.BlockedInstanceIds);
+                    }
+
+                    if (settings.WhitelistedApplications != null && settings.WhitelistedApplications.Count > 0)
+                    {
+                        foreach (var app in settings.WhitelistedApplications)
+                        {
+                            _hidHideManager.AddApplicationExemption(app);
+                        }
                     }
 
                     if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
@@ -1282,9 +1359,11 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.MinimizeToTray = MinimizeToTray;
             _currentSettings.CloseMinimizesToTray = CloseMinimizesToTray;
             _currentSettings.AutoCheckForUpdates = AutoCheckForUpdates;
+            _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
             _currentSettings.IsHidHideActive = IsHidHideActive;
             _currentSettings.IsAppListInverted = IsAppListInverted;
             _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
+            _currentSettings.WhitelistedApplications = _hidHideManager.GetApplicationExemptions();
 
             File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -1386,6 +1465,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     Mappings.Clear();
                     foreach (var m in profile.Mappings) Mappings.Add(m);
                     RebuildGroupedMappings();
+                    UpdateVirtualDeviceSummary();
                     return;
                 }
             }
@@ -1393,6 +1473,7 @@ public partial class MainWindowViewModel : ViewModelBase
             Mappings.Clear();
             AddMapping();
             RebuildGroupedMappings();
+            UpdateVirtualDeviceSummary();
         }
         finally
         {

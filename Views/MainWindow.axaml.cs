@@ -1,6 +1,7 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using ECCR.Models;
 using ECCR.ViewModels;
 
 namespace ECCR.Views;
@@ -16,14 +17,12 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainWindowViewModel vm)
         {
-            // If already shutting down, proceed with closure
             if (vm.IsShuttingDown)
             {
                 base.OnClosing(e);
                 return;
             }
 
-            // If configured to minimize to system tray, cancel close and hide
             if (vm.CloseMinimizesToTray)
             {
                 e.Cancel = true;
@@ -31,7 +30,6 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // If close minimizer is off, treat 'X' as a full application exit
             vm.IsShuttingDown = true;
             vm.CleanupAndShutdown();
             Environment.Exit(0);
@@ -56,8 +54,22 @@ public partial class MainWindow : Window
 
     private void OnBulkTargetSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is ComboBox cb && cb.SelectedItem is uint targetId && cb.DataContext is Models.DeviceMappingGroup group)
+        if (sender is ComboBox cb && cb.DataContext is DeviceMappingGroup group)
         {
+            uint targetId = 1;
+            if (cb.SelectedItem is PlayerTargetOption opt)
+            {
+                targetId = opt.Id;
+            }
+            else if (cb.SelectedItem is uint u)
+            {
+                targetId = u;
+            }
+            else
+            {
+                return;
+            }
+
             if (DataContext is MainWindowViewModel vm)
             {
                 vm.BulkChangeDeviceTarget(group.DeviceName, targetId);

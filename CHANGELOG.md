@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.6] - 2026-08-25
+
+### Added
+- **Multiplayer Split-Screen UI Integration (P1–P4)**: Added intuitive visual player selection badges (`P1`, `P2`, `P3`, `P4`) with distinct theme colors across mapping rows, device group headers, and target dropdowns.
+- **Dynamic Multi-Device Target Routing**: ViGEmBus now dynamically provisions up to 4 isolated Virtual Xbox 360 controller target channels (`Target #1` through `Target #4`), allowing multiple physical controllers or separate sim-rig peripherals to map independently for local split-screen games.
+- **Main Window Live Target Indicator**: Added a live footer status summary reflecting the count of connected physical devices mapped to each virtual player slot.
+
+### Fixed
+- **HidHide Device Persistence & Sync**: Fixed an issue where cloaked devices were unblocked on dialog closure by implementing bidirectional driver blocklist synchronization (`SyncBlockedInstances`).
+- **HidHide Virtual Device Classification**: Resolved a driver unblock bug where standard HID gamepads with empty product strings were misclassified as virtual devices.
+- **Settings Serialization**: Ensured `BlockedInstanceIds`, cloaking state, and application whitelists are committed immediately to `settings.json` upon dialog confirmation.
+
+---
+
 ## [1.0.5] - 2026-08-24
 
 ### Added

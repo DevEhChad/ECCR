@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Nefarius.ViGEm.Client;
 using Nefarius.ViGEm.Client.Targets;
 using Nefarius.ViGEm.Client.Targets.Xbox360;
@@ -11,6 +12,9 @@ public class VirtualFeederService : IVirtualFeeder
     private readonly ViGEmClient? _viGEmClient;
     private readonly Dictionary<uint, IXbox360Controller> _xboxControllers = new();
     private readonly object _lock = new();
+    private bool _isActive = true;
+
+    public bool IsActive => _isActive;
 
     public VirtualFeederService()
     {
@@ -24,12 +28,42 @@ public class VirtualFeederService : IVirtualFeeder
         }
     }
 
+    public void SetActive(bool active)
+    {
+        lock (_lock)
+        {
+            _isActive = active;
+            if (!active)
+            {
+                foreach (var controller in _xboxControllers.Values)
+                {
+                    try
+                    {
+                        controller.Disconnect();
+                    }
+                    catch { }
+                }
+                _xboxControllers.Clear();
+            }
+        }
+    }
+
+    public List<uint> GetActivePlayerTargetIds()
+    {
+        lock (_lock)
+        {
+            return _xboxControllers.Keys.OrderBy(k => k).ToList();
+        }
+    }
+
     private IXbox360Controller? GetOrCreateXboxController(uint targetDeviceId)
     {
-        if (_viGEmClient == null) return null;
+        if (!_isActive || _viGEmClient == null) return null;
 
         lock (_lock)
         {
+            if (!_isActive) return null;
+
             if (_xboxControllers.TryGetValue(targetDeviceId, out var existing))
             {
                 return existing;
@@ -51,7 +85,8 @@ public class VirtualFeederService : IVirtualFeeder
 
     public void UpdateAxis(uint targetDeviceId, string targetOutput, double normalizedValue)
     {
-        // Strict isolation: non-Xbox channels never touch Xbox controllers
+        if (!_isActive) return;
+
         if (!targetOutput.StartsWith("[Xbox]", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -100,7 +135,8 @@ public class VirtualFeederService : IVirtualFeeder
 
     public void UpdateButton(uint targetDeviceId, string targetOutput, bool isPressed)
     {
-        // Strict isolation: non-Xbox channels never touch Xbox controllers
+        if (!_isActive) return;
+
         if (!targetOutput.StartsWith("[Xbox]", StringComparison.OrdinalIgnoreCase))
         {
             return;
