@@ -2,160 +2,189 @@
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.ServiceProcess;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace ECCR.Services;
 
-public class DependencyStatus
+public enum DriverType
 {
-    public (bool IsInstalled, bool IsRunning) ViGEm { get; set; }
-    public (bool IsInstalled, bool IsRunning) HidHide { get; set; }
-    public (bool IsInstalled, bool IsRunning) VJoy { get; set; }
-    public bool HasIssues => !ViGEm.IsInstalled || !ViGEm.IsRunning ||
-                             !HidHide.IsInstalled || !HidHide.IsRunning ||
-                             !VJoy.IsInstalled || !VJoy.IsRunning;
+    ViGEmBus,
+    HidHide,
+    VJoy
 }
 
-public static class DependencyManager
+public class DriverStatusInfo
 {
-    public static DependencyStatus GetCurrentStatus()
+    public bool IsInstalled { get; set; }
+    public string Version { get; set; } = "Not Found";
+    public string? UninstallString { get; set; }
+}
+
+public class DependencyManager
+{
+    private static readonly HttpClient _httpClient = new();
+    private static readonly string TempDriverFolder = Path.Combine(Path.GetTempPath(), "ECCR_Drivers");
+
+    // Official direct download URLs
+    private const string ViGEmBusUrl = "https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe";
+    private const string HidHideUrl = "https://github.com/nefarius/HidHide/releases/download/v1.5.230.0/HidHide_1.5.230_x64.exe";
+    private const string VJoyUrl = "https://github.com/jshafer817/vJoy/releases/latest/download/vJoySetup.exe";
+
+    public DriverStatusInfo CheckViGEmBus()
     {
-        return new DependencyStatus
+        return CheckServiceOrRegistry("ViGEmBus", "Virtual Gamepad Emulation Bus");
+    }
+
+    public DriverStatusInfo CheckHidHide()
+    {
+        return CheckServiceOrRegistry("HidHide", "HidHide");
+    }
+
+    public DriverStatusInfo CheckVJoy()
+    {
+        return CheckServiceOrRegistry("vJoy", "vJoy");
+    }
+
+    public async Task<bool> InstallDriverAsync(DriverType driver, IProgress<string>? progress = null)
+    {
+        string url = driver switch
         {
-            ViGEm = CheckDriverStatus("ViGEmBus", @"SYSTEM\CurrentControlSet\Services\ViGEmBus"),
-            HidHide = CheckDriverStatus("HidHide", @"SYSTEM\CurrentControlSet\Services\HidHide"),
-            VJoy = CheckVJoyStatus()
+            DriverType.ViGEmBus => ViGEmBusUrl,
+            DriverType.HidHide => HidHideUrl,
+            DriverType.VJoy => VJoyUrl,
+            _ => throw new ArgumentOutOfRangeException(nameof(driver))
         };
-    }
 
-    private static (bool IsInstalled, bool IsRunning) CheckDriverStatus(string serviceName, string registrySubKey)
-    {
-        bool isInstalled = false;
-        bool isRunning = false;
+        string fileName = Path.GetFileName(new Uri(url).LocalPath);
+        Directory.CreateDirectory(TempDriverFolder);
+        string destinationPath = Path.Combine(TempDriverFolder, fileName);
 
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(registrySubKey);
-            if (key != null) isInstalled = true;
-        }
-        catch { }
+            progress?.Report($"Downloading {driver}...");
+            byte[] fileBytes = await _httpClient.GetByteArrayAsync(url);
+            await File.WriteAllBytesAsync(destinationPath, fileBytes);
 
-        try
-        {
-            using var sc = new ServiceController(serviceName);
-            isInstalled = true;
-            isRunning = (sc.Status == ServiceControllerStatus.Running);
-        }
-        catch
-        {
-            isRunning = false;
-        }
-
-        return (isInstalled, isRunning);
-    }
-
-    private static (bool IsInstalled, bool IsRunning) CheckVJoyStatus()
-    {
-        bool isInstalled = false;
-        bool isRunning = false;
-
-        try
-        {
-            using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\vjoy");
-            if (key != null) isInstalled = true;
-        }
-        catch { }
-
-        try
-        {
-            using var sc = new ServiceController("vjoy");
-            isInstalled = true;
-            isRunning = (sc.Status == ServiceControllerStatus.Running);
-        }
-        catch
-        {
-            isRunning = false;
-        }
-
-        if (!isInstalled)
-        {
-            string systemVJoyPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "vJoyInterface.dll");
-            if (File.Exists(systemVJoyPath))
-            {
-                isInstalled = true;
-                isRunning = true;
-            }
-        }
-
-        return (isInstalled, isRunning);
-    }
-
-    public static async Task<bool> StartDriverServiceAsync(string serviceName)
-    {
-        return await Task.Run(() =>
-        {
-            try
-            {
-                using var sc = new ServiceController(serviceName);
-                if (sc.Status != ServiceControllerStatus.Running)
-                {
-                    sc.Start();
-                    sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(5));
-                }
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        });
-    }
-
-    public static async Task DownloadAndInstallViGEmAsync()
-    {
-        string url = "https://github.com/nefarius/ViGEmBus/releases/latest/download/ViGEmBus_Setup_x64.exe";
-        await DownloadAndExecuteInstallerAsync(url, "ViGEmBusSetup.exe", "/quiet");
-    }
-
-    public static async Task DownloadAndInstallHidHideAsync()
-    {
-        string url = "https://github.com/nefarius/HidHide/releases/latest/download/HidHideMSI.msi";
-        await DownloadAndExecuteInstallerAsync(url, "HidHideSetup.msi", "/quiet /qn");
-    }
-
-    public static async Task DownloadAndInstallVJoyAsync()
-    {
-        string url = "https://github.com/njz3/vJoy/releases/download/v2.1.9.1/vJoySetup.exe";
-        await DownloadAndExecuteInstallerAsync(url, "vJoySetup.exe", "/SILENT");
-    }
-
-    private static async Task DownloadAndExecuteInstallerAsync(string url, string tempFileName, string arguments)
-    {
-        try
-        {
-            string tempPath = Path.Combine(Path.GetTempPath(), tempFileName);
-            using (var client = new HttpClient())
-            {
-                var bytes = await client.GetByteArrayAsync(url);
-                await File.WriteAllBytesAsync(tempPath, bytes);
-            }
-
+            progress?.Report($"Installing {driver} (Elevated)...");
             var psi = new ProcessStartInfo
             {
-                FileName = tempPath,
-                Arguments = arguments,
+                FileName = destinationPath,
                 UseShellExecute = true,
                 Verb = "runas"
             };
 
-            var proc = Process.Start(psi);
-            if (proc != null)
+            using var process = Process.Start(psi);
+            if (process != null)
             {
-                await proc.WaitForExitAsync();
+                await process.WaitForExitAsync();
+                return process.ExitCode == 0;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DependencyManager] Installation failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> UninstallDriverAsync(DriverType driver)
+    {
+        var status = driver switch
+        {
+            DriverType.ViGEmBus => CheckViGEmBus(),
+            DriverType.HidHide => CheckHidHide(),
+            DriverType.VJoy => CheckVJoy(),
+            _ => null
+        };
+
+        if (status == null || string.IsNullOrWhiteSpace(status.UninstallString))
+        {
+            Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
+            return true;
+        }
+
+        try
+        {
+            string cmd = status.UninstallString.Trim();
+            string fileName;
+            string args = "";
+
+            if (cmd.StartsWith("\""))
+            {
+                int nextQuote = cmd.IndexOf('"', 1);
+                fileName = cmd.Substring(1, nextQuote - 1);
+                args = cmd.Substring(nextQuote + 1).Trim();
+            }
+            else
+            {
+                var parts = cmd.Split(' ', 2);
+                fileName = parts[0];
+                if (parts.Length > 1) args = parts[1];
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = args,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            using var process = Process.Start(psi);
+            if (process != null)
+            {
+                await process.WaitForExitAsync();
+                return true;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DependencyManager] Uninstall failed: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    private DriverStatusInfo CheckServiceOrRegistry(string serviceName, string displayNameSubstring)
+    {
+        var info = new DriverStatusInfo();
+
+        using (var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{serviceName}"))
+        {
+            if (key != null)
+            {
+                info.IsInstalled = true;
+                info.Version = "Active (Service)";
+            }
+        }
+
+        string[] uninstallKeys =
+        {
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        };
+
+        foreach (var path in uninstallKeys)
+        {
+            using var root = Registry.LocalMachine.OpenSubKey(path);
+            if (root == null) continue;
+
+            foreach (var subKeyName in root.GetSubKeyNames())
+            {
+                using var subKey = root.OpenSubKey(subKeyName);
+                var name = subKey?.GetValue("DisplayName")?.ToString();
+                if (name != null && name.Contains(displayNameSubstring, StringComparison.OrdinalIgnoreCase))
+                {
+                    info.IsInstalled = true;
+                    info.Version = subKey?.GetValue("DisplayVersion")?.ToString() ?? "Installed";
+                    info.UninstallString = subKey?.GetValue("UninstallString")?.ToString();
+                    return info;
+                }
+            }
+        }
+
+        return info;
     }
 }

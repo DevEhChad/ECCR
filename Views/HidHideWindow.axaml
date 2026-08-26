@@ -10,5 +10,11 @@
         Foreground="White">
     <Grid Margin="20">
         <TextBlock Text="HidHide Embedded Manager" FontSize="18" FontWeight="Bold"/>
+        
+        <Border IsVisible="False" Background="#80000000">
+            <StackPanel>
+                <TextBlock Text="Create New Profile" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

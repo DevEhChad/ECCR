@@ -115,4 +115,7 @@ public partial class MappingEntry : ObservableObject
         LiveOutputPercentage = Math.Clamp(normalized, 0.0, 1.0);
         return LiveOutputPercentage;
     }
+    
+    public string Glyph { get; set; } = string.Empty;
+    public string Foreground { get; set; } = string.Empty;
 }

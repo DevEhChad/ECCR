@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Security.Cryptography.X509Certificates;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
@@ -7,6 +8,7 @@ namespace ECCR.Converters;
 
 public class BadgeInfo
 {
+    public string SourceDisplayName { get; set; } = string.Empty;
     public bool HasBadge { get; set; } = false;
     public string Glyph { get; set; } = string.Empty;
     public IBrush Background { get; set; } = Brushes.Transparent;
