@@ -8,13 +8,13 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
     <!-- Single Source of Truth for App Version -->
-    <Version>1.0.7-beta1</Version>
+    <Version>1.0.7</Version>
 
     <!-- Application & Task Manager Metadata -->
     <Product>EhChads Controller Remapper</Product>
     <AssemblyTitle>EhChads Controller Remapper</AssemblyTitle>
     <Description>EhChads Controller Remapper (ECCR)</Description>
-    <Company>DevEhChad</Company>
+    <Company>EhChadServices</Company>
 
     <!-- Exclude release and nested folders -->
     <DefaultItemExcludes>$(DefaultItemExcludes);publish/**;Releases/**;ECCR/**</DefaultItemExcludes>

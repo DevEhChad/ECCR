@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.7] - 2026-08-26
+
+### 🚀 Added
+- **Automated Driver Setup on First Run:** ECCR now automatically detects missing prerequisites (`ViGEmBus`, `HidHide`, `vJoy`) upon initial launch and triggers silent installation routines without manual setup required.
+- **Unified In-App Driver Manager:** 1-click install, repair, and uninstall actions directly inside the Driver Status dialog with real-time progress indicators.
+- **Enhanced System Tray Lifecycle:** Added native right-click tray menu actions (*Open ECCR*, *Exit*) with instant, graceful driver teardown and unmanaged thread termination on shutdown.
+- **CLI Startup Flags:** Added support for `--minimized` argument to launch ECCR silently into the system tray on Windows startup.
+
+### 🔄 Changed
+- **Rebranding:** Standardized application title and metadata to **EhChads Controller Remapper (ECCR)** across the window title bar, Task Manager, executable properties, and system tray.
+- **Dynamic Single-Source Versioning:** Version numbers are now resolved directly from assembly metadata for consistent version displays across settings, update prompts, and title bars.
+- **Updated Presets & Axis Detection:** Refined auto-bind wizard channel guessing and automatic axis inversion heuristics for Moza wheelbases, standalone sim pedals, and flight sticks.
+
+### 🛠️ Fixed
+- **Driver Health Check Synchronization:** Resolved an issue where driver service status banners could report false-negative running states after fresh installations.
+- **Device Hiding Conflict:** Fixed an issue where virtual feeder targets were not properly filtered from the physical HidHide blocklist.
+
+---
+
 ## [1.0.6] - 2026-08-25
 
 ### Added
