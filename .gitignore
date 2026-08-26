@@ -1,19 +1,35 @@
-## Build and Compilation Outputs
-bin/
-obj/
-publish/
-releases/
+## .NET Build & Compilation Outputs
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+[Dd]ist/
 *.nupkg
+publish/
+Releases/
 
-## IDE & Editor Artifacts
+## Velopack Releases & Local Packaging
+[Rr]eleases/
+.velopack/
+
+## IDE & Editor Artifacts (Rider / Visual Studio / VS Code)
 .idea/
 .vs/
+.vscode/
 *.user
 *.userosscache
-*.sln.docstates
 *.suo
 *.userprefs
+*.sln.docstates
 *.workspace
+
+## Dependencies & Package Managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+## AI Tool Artifacts
+.aider*
 
 ## Operating System & Temporary Files
 Thumbs.db
@@ -22,22 +38,7 @@ Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
 
-## Velopack local build cache
-.velopack/
-.aider*
-
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# .NET Build outputs
-[Bb]in/
-[Oo]bj/
-publish/
-Releases/
-*.user
-*.suo
-.vs/
-.idea/
+## Zips files
+ECCR_Part1_Core.zip
+ECCR_Part2_Logic.zip
+ECCR_Part3_UI_Assets.zip
