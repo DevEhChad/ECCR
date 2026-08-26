@@ -44,5 +44,5 @@ ECCR_Part2_Logic.zip
 ECCR_Part3_UI_Assets.zip
 
 ## builders
-release.ps1
+build-release.ps1
 build-dev.ps1
