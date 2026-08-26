@@ -4,6 +4,8 @@
 [Pp]ublish/
 [Dd]ist/
 *.nupkg
+publish/
+Releases/
 
 ## Velopack Releases & Local Packaging
 [Rr]eleases/
