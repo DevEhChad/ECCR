@@ -7,12 +7,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
-    <!-- Versioning -->
-    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>1.0.6</Version>
-    <AssemblyVersion>1.0.6.0</AssemblyVersion>
-    <FileVersion>1.0.6.0</FileVersion>
-    <InformationalVersion>1.0.6</InformationalVersion>
+    <!-- Single Source of Truth for App Version -->
+    <Version>1.0.7-beta1</Version>
+
+    <!-- Application & Task Manager Metadata -->
+    <Product>EhChads Controller Remapper</Product>
+    <AssemblyTitle>EhChads Controller Remapper</AssemblyTitle>
+    <Description>EhChads Controller Remapper (ECCR)</Description>
+    <Company>DevEhChad</Company>
 
     <!-- Exclude release and nested folders -->
     <DefaultItemExcludes>$(DefaultItemExcludes);publish/**;Releases/**;ECCR/**</DefaultItemExcludes>
@@ -36,7 +38,6 @@
     <PackageReference Include="System.Management" Version="9.0.0" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" />
     <PackageReference Include="Velopack" Version="1.2.0" />
-    <!-- Overrides transitive Avalonia dependency to clear vulnerability warning -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 </Project>

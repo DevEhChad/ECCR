@@ -19,7 +19,7 @@
 
     <Window.Resources>
         <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
-        <converters:PlayerTargetConverter x:Key="PlayerTargetConverter"/>
+        <converters:BoolToRepairTextConverter x:Key="BoolToRepairTextConverter"/>
     </Window.Resources>
 
     <Grid>
@@ -42,7 +42,7 @@
                             </Canvas>
                         </Viewbox>
                         
-                        <TextBlock Text="EhChadsControllerRemapper" FontWeight="Bold" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock Text="EhChads Controller Remapper" FontWeight="Bold" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -287,7 +287,7 @@
                                                               Background="#161B26">
                                                         <ComboBox.ItemTemplate>
                                                             <DataTemplate x:DataType="x:String">
-                                                                <Grid ColumnDefinitions="Auto, *">
+                                                                <Grid ColumnDefinitions="Auto, *" x:CompileBindings="False">
                                                                     <Border Grid.Column="0" 
                                                                             x:DataType="converters:BadgeInfo"
                                                                             DataContext="{Binding Converter={StaticResource ButtonBadgeConverter}}"
@@ -512,9 +512,11 @@
 
         <!-- SETTINGS MODAL -->
         <Border IsVisible="{Binding IsSettingsOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="24" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="24" Width="720" MaxHeight="640" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid RowDefinitions="Auto, *, Auto">
-                    <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,16">
+                    
+                    <!-- Header -->
+                    <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,14">
                         <Grid ColumnDefinitions="Auto, *, Auto">
                             <Viewbox Grid.Column="0" Width="28" Height="28" Margin="0,0,12,0" VerticalAlignment="Center">
                                 <Canvas Width="48" Height="48">
@@ -530,15 +532,18 @@
                             </Viewbox>
 
                             <StackPanel Grid.Column="1" Spacing="2">
-                                <TextBlock Text="⚙️ Application Settings &amp; Updates" FontWeight="Bold" FontSize="16" Foreground="White"/>
-                                <TextBlock Text="Configure startup preferences, system tray behavior, and app updates." Foreground="#8B95A5" FontSize="11"/>
+                                <TextBlock Text="⚙️ Application Settings &amp; Modules" FontWeight="Bold" FontSize="16" Foreground="White"/>
+                                <TextBlock Text="Configure startup preferences, drivers, Velopack updates, and app state." Foreground="#8B95A5" FontSize="11"/>
                             </StackPanel>
                             <Button Grid.Column="2" Content="✕" Command="{Binding CloseSettingsCommand}" Width="32" Height="32" CornerRadius="6" Background="#262D3D" Foreground="White"/>
                         </Grid>
                     </Border>
 
-                    <ScrollViewer Grid.Row="1" MaxHeight="420">
+                    <!-- Scrollable Settings Body -->
+                    <ScrollViewer Grid.Row="1" MaxHeight="450" Padding="0,0,8,0">
                         <StackPanel Spacing="14">
+                            
+                            <!-- 1. System Integration -->
                             <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="System Integration &amp; Tray Behavior" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
@@ -576,6 +581,75 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- 2. Driver & Module Lifecycle Management -->
+                            <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                                <StackPanel Spacing="12">
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Driver &amp; System Module Management" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding DriverInstallProgressText}" IsVisible="{Binding IsBusyWithDriverAction}" Foreground="#FFB84D" FontSize="11" FontWeight="SemiBold"/>
+                                    </Grid>
+                                    
+                                    <!-- ViGEmBus Row -->
+                                    <Grid ColumnDefinitions="*, Auto, Auto">
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="ViGEmBus (Virtual Controller Emulation)" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                            <TextBlock Text="Required for Xbox 360 &amp; DualShock feeder output." FontSize="11" Foreground="#888899"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" 
+                                                Content="{Binding IsViGEmInstalled, Converter={StaticResource BoolToRepairTextConverter}}" 
+                                                Command="{Binding InstallDriverCommand}" CommandParameter="ViGEmBus" 
+                                                IsEnabled="{Binding !IsBusyWithDriverAction}"
+                                                Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                                        <Button Grid.Column="2" 
+                                                Content="Uninstall" 
+                                                Command="{Binding UninstallDriverCommand}" CommandParameter="ViGEmBus"
+                                                IsEnabled="{Binding IsViGEmInstalled}"
+                                                Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                                    </Grid>
+                                    
+                                    <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                                    <!-- HidHide Row -->
+                                    <Grid ColumnDefinitions="*, Auto, Auto">
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="Nefarius HidHide (Device Cloaking Driver)" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                            <TextBlock Text="Hides physical devices from games to prevent double-input bugs." FontSize="11" Foreground="#888899"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" 
+                                                Content="{Binding IsHidHideServiceInstalled, Converter={StaticResource BoolToRepairTextConverter}}" 
+                                                Command="{Binding InstallDriverCommand}" CommandParameter="HidHide" 
+                                                IsEnabled="{Binding !IsBusyWithDriverAction}"
+                                                Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                                        <Button Grid.Column="2" 
+                                                Content="Uninstall" 
+                                                Command="{Binding UninstallDriverCommand}" CommandParameter="HidHide"
+                                                IsEnabled="{Binding IsHidHideServiceInstalled}"
+                                                Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                                    </Grid>
+
+                                    <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                                    <!-- vJoy Row -->
+                                    <Grid ColumnDefinitions="*, Auto, Auto">
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="vJoy (Virtual Joystick / DirectInput Axis Output)" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                            <TextBlock Text="Required for DirectInput wheel splits and custom joystick output." FontSize="11" Foreground="#888899"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" 
+                                                Content="{Binding IsVJoyInstalled, Converter={StaticResource BoolToRepairTextConverter}}" 
+                                                Command="{Binding InstallDriverCommand}" CommandParameter="VJoy" 
+                                                IsEnabled="{Binding !IsBusyWithDriverAction}"
+                                                Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                                        <Button Grid.Column="2" 
+                                                Content="Uninstall" 
+                                                Command="{Binding UninstallDriverCommand}" CommandParameter="VJoy"
+                                                IsEnabled="{Binding IsVJoyInstalled}"
+                                                Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 3. Velopack Updates -->
                             <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="Software Updates (Velopack)" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
@@ -602,11 +676,26 @@
                                     </Border>
                                 </StackPanel>
                             </Border>
+
+                            <!-- 4. Factory Reset App State -->
+                            <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#3D2026" BorderThickness="1">
+                                <Grid ColumnDefinitions="*, Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Reset Application Settings &amp; Profiles" FontWeight="Bold" FontSize="13" Foreground="#FFAAAA"/>
+                                        <TextBlock Text="Clears your settings.json and resets profiles back to defaults." FontSize="11" Foreground="#888899"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" 
+                                            Content="Reset to Factory Defaults" 
+                                            Command="{Binding ResetAllSettingsCommand}"
+                                            Background="#331A20" BorderBrush="#772A38" BorderThickness="1" Foreground="#FFAAAA" 
+                                            FontSize="11" FontWeight="SemiBold" Padding="14,6" CornerRadius="5"/>
+                                </Grid>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
 
                     <!-- SETTINGS FOOTER -->
-                    <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="0,16,0,0">
+                    <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="0,14,0,0">
                         <TextBlock Grid.Column="0" 
                                    Text="{Binding DisplayVersionText}" 
                                    FontSize="12" 

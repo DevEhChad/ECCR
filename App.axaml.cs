@@ -23,25 +23,34 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _mainViewModel = new MainWindowViewModel();
-            _mainWindow = new MainWindow
+            if (Design.IsDesignMode)
             {
-                DataContext = _mainViewModel
-            };
-
-            desktop.MainWindow = _mainWindow;
-
-            // Handle start on Windows boot minimized
-            bool startMinimized = desktop.Args != null && desktop.Args.Any(a => a.Contains("minimized", StringComparison.OrdinalIgnoreCase));
-            if (startMinimized)
-            {
-                _mainWindow.WindowState = WindowState.Minimized;
+                desktop.MainWindow = new MainWindow
+                {
+                    DataContext = null
+                };
             }
-
-            desktop.Exit += (sender, args) =>
+            else
             {
-                PerformFullExit();
-            };
+                _mainViewModel = new MainWindowViewModel();
+                _mainWindow = new MainWindow
+                {
+                    DataContext = _mainViewModel
+                };
+
+                desktop.MainWindow = _mainWindow;
+                
+                bool startMinimized = desktop.Args != null && desktop.Args.Any(a => a.Contains("minimized", StringComparison.OrdinalIgnoreCase));
+                if (startMinimized)
+                {
+                    _mainWindow.WindowState = WindowState.Minimized;
+                }
+
+                desktop.Exit += (sender, args) =>
+                {
+                    PerformFullExit();
+                };
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

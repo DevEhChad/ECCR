@@ -25,6 +25,7 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly InputDeviceManager _deviceManager;
     private readonly HidHideManager _hidHideManager;
+    private readonly DependencyManager _dependencyManager = new();
     private readonly VirtualFeederService _feeder = new();
     private readonly UpdateService _updateService = new();
     private readonly Stopwatch _pollStopwatch = new();
@@ -47,13 +48,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     // Dynamic Version & Clean Window Title
     [ObservableProperty]
-    private string _appVersion = "v1.0.5";
+    private string _appVersion = string.Empty;
 
     [ObservableProperty]
-    private string _displayVersionText = "Version 1.0.5";
+    private string _displayVersionText = string.Empty;
 
     [ObservableProperty]
-    private string _windowTitle = "EhChadsControllerRemapper - ECCR";
+    private string _windowTitle = "EhChads Controller Remapper - ECCR";
 
     // Update Modals
     [ObservableProperty]
@@ -138,25 +139,30 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isDependencyBannerOpen = false;
 
     [ObservableProperty]
-    private bool _isViGEmInstalled = true;
+    private bool _isViGEmInstalled = false;
 
     [ObservableProperty]
-    private bool _isViGEmRunning = true;
+    private bool _isViGEmRunning = false;
 
     [ObservableProperty]
-    private bool _isHidHideServiceInstalled = true;
+    private bool _isHidHideServiceInstalled = false;
 
     [ObservableProperty]
-    private bool _isHidHideServiceRunning = true;
+    private bool _isHidHideServiceRunning = false;
 
     [ObservableProperty]
-    private bool _isVJoyInstalled = true;
+    private bool _isVJoyInstalled = false;
 
     [ObservableProperty]
-    private bool _isVJoyRunning = true;
+    private bool _isVJoyRunning = false;
 
     [ObservableProperty]
     private bool _isBusyWithDriverAction = false;
+
+    [ObservableProperty]
+    private string _driverInstallProgressText = string.Empty;
+
+    public bool HasMissingDependencies => !IsViGEmInstalled || !IsHidHideServiceInstalled || !IsVJoyInstalled;
 
     // HidHide Modal Controls
     [ObservableProperty]
@@ -199,6 +205,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _profilesDirectory = Path.Combine(_baseDirectory, "Profiles");
         _settingsFilePath = Path.Combine(_baseDirectory, "settings.json");
 
+        // 1. Check if this is the first run BEFORE settings get written to disk
+        bool isFirstRun = !File.Exists(_settingsFilePath);
+
         Directory.CreateDirectory(_profilesDirectory);
 
         ResolveAppVersion();
@@ -237,14 +246,54 @@ public partial class MainWindowViewModel : ViewModelBase
         RefreshDependencyStates();
         UpdateVirtualDeviceSummary();
 
+        // 2. Replace Program.IsFirstRun with the isFirstRun boolean
+        if (isFirstRun && HasMissingDependencies)
+        {
+            _ = AutoInstallMissingDriversAsync();
+        }
+
         if (AutoCheckForUpdates)
         {
             _ = CheckForUpdatesAsync(isBackgroundCheck: true);
         }
     }
 
+    private async Task AutoInstallMissingDriversAsync()
+    {
+        if (!IsViGEmInstalled) await InstallDriver("ViGEmBus");
+        if (!IsHidHideServiceInstalled) await InstallDriver("HidHide");
+        if (!IsVJoyInstalled) await InstallDriver("VJoy");
+    }
+
     private void ResolveAppVersion()
     {
+        string resolved = "1.0.0";
+
+        try
+        {
+            var assembly = Assembly.GetEntryAssembly() ?? typeof(MainWindowViewModel).Assembly;
+
+            var infoVer = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(infoVer))
+            {
+                resolved = infoVer.Split('+')[0].Trim().TrimStart('v', 'V');
+            }
+            else if (assembly.GetName().Version is { } ver)
+            {
+                resolved = $"{ver.Major}.{ver.Minor}.{ver.Build}";
+            }
+        }
+        catch
+        {
+            resolved = "1.0.0";
+        }
+
+        AppVersion = $"v{resolved}";
+        DisplayVersionText = $"Version {resolved}";
+        WindowTitle = $"EhChads Controller Remapper - {AppVersion}";
+    }
+        
+        /* OLD app version. Was redundant and too much to do.
         string resolved = string.Empty;
 
         try
@@ -292,7 +341,7 @@ public partial class MainWindowViewModel : ViewModelBase
                         }
                     }
                 }
-            }
+                *
 
             if (string.IsNullOrWhiteSpace(resolved))
             {
@@ -312,13 +361,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(resolved))
         {
-            resolved = "1.0.5";
+            resolved = "1.0.6";
         }
 
         AppVersion = $"v{resolved}";
         DisplayVersionText = $"Version {resolved}";
         WindowTitle = "EhChadsControllerRemapper - ECCR";
     }
+    */
 
     private void CheckPostUpdateStatus()
     {
@@ -1051,72 +1101,78 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void RefreshDependencyStates()
     {
-        var status = DependencyManager.GetCurrentStatus();
-        IsViGEmInstalled = status.ViGEm.IsInstalled;
-        IsViGEmRunning = status.ViGEm.IsRunning;
-        IsHidHideServiceInstalled = status.HidHide.IsInstalled;
-        IsHidHideServiceRunning = status.HidHide.IsRunning;
-        IsVJoyInstalled = status.VJoy.IsInstalled;
-        IsVJoyRunning = status.VJoy.IsRunning;
-        IsDependencyBannerOpen = status.HasIssues;
+        var viGEm = _dependencyManager.CheckViGEmBus();
+        var hidHide = _dependencyManager.CheckHidHide();
+        var vJoy = _dependencyManager.CheckVJoy();
+
+        IsViGEmInstalled = viGEm.IsInstalled;
+        IsViGEmRunning = viGEm.IsInstalled;
+
+        IsHidHideServiceInstalled = hidHide.IsInstalled;
+        IsHidHideServiceRunning = hidHide.IsInstalled;
+
+        IsVJoyInstalled = vJoy.IsInstalled;
+        IsVJoyRunning = vJoy.IsInstalled;
+
+        IsDependencyBannerOpen = HasMissingDependencies;
+        OnPropertyChanged(nameof(HasMissingDependencies));
     }
 
     [RelayCommand]
-    public async Task InstallViGEm()
+    public async Task InstallDriver(string driverName)
     {
+        if (IsBusyWithDriverAction || !Enum.TryParse<DriverType>(driverName, true, out var driver)) return;
+
         IsBusyWithDriverAction = true;
-        await DependencyManager.DownloadAndInstallViGEmAsync();
-        IsBusyWithDriverAction = false;
+        var progress = new Progress<string>(msg => DriverInstallProgressText = msg);
+
+        await _dependencyManager.InstallDriverAsync(driver, progress);
+
         RefreshDependencyStates();
+        DriverInstallProgressText = string.Empty;
+        IsBusyWithDriverAction = false;
     }
 
     [RelayCommand]
-    public async Task StartViGEmService()
+    public async Task UninstallDriver(string driverName)
     {
+        if (IsBusyWithDriverAction || !Enum.TryParse<DriverType>(driverName, true, out var driver)) return;
+
         IsBusyWithDriverAction = true;
-        await DependencyManager.StartDriverServiceAsync("ViGEmBus");
-        IsBusyWithDriverAction = false;
+        DriverInstallProgressText = $"Uninstalling {driverName}...";
+
+        await _dependencyManager.UninstallDriverAsync(driver);
+
         RefreshDependencyStates();
+        DriverInstallProgressText = string.Empty;
+        IsBusyWithDriverAction = false;
     }
 
     [RelayCommand]
-    public async Task InstallHidHide()
-    {
-        IsBusyWithDriverAction = true;
-        await DependencyManager.DownloadAndInstallHidHideAsync();
-        IsBusyWithDriverAction = false;
-        RefreshDependencyStates();
-    }
+    public async Task InstallViGEm() => await InstallDriver("ViGEmBus");
 
     [RelayCommand]
-    public async Task StartHidHideService()
-    {
-        IsBusyWithDriverAction = true;
-        await DependencyManager.StartDriverServiceAsync("HidHide");
-        IsBusyWithDriverAction = false;
-        RefreshDependencyStates();
-    }
+    public async Task InstallHidHide() => await InstallDriver("HidHide");
 
     [RelayCommand]
-    public async Task InstallVJoy()
-    {
-        IsBusyWithDriverAction = true;
-        await DependencyManager.DownloadAndInstallVJoyAsync();
-        IsBusyWithDriverAction = false;
-        RefreshDependencyStates();
-    }
-
-    [RelayCommand]
-    public async Task StartVJoyService()
-    {
-        IsBusyWithDriverAction = true;
-        await DependencyManager.StartDriverServiceAsync("vjoy");
-        IsBusyWithDriverAction = false;
-        RefreshDependencyStates();
-    }
+    public async Task InstallVJoy() => await InstallDriver("VJoy");
 
     [RelayCommand]
     public void DismissDependencyBanner() => IsDependencyBannerOpen = false;
+
+    [RelayCommand]
+    public void ResetAllSettings()
+    {
+        _currentSettings = new ECCR.Models.AppSettings();
+        SaveAppSettings();
+
+        Profiles.Clear();
+        LoadProfileListFromDisk();
+        SelectedProfile = Profiles.FirstOrDefault() ?? "Default";
+        LoadSelectedProfile();
+
+        RefreshDependencyStates();
+    }
 
     [RelayCommand]
     public void OpenHidHideMenu()

@@ -7,7 +7,7 @@ namespace ECCR.Services;
 
 public static class StartupManager
 {
-    private const string AppName = "EhChadsControllerRemapper";
+    private const string AppName = "EhChads Controller Remapper";
 
     public static bool IsStartupEnabled()
     {

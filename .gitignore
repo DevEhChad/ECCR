@@ -35,3 +35,8 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+
+## Zips files
+ECCR_Part1_Core.zip
+ECCR_Part2_Logic.zip
+ECCR_Part3_UI_Assets.zip
