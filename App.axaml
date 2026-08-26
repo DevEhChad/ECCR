@@ -11,20 +11,4 @@
     <Application.Styles>
         <FluentTheme />
     </Application.Styles>
-
-    <TrayIcon.Icons>
-        <TrayIcons>
-            <TrayIcon Icon="/Assets/ECCR-logo.ico" 
-                      ToolTipText="EhChads Controller Remapper"
-                      Clicked="OnTrayIconClicked">
-                <TrayIcon.Menu>
-                    <NativeMenu>
-                        <NativeMenuItem Header="Open ECCR" Click="OnShowAppClick" />
-                        <NativeMenuItemSeparator />
-                        <NativeMenuItem Header="Exit" Click="OnExitAppClick" />
-                    </NativeMenu>
-                </TrayIcon.Menu>
-            </TrayIcon>
-        </TrayIcons>
-    </TrayIcon.Icons>
 </Application>

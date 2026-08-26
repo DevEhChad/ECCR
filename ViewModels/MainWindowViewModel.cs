@@ -8,8 +8,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -23,8 +23,8 @@ namespace ECCR.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
-    private readonly InputDeviceManager _deviceManager;
-    private readonly HidHideManager _hidHideManager;
+    private readonly InputDeviceManager? _deviceManager;
+    private readonly HidHideManager? _hidHideManager;
     private readonly DependencyManager _dependencyManager = new();
     private readonly VirtualFeederService _feeder = new();
     private readonly UpdateService _updateService = new();
@@ -205,13 +205,21 @@ public partial class MainWindowViewModel : ViewModelBase
         _profilesDirectory = Path.Combine(_baseDirectory, "Profiles");
         _settingsFilePath = Path.Combine(_baseDirectory, "settings.json");
 
-        // 1. Check if this is the first run BEFORE settings get written to disk
+        if (Design.IsDesignMode)
+        {
+            AppVersion = "v1.0.7";
+            DisplayVersionText = "Version 1.0.7";
+            WindowTitle = "EhChads Controller Remapper - ECCR";
+            _deviceManager = null;
+            _hidHideManager = null;
+            return;
+        }
+
         bool isFirstRun = !File.Exists(_settingsFilePath);
 
         Directory.CreateDirectory(_profilesDirectory);
 
         ResolveAppVersion();
-
         InitializeVirtualOutputs();
         Mappings.CollectionChanged += OnMappingsCollectionChanged;
 
@@ -246,7 +254,6 @@ public partial class MainWindowViewModel : ViewModelBase
         RefreshDependencyStates();
         UpdateVirtualDeviceSummary();
 
-        // 2. Replace Program.IsFirstRun with the isFirstRun boolean
         if (isFirstRun && HasMissingDependencies)
         {
             _ = AutoInstallMissingDriversAsync();
@@ -292,83 +299,6 @@ public partial class MainWindowViewModel : ViewModelBase
         DisplayVersionText = $"Version {resolved}";
         WindowTitle = $"EhChads Controller Remapper - {AppVersion}";
     }
-        
-        /* OLD app version. Was redundant and too much to do.
-        string resolved = string.Empty;
-
-        try
-        {
-            string[] manifestCandidates = [
-                Path.Combine(AppContext.BaseDirectory, "app.manifest"),
-                Path.Combine(Directory.GetCurrentDirectory(), "app.manifest"),
-                Path.Combine(Directory.GetCurrentDirectory(), "ECCR", "app.manifest")
-            ];
-
-            foreach (var path in manifestCandidates)
-            {
-                if (File.Exists(path))
-                {
-                    string content = File.ReadAllText(path);
-                    var match = Regex.Match(content, @"<assemblyIdentity\s+version=""([^""]+)""");
-                    if (match.Success)
-                    {
-                        string raw = match.Groups[1].Value.Trim();
-                        var parts = raw.Split('.');
-                        resolved = parts.Length >= 3 ? $"{parts[0]}.{parts[1]}.{parts[2]}" : raw;
-                        break;
-                    }
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(resolved))
-            {
-                string[] csprojCandidates = [
-                    Path.Combine(Directory.GetCurrentDirectory(), "ECCR.csproj"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "ECCR", "ECCR.csproj"),
-                    Path.Combine(AppContext.BaseDirectory, "ECCR.csproj")
-                ];
-
-                foreach (var path in csprojCandidates)
-                {
-                    if (File.Exists(path))
-                    {
-                        string content = File.ReadAllText(path);
-                        var match = Regex.Match(content, @"<Version>([^<]+)</Version>");
-                        if (match.Success)
-                        {
-                            resolved = match.Groups[1].Value.Trim();
-                            break;
-                        }
-                    }
-                }
-                *
-
-            if (string.IsNullOrWhiteSpace(resolved))
-            {
-                var assembly = Assembly.GetEntryAssembly() ?? typeof(MainWindowViewModel).Assembly;
-                var infoVer = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-                if (!string.IsNullOrWhiteSpace(infoVer))
-                {
-                    var clean = infoVer.Split('+')[0].Trim().TrimStart('v', 'V');
-                    if (!string.IsNullOrWhiteSpace(clean) && clean != "1.0.0")
-                    {
-                        resolved = clean;
-                    }
-                }
-            }
-        }
-        catch { }
-
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            resolved = "1.0.6";
-        }
-
-        AppVersion = $"v{resolved}";
-        DisplayVersionText = $"Version {resolved}";
-        WindowTitle = "EhChadsControllerRemapper - ECCR";
-    }
-    */
 
     private void CheckPostUpdateStatus()
     {
@@ -972,7 +902,7 @@ public partial class MainWindowViewModel : ViewModelBase
         WizardBindings.Clear();
         if (string.IsNullOrWhiteSpace(WizardSelectedDevice)) return;
 
-        var connectedInfo = _deviceManager.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
+        var connectedInfo = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
         int buttonCount = connectedInfo?.ButtonCount ?? 32;
         int axisCount = connectedInfo?.AxisCount ?? 8;
 
@@ -988,7 +918,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(WizardSelectedDevice) || WizardBindings.Count == 0) return;
 
-        var targetDevice = _deviceManager.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
+        var targetDevice = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
         Guid devGuid = targetDevice?.InstanceGuid ?? Guid.Empty;
 
         var toRemove = Mappings.Where(m => m.SourceDeviceName == WizardSelectedDevice).ToList();
@@ -1041,7 +971,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void AddMappingToDevice(string deviceName)
     {
-        var targetDevice = _deviceManager.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
+        var targetDevice = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
         var category = DevicePresetService.DetectCategory(deviceName);
 
         string defaultTarget = category switch
@@ -1067,7 +997,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public void AddMapping()
     {
         string defaultDevice = ConnectedDevices.Count > 0 ? ConnectedDevices[0] : "Select Device...";
-        var targetDevice = _deviceManager.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == defaultDevice);
+        var targetDevice = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == defaultDevice);
         var category = DevicePresetService.DetectCategory(defaultDevice);
 
         string defaultTarget = category switch
@@ -1185,6 +1115,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void CloseHidHideMenu()
     {
+        if (_hidHideManager == null) return;
+
         var blockedIds = HidDevices
             .Where(d => d.IsHidden && !HidHideManager.IsVirtualDevice(d.FriendlyName, d.DeviceInstanceId))
             .Select(d => d.DeviceInstanceId)
@@ -1204,6 +1136,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void RefreshHidDevices()
     {
+        if (_hidHideManager == null) return;
+
         HidDevices.Clear();
         var devices = _hidHideManager.GetConnectedHidDevices();
         var currentDriverBlocked = new HashSet<string>(_hidHideManager.GetBlockedInstanceIds(), StringComparer.OrdinalIgnoreCase);
@@ -1222,6 +1156,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void RefreshHidApplications()
     {
+        if (_hidHideManager == null) return;
+
         WhitelistedApplications.Clear();
         foreach (var app in _hidHideManager.GetApplicationExemptions()) WhitelistedApplications.Add(app);
         IsAppListInverted = _hidHideManager.IsAppListInverted;
@@ -1230,6 +1166,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void ToggleHidDevice(HidDeviceItem item)
     {
+        if (_hidHideManager == null) return;
         _hidHideManager.ToggleDeviceHiding(item, item.IsHidden);
         _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         SaveAppSettings();
@@ -1238,6 +1175,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void SelectAllHidDevices()
     {
+        if (_hidHideManager == null) return;
         foreach (var device in HidDevices)
         {
             if (!HidHideManager.IsVirtualDevice(device.FriendlyName, device.DeviceInstanceId))
@@ -1253,6 +1191,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void DeselectAllHidDevices()
     {
+        if (_hidHideManager == null) return;
         foreach (var device in HidDevices)
         {
             device.IsHidden = false;
@@ -1265,14 +1204,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnIsHidHideActiveChanged(bool value)
     {
-        if (_isLoadingSettings) return;
+        if (_isLoadingSettings || _hidHideManager == null) return;
         _hidHideManager.SetGlobalHidingState(value);
         SaveAppSettings();
     }
 
     partial void OnIsAppListInvertedChanged(bool value)
     {
-        if (_isLoadingSettings) return;
+        if (_isLoadingSettings || _hidHideManager == null) return;
         _hidHideManager.IsAppListInverted = value;
         SaveAppSettings();
     }
@@ -1280,7 +1219,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public async Task AddApplicationToHidHide(IStorageProvider? storageProvider)
     {
-        if (storageProvider == null) return;
+        if (storageProvider == null || _hidHideManager == null) return;
         var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Select Game Executable",
@@ -1298,7 +1237,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public async Task AddDirectoryToHidHide(IStorageProvider? storageProvider)
     {
-        if (storageProvider == null) return;
+        if (storageProvider == null || _hidHideManager == null) return;
         var folders = await storageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Game Folder" });
         if (folders.Count > 0)
         {
@@ -1311,6 +1250,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void RemoveApplicationFromHidHide(string appPath)
     {
+        if (_hidHideManager == null) return;
         _hidHideManager.RemoveApplicationExemption(appPath);
         RefreshHidApplications();
         SaveAppSettings();
@@ -1319,6 +1259,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void ClearAllApplicationsFromHidHide()
     {
+        if (_hidHideManager == null) return;
         _hidHideManager.ClearAllApplicationExemptions();
         RefreshHidApplications();
         SaveAppSettings();
@@ -1371,21 +1312,21 @@ public partial class MainWindowViewModel : ViewModelBase
                     _feeder.SetActive(IsVirtualOutputActive);
 
                     IsHidHideActive = settings.IsHidHideActive;
-                    _hidHideManager.SetGlobalHidingState(IsHidHideActive);
+                    _hidHideManager?.SetGlobalHidingState(IsHidHideActive);
 
                     IsAppListInverted = settings.IsAppListInverted;
-                    _hidHideManager.IsAppListInverted = IsAppListInverted;
+                    if (_hidHideManager != null) _hidHideManager.IsAppListInverted = IsAppListInverted;
 
                     if (settings.BlockedInstanceIds != null && settings.BlockedInstanceIds.Count > 0)
                     {
-                        _hidHideManager.SyncBlockedInstances(settings.BlockedInstanceIds);
+                        _hidHideManager?.SyncBlockedInstances(settings.BlockedInstanceIds);
                     }
 
                     if (settings.WhitelistedApplications != null && settings.WhitelistedApplications.Count > 0)
                     {
                         foreach (var app in settings.WhitelistedApplications)
                         {
-                            _hidHideManager.AddApplicationExemption(app);
+                            _hidHideManager?.AddApplicationExemption(app);
                         }
                     }
 
@@ -1418,8 +1359,8 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
             _currentSettings.IsHidHideActive = IsHidHideActive;
             _currentSettings.IsAppListInverted = IsAppListInverted;
-            _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
-            _currentSettings.WhitelistedApplications = _hidHideManager.GetApplicationExemptions();
+            _currentSettings.BlockedInstanceIds = _hidHideManager?.GetBlockedInstanceIds() ?? new List<string>();
+            _currentSettings.WhitelistedApplications = _hidHideManager?.GetApplicationExemptions() ?? new List<string>();
 
             File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -1541,8 +1482,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            _deviceManager.StopPolling();
-            _deviceManager.Dispose();
+            _deviceManager?.StopPolling();
+            _deviceManager?.Dispose();
             _feeder.Dispose();
             SaveAppSettings();
             AutoSaveCurrentProfile();

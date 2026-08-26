@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform;
 using ECCR.ViewModels;
 using ECCR.Views;
 
@@ -40,6 +41,9 @@ public partial class App : Application
 
                 desktop.MainWindow = _mainWindow;
                 
+                // Initialize tray icon at runtime only
+                InitializeSystemTray();
+
                 bool startMinimized = desktop.Args != null && desktop.Args.Any(a => a.Contains("minimized", StringComparison.OrdinalIgnoreCase));
                 if (startMinimized)
                 {
@@ -54,6 +58,46 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void InitializeSystemTray()
+    {
+        try
+        {
+            var trayIcon = new TrayIcon
+            {
+                ToolTipText = "EhChads Controller Remapper"
+            };
+
+            var iconUri = new Uri("avares://ECCR/Assets/ECCR-logo.ico");
+            if (AssetLoader.Exists(iconUri))
+            {
+                trayIcon.Icon = new WindowIcon(AssetLoader.Open(iconUri));
+            }
+
+            trayIcon.Clicked += OnTrayIconClicked;
+
+            var menu = new NativeMenu();
+            
+            var openItem = new NativeMenuItem("Open ECCR");
+            openItem.Click += OnShowAppClick;
+            
+            var exitItem = new NativeMenuItem("Exit");
+            exitItem.Click += OnExitAppClick;
+
+            menu.Add(openItem);
+            menu.Add(new NativeMenuItemSeparator());
+            menu.Add(exitItem);
+
+            trayIcon.Menu = menu;
+
+            var trayIcons = new TrayIcons { trayIcon };
+            TrayIcon.SetIcons(this, trayIcons);
+        }
+        catch
+        {
+            // Suppress fallback errors if OS tray is unavailable
+        }
     }
 
     private void OnTrayIconClicked(object? sender, EventArgs e)
