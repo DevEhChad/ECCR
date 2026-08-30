@@ -21,6 +21,12 @@ public enum DeviceHardwareCategory
 
 public static class DevicePresetService
 {
+    public static bool IsWheelOrPedalCategory(DeviceHardwareCategory category) =>
+        category is DeviceHardwareCategory.MozaEsxWheel or DeviceHardwareCategory.MozaWheel or
+                     DeviceHardwareCategory.LogitechRig or DeviceHardwareCategory.FanatecRig or
+                     DeviceHardwareCategory.ThrustmasterRig or DeviceHardwareCategory.SimagicRig or
+                     DeviceHardwareCategory.GenericWheelOrPedals;
+
     public static DeviceHardwareCategory DetectCategory(string deviceName)
     {
         string dev = deviceName.ToLowerInvariant();
@@ -343,11 +349,7 @@ public static class DevicePresetService
             return list;
         }
 
-        bool isSimHardware = category == DeviceHardwareCategory.LogitechRig || 
-                             category == DeviceHardwareCategory.FanatecRig || 
-                             category == DeviceHardwareCategory.ThrustmasterRig || 
-                             category == DeviceHardwareCategory.SimagicRig || 
-                             category == DeviceHardwareCategory.GenericWheelOrPedals;
+        bool isSimHardware = IsWheelOrPedalCategory(category);
 
         if (isSimHardware)
         {

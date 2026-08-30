@@ -8,7 +8,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
     <!-- Single Source of Truth for App Version -->
-    <Version>1.0.7</Version>
+    <Version>1.0.8</Version>
 
     <!-- Application & Task Manager Metadata -->
     <Product>EhChads Controller Remapper</Product>
@@ -39,5 +39,17 @@
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" />
     <PackageReference Include="Velopack" Version="1.2.0" />
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+  </ItemGroup>
+
+  <!-- vJoy managed wrapper (SWIG-generated, redistributable) + its native counterpart.
+       No NuGet package exists for vJoy on modern .NET, so both DLLs are vendored. -->
+  <ItemGroup>
+    <Reference Include="vJoyInterfaceWrap">
+      <HintPath>Vendor\vJoy\vJoyInterfaceWrap.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Include="Vendor\vJoy\vJoyInterface.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

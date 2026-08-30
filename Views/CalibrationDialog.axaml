@@ -1,6 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="using:ECCR.Models"
+        xmlns:converters="using:ECCR.Converters"
         x:Class="ECCR.Views.CalibrationDialog"
         x:DataType="models:MappingEntry"
         Title="Axis Calibration"
@@ -9,6 +10,11 @@
         Background="#0E1118"
         Foreground="White"
         CanResize="false">
+
+    <Window.Resources>
+        <converters:SteeringAngleConverter x:Key="SteeringAngleConverter"/>
+        <converters:PedalFillHeightConverter x:Key="PedalFillHeightConverter"/>
+    </Window.Resources>
 
     <Grid RowDefinitions="Auto, *, Auto" Margin="22">
         <!-- Header -->
@@ -43,7 +49,35 @@
                             <TextBlock Text="Calibrated Output Signal" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
                             <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="12" Foreground="#00E599" FontWeight="Bold"/>
                         </Grid>
-                        <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="10" CornerRadius="5" Foreground="#00E599"/>
+
+                        <!-- Generic calibrated bar: used for gamepad/controller mappings and any wheel axis without a dedicated visual below -->
+                        <ProgressBar x:Name="GenericOutputBar" Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="10" CornerRadius="5" Foreground="#00E599"/>
+
+                        <!-- Steering wheel dial: wheel/pedal-category devices only, steering axis only -->
+                        <Canvas x:Name="SteeringWheelPanel" IsVisible="False" Width="170" Height="170" Margin="0,4,0,4"
+                                HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                            <Canvas.RenderTransform>
+                                <RotateTransform Angle="{Binding LiveOutputPercentage, Converter={StaticResource SteeringAngleConverter}}"/>
+                            </Canvas.RenderTransform>
+                            <Ellipse Canvas.Left="5" Canvas.Top="5" Width="160" Height="160" Stroke="#3E7BFA" StrokeThickness="10" Fill="#10141E"/>
+                            <Line StartPoint="85,85" EndPoint="85,15" Stroke="#3E7BFA" StrokeThickness="9" StrokeLineCap="Round"/>
+                            <Line StartPoint="85,85" EndPoint="30,125" Stroke="#3E7BFA" StrokeThickness="9" StrokeLineCap="Round"/>
+                            <Line StartPoint="85,85" EndPoint="140,125" Stroke="#3E7BFA" StrokeThickness="9" StrokeLineCap="Round"/>
+                            <Ellipse Canvas.Left="68" Canvas.Top="68" Width="34" Height="34" Fill="#1F283C" Stroke="#3E7BFA" StrokeThickness="2"/>
+                            <Ellipse Canvas.Left="76" Canvas.Top="9" Width="18" Height="18" Fill="#00E599"/>
+                        </Canvas>
+
+                        <!-- Pedal / lever bar: wheel/pedal-category devices only, throttle/brake/clutch/handbrake axes -->
+                        <Border x:Name="PedalBarPanel" IsVisible="False" Width="76" Height="150" Margin="0,4,0,4"
+                                HorizontalAlignment="Center" Background="#10141E" BorderBrush="#20283C" BorderThickness="1"
+                                CornerRadius="10" ClipToBounds="True">
+                            <Grid>
+                                <Border x:Name="PedalFill" VerticalAlignment="Bottom" CornerRadius="10" Opacity="0.85"
+                                        Height="{Binding LiveOutputPercentage, Converter={StaticResource PedalFillHeightConverter}}"/>
+                                <TextBlock Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 

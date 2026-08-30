@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.8] - 2026-08-30
+
+### 🚀 Added
+- **Working DirectInput Wheel Output (vJoy):** `[Wheel] ...` mapping targets now actually reach a real vJoy virtual joystick — steering, throttle, brake, clutch, handbrake, all 7 forward gears + reverse, and up to 32 generic buttons — completing a UI/preset path that previously fed nothing to Windows. Backed by a vendored, redistributable `vJoyInterfaceWrap`/`vJoyInterface` managed wrapper (no NuGet package exists for it on modern .NET).
+- **Multi-Device Wheel Combining:** Physical rigs (e.g. Logitech pedals + a Moza wheelbase) can now be mapped to the same Player target using `[Wheel]` outputs and are combined into one virtual DirectInput wheel device, alongside the existing Xbox 360 (ViGEm) output path — each mapping routes independently based on its target type via the new `CompositeFeederService`.
+- **Wheel Calibration Visualizer:** The Calibration dialog now shows a live rotating steering wheel dial for steering-axis mappings, and a color-coded vertical pedal-press bar for throttle/brake/clutch/handbrake mappings — shown only for wheel/pedal-category hardware (Moza, Logitech, Fanatec, Thrustmaster, Simagic, generic rigs). Gamepad/controller mappings keep the original bar visualizer.
+
+### 🔄 Changed
+- **View Model Decomposition:** Extracted all HidHide device-cloaking state/commands into a dedicated `HidHideViewModel`, and all Auto-Bind Wizard state/preset logic into a dedicated `AutoBindWizardViewModel`, out of the monolithic `MainWindowViewModel`.
+- **HidHide Dialog as Embedded Overlay:** Replaced the standalone `HidHideWindow` popup with an embedded `HidHideView` overlay hosted directly inside the main window, matching the styling of the other in-window modals (Settings, Auto-Bind, Update).
+- **Shared Category Helper:** Consolidated the duplicated wheel/pedal-hardware category checks (used for auto-bind guessing and preset generation) into a single `DevicePresetService.IsWheelOrPedalCategory` helper.
+
+### 🛠️ Fixed
+- **Main Window Minimum Size:** `MainWindow` previously had no minimum size, so dragging it smaller could clip the footer controls (Profile switcher, bulk-selection buttons, Add Mapping) and the HidHide modal off the edge of the window. Added a `MinWidth`/`MinHeight` floor sized to the largest fixed-size modal in the app.
+- **Text Overflow Guards:** Column header labels and the Auto-Bind Wizard's preview grid now trim long text with an ellipsis instead of clipping it raw.
+
+---
+
 ## [1.0.7] - 2026-08-26
 
 ### 🚀 Added

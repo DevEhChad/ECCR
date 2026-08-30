@@ -5,7 +5,7 @@
         xmlns:services="using:ECCR.Services"
         xmlns:converters="using:ECCR.Converters"
         x:Class="ECCR.Views.AutoBindWizardWindow"
-        x:DataType="vm:MainWindowViewModel"
+        x:DataType="vm:AutoBindWizardViewModel"
         Title="Auto-Bind Wizard"
         Width="650" Height="580"
         WindowStartupLocation="CenterOwner"
@@ -61,9 +61,9 @@
                             <DataTemplate x:DataType="models:PresetBindingItem">
                                 <Border Background="#10141E" CornerRadius="6" Padding="10,8" Margin="0,3">
                                     <Grid ColumnDefinitions="2*, 1*, 2.5*">
-                                        <TextBlock Grid.Column="0" Text="{Binding PhysicalName}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Type}" VerticalAlignment="Center" Foreground="#8B95A5"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding DefaultTargetOutput}" VerticalAlignment="Center" Foreground="#00E599"/>
+                                        <TextBlock Grid.Column="0" Text="{Binding PhysicalName}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Type}" VerticalAlignment="Center" Foreground="#8B95A5" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding DefaultTargetOutput}" VerticalAlignment="Center" Foreground="#00E599" TextTrimming="CharacterEllipsis"/>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
