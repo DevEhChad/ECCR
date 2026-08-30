@@ -10,7 +10,6 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -24,9 +23,8 @@ namespace ECCR.ViewModels;
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly InputDeviceManager? _deviceManager;
-    private readonly HidHideManager? _hidHideManager;
     private readonly DependencyManager _dependencyManager = new();
-    private readonly VirtualFeederService _feeder = new();
+    private readonly IVirtualFeeder _feeder = new CompositeFeederService();
     private readonly UpdateService _updateService = new();
     private readonly Stopwatch _pollStopwatch = new();
     private readonly string _baseDirectory;
@@ -125,15 +123,6 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private int _updateDownloadProgress = 0;
 
-    // Auto-Bind Wizard Properties
-    [ObservableProperty]
-    private string _wizardSelectedDevice = string.Empty;
-
-    [ObservableProperty]
-    private bool _wizardTargetIsWheel = false;
-
-    public ObservableCollection<PresetBindingItem> WizardBindings { get; } = new();
-
     // Driver Status States
     [ObservableProperty]
     private bool _isDependencyBannerOpen = false;
@@ -164,16 +153,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool HasMissingDependencies => !IsViGEmInstalled || !IsHidHideServiceInstalled || !IsVJoyInstalled;
 
-    // HidHide Modal Controls
-    [ObservableProperty]
-    private bool _isHidHideMenuOpen = false;
-
-    [ObservableProperty]
-    private bool _isHidHideActive = false;
-
-    [ObservableProperty]
-    private bool _isAppListInverted = false;
-
     public ObservableCollection<string> Profiles { get; } = new();
     public ObservableCollection<VirtualEmulationMode> EmulationModes { get; } = new()
     {
@@ -193,8 +172,11 @@ public partial class MainWindowViewModel : ViewModelBase
         new PlayerTargetOption { Id = 4, DisplayName = "Player 4", ShortBadge = "P4", Description = "Independent Virtual Controller #4", TextColorHex = "#FF7088", BgColorHex = "#2A141A", BorderColorHex = "#FA3E5E" }
     };
 
-    public ObservableCollection<HidDeviceItem> HidDevices { get; } = new();
-    public ObservableCollection<string> WhitelistedApplications { get; } = new();
+    /// <summary>All HidHide device-cloaking state, commands and UI logic.</summary>
+    public HidHideViewModel HidHide { get; }
+
+    /// <summary>Auto-Bind wizard state and preset generation.</summary>
+    public AutoBindWizardViewModel AutoBind { get; }
 
     private MappingEntry? _listeningEntry;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
@@ -211,7 +193,8 @@ public partial class MainWindowViewModel : ViewModelBase
             DisplayVersionText = "Version 1.0.7";
             WindowTitle = "EhChads Controller Remapper - ECCR";
             _deviceManager = null;
-            _hidHideManager = null;
+            HidHide = new HidHideViewModel();
+            AutoBind = new AutoBindWizardViewModel();
             return;
         }
 
@@ -223,8 +206,19 @@ public partial class MainWindowViewModel : ViewModelBase
         InitializeVirtualOutputs();
         Mappings.CollectionChanged += OnMappingsCollectionChanged;
 
-        _hidHideManager = new HidHideManager();
-        IsHidHideServiceInstalled = _hidHideManager.IsInstalled;
+        HidHide = new HidHideViewModel(() => _currentSettings, SaveAppSettings);
+        IsHidHideServiceInstalled = HidHide.IsDriverInstalled;
+
+        AutoBind = new AutoBindWizardViewModel(
+            ConnectedDevices,
+            () => _deviceManager?.GetConnectedDevices() ?? new List<DeviceHardwareInfo>(),
+            Mappings,
+            () =>
+            {
+                RebuildGroupedMappings();
+                UpdateVirtualDeviceSummary();
+                AutoSaveCurrentProfile();
+            });
 
         LoadProfileListFromDisk();
         LoadAppSettings();
@@ -237,9 +231,9 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 ConnectedDevices.Clear();
                 foreach (var d in devices) ConnectedDevices.Add(d.InstanceName);
-                if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(WizardSelectedDevice))
+                if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(AutoBind.WizardSelectedDevice))
                 {
-                    WizardSelectedDevice = ConnectedDevices[0];
+                    AutoBind.WizardSelectedDevice = ConnectedDevices[0];
                 }
             });
         };
@@ -591,11 +585,7 @@ public partial class MainWindowViewModel : ViewModelBase
             };
         }
 
-        bool isSimHardware = category == DeviceHardwareCategory.LogitechRig || 
-                             category == DeviceHardwareCategory.FanatecRig || 
-                             category == DeviceHardwareCategory.ThrustmasterRig || 
-                             category == DeviceHardwareCategory.SimagicRig || 
-                             category == DeviceHardwareCategory.GenericWheelOrPedals;
+        bool isSimHardware = DevicePresetService.IsWheelOrPedalCategory(category);
 
         if (isSimHardware)
         {
@@ -863,94 +853,6 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
-    public async Task OpenAutoBindWizard()
-    {
-        if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(WizardSelectedDevice))
-        {
-            WizardSelectedDevice = ConnectedDevices[0];
-        }
-
-        if (!string.IsNullOrWhiteSpace(WizardSelectedDevice))
-        {
-            var cat = DevicePresetService.DetectCategory(WizardSelectedDevice);
-            WizardTargetIsWheel = (cat == DeviceHardwareCategory.MozaEsxWheel ||
-                                   cat == DeviceHardwareCategory.MozaWheel || 
-                                   cat == DeviceHardwareCategory.LogitechRig || 
-                                   cat == DeviceHardwareCategory.FanatecRig || 
-                                   cat == DeviceHardwareCategory.ThrustmasterRig || 
-                                   cat == DeviceHardwareCategory.SimagicRig || 
-                                   cat == DeviceHardwareCategory.GenericWheelOrPedals);
-        }
-
-        PopulateWizardPreset();
-
-        var wizard = new AutoBindWizardWindow
-        {
-            DataContext = this
-        };
-
-        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
-        {
-            await wizard.ShowDialog(desktop.MainWindow);
-        }
-    }
-
-    [RelayCommand]
-    public void PopulateWizardPreset()
-    {
-        WizardBindings.Clear();
-        if (string.IsNullOrWhiteSpace(WizardSelectedDevice)) return;
-
-        var connectedInfo = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
-        int buttonCount = connectedInfo?.ButtonCount ?? 32;
-        int axisCount = connectedInfo?.AxisCount ?? 8;
-
-        var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardTargetIsWheel);
-        foreach (var item in presets)
-        {
-            WizardBindings.Add(item);
-        }
-    }
-
-    [RelayCommand]
-    public void ApplyWizardBindings()
-    {
-        if (string.IsNullOrWhiteSpace(WizardSelectedDevice) || WizardBindings.Count == 0) return;
-
-        var targetDevice = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
-        Guid devGuid = targetDevice?.InstanceGuid ?? Guid.Empty;
-
-        var toRemove = Mappings.Where(m => m.SourceDeviceName == WizardSelectedDevice).ToList();
-        foreach (var r in toRemove) Mappings.Remove(r);
-
-        foreach (var item in WizardBindings)
-        {
-            bool shouldInvert = item.Type == InputType.Axis && 
-                (item.PhysicalName.Contains("Vertical") || item.PhysicalName.Contains("Stick Y") || 
-                 item.PhysicalName.Contains("Throttle") || item.PhysicalName.Contains("Brake"));
-
-            Mappings.Add(new MappingEntry
-            {
-                SourceDeviceName = WizardSelectedDevice,
-                SourceDeviceGuid = devGuid,
-                SourceType = item.Type,
-                SourceIndex = item.PhysicalIndex,
-                SourceDisplayName = item.PhysicalName,
-                TargetDeviceId = 1,
-                TargetOutput = item.DefaultTargetOutput,
-                Deadzone = item.Type == InputType.Axis ? 0.08 : 0.0,
-                RawMin = 0,
-                RawMax = 65535,
-                IsInverted = shouldInvert
-            });
-        }
-
-        RebuildGroupedMappings();
-        UpdateVirtualDeviceSummary();
-        AutoSaveCurrentProfile();
-    }
-
     public void RebuildGroupedMappings()
     {
         var expandedStates = GroupedMappings.ToDictionary(g => g.DeviceName, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
@@ -1104,167 +1006,6 @@ public partial class MainWindowViewModel : ViewModelBase
         RefreshDependencyStates();
     }
 
-    [RelayCommand]
-    public void OpenHidHideMenu()
-    {
-        RefreshHidDevices();
-        RefreshHidApplications();
-        IsHidHideMenuOpen = true;
-    }
-
-    [RelayCommand]
-    public void CloseHidHideMenu()
-    {
-        if (_hidHideManager == null) return;
-
-        var blockedIds = HidDevices
-            .Where(d => d.IsHidden && !HidHideManager.IsVirtualDevice(d.FriendlyName, d.DeviceInstanceId))
-            .Select(d => d.DeviceInstanceId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        _hidHideManager.SyncBlockedInstances(blockedIds);
-
-        _currentSettings.BlockedInstanceIds = blockedIds;
-        _currentSettings.WhitelistedApplications = _hidHideManager.GetApplicationExemptions();
-        _currentSettings.IsHidHideActive = IsHidHideActive;
-        _currentSettings.IsAppListInverted = IsAppListInverted;
-
-        SaveAppSettings();
-        IsHidHideMenuOpen = false;
-    }
-
-    public void RefreshHidDevices()
-    {
-        if (_hidHideManager == null) return;
-
-        HidDevices.Clear();
-        var devices = _hidHideManager.GetConnectedHidDevices();
-        var currentDriverBlocked = new HashSet<string>(_hidHideManager.GetBlockedInstanceIds(), StringComparer.OrdinalIgnoreCase);
-        var savedBlocked = new HashSet<string>(_currentSettings.BlockedInstanceIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-
-        foreach (var item in devices)
-        {
-            if (currentDriverBlocked.Contains(item.DeviceInstanceId) || savedBlocked.Contains(item.DeviceInstanceId))
-            {
-                item.IsHidden = true;
-                _hidHideManager.ToggleDeviceHiding(item, true);
-            }
-            HidDevices.Add(item);
-        }
-    }
-
-    public void RefreshHidApplications()
-    {
-        if (_hidHideManager == null) return;
-
-        WhitelistedApplications.Clear();
-        foreach (var app in _hidHideManager.GetApplicationExemptions()) WhitelistedApplications.Add(app);
-        IsAppListInverted = _hidHideManager.IsAppListInverted;
-    }
-
-    [RelayCommand]
-    public void ToggleHidDevice(HidDeviceItem item)
-    {
-        if (_hidHideManager == null) return;
-        _hidHideManager.ToggleDeviceHiding(item, item.IsHidden);
-        _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
-        SaveAppSettings();
-    }
-
-    [RelayCommand]
-    public void SelectAllHidDevices()
-    {
-        if (_hidHideManager == null) return;
-        foreach (var device in HidDevices)
-        {
-            if (!HidHideManager.IsVirtualDevice(device.FriendlyName, device.DeviceInstanceId))
-            {
-                device.IsHidden = true;
-                _hidHideManager.ToggleDeviceHiding(device, true);
-            }
-        }
-        _currentSettings.BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
-        SaveAppSettings();
-    }
-
-    [RelayCommand]
-    public void DeselectAllHidDevices()
-    {
-        if (_hidHideManager == null) return;
-        foreach (var device in HidDevices)
-        {
-            device.IsHidden = false;
-            _hidHideManager.ToggleDeviceHiding(device, false);
-        }
-        _currentSettings.BlockedInstanceIds = new List<string>();
-        _hidHideManager.SyncBlockedInstances(new List<string>());
-        SaveAppSettings();
-    }
-
-    partial void OnIsHidHideActiveChanged(bool value)
-    {
-        if (_isLoadingSettings || _hidHideManager == null) return;
-        _hidHideManager.SetGlobalHidingState(value);
-        SaveAppSettings();
-    }
-
-    partial void OnIsAppListInvertedChanged(bool value)
-    {
-        if (_isLoadingSettings || _hidHideManager == null) return;
-        _hidHideManager.IsAppListInverted = value;
-        SaveAppSettings();
-    }
-
-    [RelayCommand]
-    public async Task AddApplicationToHidHide(IStorageProvider? storageProvider)
-    {
-        if (storageProvider == null || _hidHideManager == null) return;
-        var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Select Game Executable",
-            AllowMultiple = true,
-            FileTypeFilter = [new FilePickerFileType("Executables") { Patterns = ["*.exe"] }]
-        });
-        if (files.Count > 0)
-        {
-            foreach (var f in files) _hidHideManager.AddApplicationExemption(f.Path.LocalPath);
-            RefreshHidApplications();
-            SaveAppSettings();
-        }
-    }
-
-    [RelayCommand]
-    public async Task AddDirectoryToHidHide(IStorageProvider? storageProvider)
-    {
-        if (storageProvider == null || _hidHideManager == null) return;
-        var folders = await storageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select Game Folder" });
-        if (folders.Count > 0)
-        {
-            _hidHideManager.AddDirectoryExemptions(folders[0].Path.LocalPath);
-            RefreshHidApplications();
-            SaveAppSettings();
-        }
-    }
-
-    [RelayCommand]
-    public void RemoveApplicationFromHidHide(string appPath)
-    {
-        if (_hidHideManager == null) return;
-        _hidHideManager.RemoveApplicationExemption(appPath);
-        RefreshHidApplications();
-        SaveAppSettings();
-    }
-
-    [RelayCommand]
-    public void ClearAllApplicationsFromHidHide()
-    {
-        if (_hidHideManager == null) return;
-        _hidHideManager.ClearAllApplicationExemptions();
-        RefreshHidApplications();
-        SaveAppSettings();
-    }
-
     private void OnMappingsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.NewItems != null) foreach (MappingEntry item in e.NewItems) item.PropertyChanged += OnMappingEntryPropertyChanged;
@@ -1311,24 +1052,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     IsVirtualOutputActive = settings.IsVirtualOutputActive;
                     _feeder.SetActive(IsVirtualOutputActive);
 
-                    IsHidHideActive = settings.IsHidHideActive;
-                    _hidHideManager?.SetGlobalHidingState(IsHidHideActive);
-
-                    IsAppListInverted = settings.IsAppListInverted;
-                    if (_hidHideManager != null) _hidHideManager.IsAppListInverted = IsAppListInverted;
-
-                    if (settings.BlockedInstanceIds != null && settings.BlockedInstanceIds.Count > 0)
-                    {
-                        _hidHideManager?.SyncBlockedInstances(settings.BlockedInstanceIds);
-                    }
-
-                    if (settings.WhitelistedApplications != null && settings.WhitelistedApplications.Count > 0)
-                    {
-                        foreach (var app in settings.WhitelistedApplications)
-                        {
-                            _hidHideManager?.AddApplicationExemption(app);
-                        }
-                    }
+                    HidHide.ApplySettings(settings);
 
                     if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
                     {
@@ -1357,10 +1081,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.CloseMinimizesToTray = CloseMinimizesToTray;
             _currentSettings.AutoCheckForUpdates = AutoCheckForUpdates;
             _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
-            _currentSettings.IsHidHideActive = IsHidHideActive;
-            _currentSettings.IsAppListInverted = IsAppListInverted;
-            _currentSettings.BlockedInstanceIds = _hidHideManager?.GetBlockedInstanceIds() ?? new List<string>();
-            _currentSettings.WhitelistedApplications = _hidHideManager?.GetApplicationExemptions() ?? new List<string>();
+            HidHide.WriteSettings(_currentSettings);
 
             File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true }));
         }

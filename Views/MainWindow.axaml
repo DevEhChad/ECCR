@@ -5,12 +5,15 @@
         xmlns:vm="using:ECCR.ViewModels"
         xmlns:models="using:ECCR.Models"
         xmlns:services="using:ECCR.Services"
+        xmlns:views="using:ECCR.Views"
         xmlns:converters="using:ECCR.Converters"
         mc:Ignorable="d" 
         d:DesignWidth="1100" 
         d:DesignHeight="700"
         Width="1100"
         Height="700"
+        MinWidth="980"
+        MinHeight="680"
         x:Class="ECCR.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="RootWindow"
@@ -60,8 +63,8 @@
                                       FontWeight="SemiBold"
                                       VerticalAlignment="Center"/>
 
-                        <Button Content="🛡 HidHide" Command="{Binding OpenHidHideMenuCommand}" Background="#2A1B3D" BorderBrush="#5E3B8A" FontSize="11" Padding="8,4" CornerRadius="5"/>
-                        <Button Content="⚡ Auto-Bind" Command="{Binding OpenAutoBindWizardCommand}" Background="#1E2B45" BorderBrush="#3E7BFA" Foreground="#70A0FF" FontSize="11" Padding="8,4" CornerRadius="5"/>
+                        <Button Content="🛡 HidHide" Command="{Binding HidHide.OpenHidHideMenuCommand}" Background="#2A1B3D" BorderBrush="#5E3B8A" FontSize="11" Padding="8,4" CornerRadius="5"/>
+                        <Button Content="⚡ Auto-Bind" Command="{Binding AutoBind.OpenAutoBindWizardCommand}" Background="#1E2B45" BorderBrush="#3E7BFA" Foreground="#70A0FF" FontSize="11" Padding="8,4" CornerRadius="5"/>
                         <Button Content="⚙️ Settings" Command="{Binding OpenSettingsCommand}" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" FontSize="11" Padding="8,4" CornerRadius="5"/>
                     </StackPanel>
                 </Grid>
@@ -122,14 +125,13 @@
             <!-- ROW 2: Column Headers -->
             <Grid Grid.Row="2" ColumnDefinitions="32, 1.8*, 0.9*, 1.4*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
                 <Border Grid.ColumnSpan="8" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,6"/>
-                <TextBlock Grid.Column="0" Text="Select" FontSize="11" FontWeight="SemiBold" Foreground="#8B95A5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <Label Grid.Column="1" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Physical Key / Axis"/>
-                <Label Grid.Column="2" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Type"/>
-                <Label Grid.Column="3" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Virtual Player Slot"/>
-                <Label Grid.Column="4" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Channel"/>
-                <Label Grid.Column="5" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Dead Zone"/>
-                <Label Grid.Column="6" FontWeight="SemiBold" HorizontalContentAlignment="Center" Content="Calibration"/>
-                <Label Grid.Column="7"/>
+                <TextBlock Grid.Column="0" Text="Select" FontSize="11" FontWeight="SemiBold" Foreground="#8B95A5" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Text="Physical Key / Axis" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="2" Text="Type" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="3" Text="Virtual Player Slot" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="4" Text="Channel" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="5" Text="Dead Zone" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="6" Text="Calibration" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </Grid>
 
             <!-- ROW 3: Collapsible Device Mapping Groups -->
@@ -725,79 +727,8 @@
             </Border>
         </Border>
 
-        <!-- HIDHIDE MODAL -->
-        <Border IsVisible="{Binding IsHidHideMenuOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="22" Width="920" Height="600" HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid RowDefinitions="Auto, *, Auto">
-                    <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,12">
-                        <Grid ColumnDefinitions="*, Auto, Auto">
-                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="🛡️ HidHide Device Cloaking &amp; Application Rules" FontWeight="Bold" FontSize="16" Foreground="White"/>
-                                <TextBlock Text="Hide physical hardware to eliminate double inputs. Whitelist games to bypass cloaking." Foreground="#8B95A5" FontSize="12"/>
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsHidHideActive}" OnContent="Cloaking Active" OffContent="Disabled" Margin="0,0,14,0"/>
-                            <Button Grid.Column="2" Content="✕" Command="{Binding CloseHidHideMenuCommand}" Width="32" Height="32" CornerRadius="6"/>
-                        </Grid>
-                    </Border>
-
-                    <Grid Grid.Row="1" ColumnDefinitions="*, 14, *">
-                        <Border Grid.Column="0" Background="#161B26" CornerRadius="8" Padding="12">
-                            <Grid RowDefinitions="Auto, Auto, *">
-                                <TextBlock Grid.Row="0" Text="1. Physical Hardware to Cloak" FontWeight="Bold" Margin="0,0,0,8"/>
-                                <Grid Grid.Row="1" ColumnDefinitions="Auto, Auto, *" Margin="0,0,0,8">
-                                    <Button Grid.Column="0" Content="Cloak All" Command="{Binding SelectAllHidDevicesCommand}" Padding="10,4" FontSize="11"/>
-                                    <Button Grid.Column="1" Content="Uncloak All" Command="{Binding DeselectAllHidDevicesCommand}" Margin="6,0,0,0" Padding="10,4" FontSize="11"/>
-                                </Grid>
-                                <ScrollViewer Grid.Row="2">
-                                    <ItemsControl ItemsSource="{Binding HidDevices}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="services:HidDeviceItem">
-                                                <Border Background="#121620" CornerRadius="6" Padding="8" Margin="0,2">
-                                                    <Grid ColumnDefinitions="*, Auto">
-                                                        <TextBlock Grid.Column="0" Text="{Binding FriendlyName}" VerticalAlignment="Center"/>
-                                                        <CheckBox Grid.Column="1" IsChecked="{Binding IsHidden}" 
-                                                                  Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).ToggleHidDeviceCommand}"
-                                                                  CommandParameter="{Binding}" Content="Hide"/>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
-                            </Grid>
-                        </Border>
-
-                        <Border Grid.Column="2" Background="#161B26" CornerRadius="8" Padding="12">
-                            <Grid RowDefinitions="Auto, Auto, *">
-                                <TextBlock Grid.Row="0" Text="2. Whitelisted Applications" FontWeight="Bold" Margin="0,0,0,8"/>
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
-                                    <Button Content="+ Add Game (.exe)" Command="{Binding AddApplicationToHidHideCommand}" CommandParameter="{Binding #RootWindow.StorageProvider}" FontSize="11"/>
-                                    <Button Content="Clear All" Command="{Binding ClearAllApplicationsFromHidHideCommand}" FontSize="11"/>
-                                </StackPanel>
-                                <ScrollViewer Grid.Row="2">
-                                    <ItemsControl ItemsSource="{Binding WhitelistedApplications}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <Border Background="#121620" CornerRadius="6" Padding="6" Margin="0,2">
-                                                    <Grid ColumnDefinitions="*, Auto">
-                                                        <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center"/>
-                                                        <Button Grid.Column="1" Content="✕" Command="{Binding #RootWindow.((vm:MainWindowViewModel)DataContext).RemoveApplicationFromHidHideCommand}" CommandParameter="{Binding}" Foreground="#FF6666" Background="Transparent"/>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <Grid Grid.Row="2" Margin="0,12,0,0">
-                        <Button Content="Apply &amp; Done" Command="{Binding CloseHidHideMenuCommand}" HorizontalAlignment="Right" Background="#00B074" FontWeight="SemiBold" Padding="20,6" CornerRadius="6"/>
-                    </Grid>
-                </Grid>
-            </Border>
-        </Border>
+        <!-- HIDHIDE MODAL (see Views/HidHideView.axaml + ViewModels/HidHideViewModel.cs) -->
+        <views:HidHideView DataContext="{Binding HidHide}"/>
 
         <!-- CREATE PROFILE MODAL -->
         <Border IsVisible="{Binding IsCreatingProfile}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
