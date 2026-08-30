@@ -14,6 +14,14 @@ public class PlayerBadgeInfo
     public IBrush Foreground { get; set; } = Brushes.White;
 }
 
+/// <summary>
+/// Maps a raw <c>TargetDeviceId</c> (1-4) to the same themed "P1"/"P2"/... badge info as
+/// <c>MainWindowViewModel.PlayerTargets</c> (see <see cref="ECCR.Models.PlayerTargetOption"/>).
+/// Not currently referenced from any XAML - the main grid's player badges are bound directly
+/// to a matching <see cref="ECCR.Models.PlayerTargetOption"/> from that list instead, via its
+/// own color properties, so this converter is redundant with it. Safe to remove, or to use
+/// in a spot where only the bare numeric ID is available and the full option list isn't.
+/// </summary>
 public class PlayerTargetConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

@@ -11,6 +11,14 @@
              x:DataType="vm:HidHideViewModel"
              x:Name="HidHideRoot">
 
+    <!--
+        In-window overlay UserControl (hosted inside MainWindow, DataContext bound to
+        MainWindowViewModel.HidHide), not a separate Window - see MainWindow.axaml.cs's doc
+        comment. Same "#HidHideRoot.((vm:HidHideViewModel)DataContext).X" compiled-binding
+        pattern as MainWindow.axaml uses for its own name, needed here because the device/app
+        list rows below are rendered via DataTemplates whose own DataContext is the row item.
+    -->
+
     <Design.DataContext>
         <vm:HidHideViewModel/>
     </Design.DataContext>

@@ -2,6 +2,12 @@
 
 namespace ECCR.Models;
 
+/// <summary>
+/// Serialized as-is to <c>%AppData%/ECCR/settings.json</c> (see
+/// <see cref="ECCR.ViewModels.MainWindowViewModel.SaveAppSettings"/>). Holds app-wide
+/// preferences and HidHide state; per-mapping data (device bindings, calibration) lives in
+/// separate profile files instead (<see cref="UserProfile"/>).
+/// </summary>
 public class AppSettings
 {
     public string LastActiveProfile { get; set; } = "Default";

@@ -4,6 +4,7 @@ using ECCR.Models;
 
 namespace ECCR.Services;
 
+/// <summary>Coarse hardware family, inferred from a device's DirectInput name string by <see cref="DevicePresetService.DetectCategory"/>.</summary>
 public enum DeviceHardwareCategory
 {
     MozaEsxWheel,
@@ -19,6 +20,20 @@ public enum DeviceHardwareCategory
     GenericGamepad
 }
 
+/// <summary>
+/// Everything about mapping a *specific* piece of hardware, keyed off nothing more than its
+/// DirectInput instance name string (there's no vendor/product ID lookup - device names are
+/// matched by substring in <see cref="DetectCategory"/>). Three things live here that all
+/// depend on that same category detection: friendly display names for raw button/axis
+/// indices (<see cref="GetButtonDisplayName"/>/<see cref="GetAxisDisplayName"/>, used by the
+/// "Click to Bind" listener and the Calibration dialog), best-guess default target channel
+/// per index (used by <c>MainWindowViewModel.GuessBestTargetChannel</c> when a new binding is
+/// captured), and the full one-click preset used by the Auto-Bind Wizard
+/// (<see cref="GeneratePreset"/>). Physical index numbering follows SharpDX/DirectInput
+/// convention: buttons 0-31 are the device's ordinary buttons, and 128-131 are a synthetic
+/// range <see cref="InputDeviceManager"/> assigns to a POV hat's Up/Right/Down/Left when one
+/// is present (there's no such thing as "button 128" on real hardware).
+/// </summary>
 public static class DevicePresetService
 {
     public static bool IsWheelOrPedalCategory(DeviceHardwareCategory category) =>
@@ -69,6 +84,15 @@ public static class DevicePresetService
         return DeviceHardwareCategory.GenericGamepad;
     }
 
+    /// <summary>
+    /// Best-effort human-readable label for a physical button index, given the device's
+    /// detected category. Falls through to a generic "Button N" for indices this category's
+    /// table doesn't special-case. These specific indices were reverse-engineered per brand
+    /// (e.g. which raw button number is Moza's paddle vs. its menu button) rather than
+    /// derived from any spec, so if a new wheel/pad reports its buttons in an unexpected
+    /// order, the fix is a new branch here (and in <see cref="GetAxisDisplayName"/> /
+    /// <see cref="GeneratePreset"/> for that same category) with corrected index mappings.
+    /// </summary>
     public static string GetButtonDisplayName(string deviceName, int index)
     {
         var category = DetectCategory(deviceName);
@@ -236,6 +260,7 @@ public static class DevicePresetService
         }
     }
 
+    /// <summary>Same idea as <see cref="GetButtonDisplayName"/>, but for the 6-8 element raw axis array (see <see cref="RawDeviceInputState.Axes"/>).</summary>
     public static string GetAxisDisplayName(string deviceName, int index)
     {
         var category = DetectCategory(deviceName);
@@ -290,6 +315,15 @@ public static class DevicePresetService
         }
     }
 
+    /// <summary>
+    /// Builds the Auto-Bind Wizard's full preset list for one device: every axis/button this
+    /// category is known to have, each pre-wired to a sensible default target. Passing
+    /// <paramref name="targetIsWheel"/> true routes every default to a "[Wheel] ..." target
+    /// (vJoy) instead of "[Xbox] ...", following the wizard's DirectInput Wheel vs. Xbox
+    /// Gamepad radio choice. Note <paramref name="buttonCount"/>/<paramref name="axisCount"/>
+    /// are accepted but currently unused - the list length is fixed per category below
+    /// rather than trimmed to what the connected device actually reports.
+    /// </summary>
     public static List<PresetBindingItem> GeneratePreset(string deviceName, int buttonCount, int axisCount, bool targetIsWheel)
     {
         var list = new List<PresetBindingItem>();

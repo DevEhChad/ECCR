@@ -10,6 +10,11 @@ using ECCR.Views;
 
 namespace ECCR;
 
+/// <summary>
+/// Application lifetime root. Owns the single <see cref="MainWindowViewModel"/> instance for
+/// the process, wires up the system tray icon, and coordinates minimize-to-tray /
+/// close-to-tray behavior with <see cref="Views.MainWindow"/>.
+/// </summary>
 public partial class App : Application
 {
     private MainWindowViewModel? _mainViewModel;
@@ -128,7 +133,10 @@ public partial class App : Application
         catch { }
         finally
         {
-            // Forcefully terminate unmanaged driver threads and exit immediately
+            // ViGEm/vJoy/HidHide and the DirectInput polling loop hold native handles and a
+            // background thread that don't always unwind cleanly through a normal managed
+            // shutdown. Environment.Exit forces immediate process termination once cleanup
+            // has had a chance to run, instead of risking a hang on exit.
             Environment.Exit(0);
         }
     }

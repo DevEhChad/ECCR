@@ -1,4 +1,12 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+﻿<!--
+    Calibration dialog: DataContext is the single MappingEntry being calibrated (see
+    CalibrationDialog.axaml.cs), not a view model - every binding below reads/writes that
+    entry's own properties directly. The Live Bar Visualizers section further down swaps
+    between three mutually-exclusive visuals (generic bar / steering wheel dial / pedal bar)
+    based on the entry's device category and target, toggled from code-behind since that
+    decision needs DevicePresetService lookups rather than a plain binding.
+-->
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="using:ECCR.Models"
         xmlns:converters="using:ECCR.Converters"

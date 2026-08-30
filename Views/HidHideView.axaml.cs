@@ -5,6 +5,12 @@ using ECCR.ViewModels;
 
 namespace ECCR.Views;
 
+/// <summary>
+/// The HidHide device-cloaking dialog, as an in-window overlay <c>UserControl</c> rather
+/// than a <c>Window</c> - see <see cref="MainWindow"/>'s doc comment. Hosted via
+/// <c>&lt;views:HidHideView DataContext="{Binding HidHide}"/&gt;</c> in MainWindow.axaml,
+/// so its own DataContext is always a <see cref="ECCR.ViewModels.HidHideViewModel"/>.
+/// </summary>
 public partial class HidHideView : UserControl
 {
     public HidHideView()

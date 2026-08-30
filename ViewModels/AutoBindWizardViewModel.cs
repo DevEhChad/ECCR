@@ -68,6 +68,10 @@ public partial class AutoBindWizardViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(WizardSelectedDevice))
         {
+            // Pre-selects the wizard's DirectInput Wheel vs. Xbox Gamepad radio to match the
+            // device's detected hardware family, so the common case needs no manual toggle.
+            // Note: this repeats the same category list as
+            // DevicePresetService.IsWheelOrPedalCategory inline instead of calling it.
             var cat = DevicePresetService.DetectCategory(WizardSelectedDevice);
             WizardTargetIsWheel = (cat == DeviceHardwareCategory.MozaEsxWheel ||
                                    cat == DeviceHardwareCategory.MozaWheel || 

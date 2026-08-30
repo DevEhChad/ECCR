@@ -7,6 +7,16 @@ using Nefarius.ViGEm.Client.Targets.Xbox360;
 
 namespace ECCR.Services;
 
+/// <summary>
+/// ViGEm-backed half of the app's virtual output: emulates up to four independent virtual
+/// Xbox 360 controllers via ViGEmBus, one per Player target ID, created lazily the first
+/// time something maps to it. Only handles "[Xbox] ..." targets - see
+/// <see cref="ECCR.Models.MappingEntry"/> for why routing is done by string prefix, and
+/// <see cref="VJoyFeederService"/> for the sibling backend that handles "[Wheel] ..." targets.
+/// Xbox 360 pads only expose 2 sticks, 2 triggers, and ~14 buttons, so this is the simpler
+/// but more limited of the two backends - full wheel setups (H-pattern shifters, more than a
+/// couple of dozen buttons) need the vJoy path instead.
+/// </summary>
 public class VirtualFeederService : IVirtualFeeder
 {
     private readonly ViGEmClient? _viGEmClient;
@@ -83,6 +93,14 @@ public class VirtualFeederService : IVirtualFeeder
         }
     }
 
+    /// <summary>
+    /// Routes one calibrated axis value to the matching Xbox 360 report field, matched by
+    /// substring against <paramref name="targetOutput"/>. Thumbstick axes are ViGEm
+    /// <c>short</c> (-32768..32767, centered at 0) so the incoming 0..1 value is rescaled by
+    /// <c>(value * 65535) - 32768</c>; triggers are ViGEm <c>byte</c> sliders (0..255, resting
+    /// at 0) so they're just scaled by 255 directly - see <see cref="UpdateButton"/> for the
+    /// button-side scheme.
+    /// </summary>
     public void UpdateAxis(uint targetDeviceId, string targetOutput, double normalizedValue)
     {
         if (!_isActive) return;

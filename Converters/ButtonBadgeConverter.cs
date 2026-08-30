@@ -16,6 +16,14 @@ public class BadgeInfo
     public IBrush Foreground { get; set; } = Brushes.White;
 }
 
+/// <summary>
+/// Turns a mapping's physical-input or virtual-output display string into a small colored
+/// glyph badge (e.g. "Ⓐ" green for an Xbox A button, "⎈" blue for steering) shown next to it
+/// in the main grid and dropdowns. Pure string pattern-matching against display text - see
+/// the class doc on <see cref="ECCR.Models.MappingEntry"/> for why the app uses display
+/// strings as the shared vocabulary instead of an enum. Order matters: more specific checks
+/// (e.g. "Moza A Button") are listed before the generic ones they'd otherwise also match.
+/// </summary>
 public class ButtonBadgeConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
