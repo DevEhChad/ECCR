@@ -22,6 +22,19 @@ public partial class HidDeviceItem : ObservableObject
     private bool _isHidden;
 }
 
+/// <summary>
+/// Thin wrapper around Nefarius' HidHide driver control service. HidHide is a Windows
+/// filter driver that can hide a physical HID device from every application except the ones
+/// on its whitelist - this is what lets a game see only the app's combined virtual wheel
+/// instead of also seeing (and double-reading, or force-feedback-fighting over) the raw
+/// physical wheel/pedals underneath it. Two invariants this class exists to protect:
+/// (1) ECCR itself, and a handful of system executables it depends on, must always stay
+/// whitelisted or the app would lock itself out of its own devices (see
+/// <see cref="EnsureSelfWhitelisted"/>/<see cref="GetPermanentAppPaths"/>); (2) the app's own
+/// virtual devices (vJoy/ViGEm) must never end up in HidHide's blocklist, or the very output
+/// the app creates would be hidden from every game (see <see cref="IsVirtualDevice"/> and
+/// its use throughout this file).
+/// </summary>
 public class HidHideManager
 {
     private readonly IHidHideControlService? _hidHide;
@@ -76,6 +89,17 @@ public class HidHideManager
         }
     }
 
+    /// <summary>
+    /// Identifies the app's own virtual output devices (vJoy: VID 0x1234; ViGEm's emulated
+    /// Xbox 360/DualShock pads: VID 0x045E with one of several XInput PIDs) so they're never
+    /// accidentally cloaked. Checks VID/PID first when available, then falls back to
+    /// substring matching on device name/instance ID/product name for callers (like the
+    /// device-instance-ID-only overloads used throughout this file) that don't have VID/PID
+    /// parsed out. Over-matching here is the safer failure mode than under-matching, since
+    /// the consequence of a false positive is just "one real device stays visible to
+    /// HidHide's picker", while a false negative could hide the app's own virtual device
+    /// from every game.
+    /// </summary>
     public static bool IsVirtualDevice(string? name, string? deviceId, string? prodName = null, int vid = 0, int pid = 0)
     {
         if (vid == 0x1234) return true;
@@ -228,6 +252,15 @@ public class HidHideManager
         catch { return new List<string>(); }
     }
 
+    /// <summary>
+    /// Builds the device list shown in the HidHide dialog. Two enumeration passes are
+    /// combined because neither alone is complete: DirectInput only sees devices exposing a
+    /// game-controller interface (and gives a clean instance path HidHide can key on), while
+    /// the WMI PnP query below also catches HID devices some drivers don't surface through
+    /// DirectInput at all - at the cost of noisier IDs and needing the keyword/PNPClass
+    /// filtering in <see cref="IsNonGamingPeripheral"/> to keep keyboards/mice/webcams out.
+    /// <c>seenIds</c> dedupes across both passes by instance ID.
+    /// </summary>
     public List<HidDeviceItem> GetConnectedHidDevices()
     {
         var list = new List<HidDeviceItem>();
@@ -245,6 +278,9 @@ public class HidHideManager
 
             foreach (var d in gameDevices)
             {
+                // DirectInput packs USB VID/PID into the first 4 bytes of ProductGuid
+                // (a legacy convention, not a real GUID) - PID low/high byte then VID
+                // low/high byte, both little-endian.
                 byte[] bytes = d.ProductGuid.ToByteArray();
                 int pid = bytes[0] | (bytes[1] << 8);
                 int vid = bytes[2] | (bytes[3] << 8);
@@ -259,6 +295,13 @@ public class HidHideManager
 
                 string instanceId = string.Empty;
 
+                // HidHide's blocklist is keyed by Windows device instance path
+                // (VID_xxxx&PID_xxxx\...), not DirectInput's InstanceGuid, so it has to be
+                // recovered from the device's raw interface path. A typical interface path
+                // looks like "\\?\HID#VID_1234&PID_5678#7&abc123&0&0000#{guid}" - strip the
+                // leading "\\?\" / "." noise and the trailing "#{class guid}" suffix, then
+                // swap the remaining "#" separators back to "\" to get the instance ID form
+                // HidHide expects.
                 try
                 {
                     using var joystick = new Joystick(directInput, d.InstanceGuid);
@@ -398,6 +441,14 @@ public class HidHideManager
         catch { }
     }
 
+    /// <summary>
+    /// Reconciles the driver's actual blocklist to exactly match <paramref name="targetBlockedIds"/>
+    /// (adds what's missing, removes what shouldn't be there) instead of only ever adding.
+    /// Called when the HidHide dialog closes and when settings are loaded at startup - a
+    /// one-directional "add only" sync would leave devices the user unchecked still hidden
+    /// after their next session, since HidHide's own blocklist persists independently of
+    /// this app's settings.json.
+    /// </summary>
     public void SyncBlockedInstances(IEnumerable<string> targetBlockedIds)
     {
         if (_hidHide == null || !IsInstalled) return;

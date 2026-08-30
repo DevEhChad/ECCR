@@ -126,6 +126,13 @@ public partial class HidHideViewModel : ViewModelBase
         IsHidHideMenuOpen = true;
     }
 
+    /// <summary>
+    /// Commits the dialog's checkbox state to both the live HidHide driver and settings.json
+    /// in one place, rather than writing through on every individual checkbox toggle - the
+    /// driver call in <see cref="HidHideManager.SyncBlockedInstances"/> is relatively expensive (it walks
+    /// and rewrites the whole blocklist), so batching it to dialog-close avoids doing that
+    /// once per click while the user is still working through the device list.
+    /// </summary>
     [RelayCommand]
     public void CloseHidHideMenu()
     {
@@ -153,6 +160,15 @@ public partial class HidHideViewModel : ViewModelBase
     // Device cloaking
     // ---------------------------------------------------------------------
 
+    /// <summary>
+    /// A device counts as hidden if either the driver already has it blocked (source of
+    /// truth after a fresh install/external change) or it's in this app's own saved settings
+    /// (source of truth for what the user asked for) - the union of the two, checked in the
+    /// merge loop below, is what the checkbox state reflects on open. That handles the
+    /// driver's blocklist and settings.json drifting out of sync (e.g. the driver was reset
+    /// externally, or settings were restored from an old backup) without silently unblocking
+    /// something the user previously chose to hide.
+    /// </summary>
     public void RefreshHidDevices()
     {
         if (_hidHideManager == null) return;

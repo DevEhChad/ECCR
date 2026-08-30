@@ -7,6 +7,15 @@ using ECCR.Services;
 
 namespace ECCR.Views;
 
+/// <summary>
+/// A real modal child window (opened via <c>ShowDialog</c> from
+/// <see cref="ECCR.ViewModels.MainWindowViewModel.OpenCalibration"/>), unlike most of the
+/// app's other dialogs - see <see cref="MainWindow"/>'s doc comment. Its DataContext is set
+/// directly to the <see cref="ECCR.Models.MappingEntry"/> being calibrated (not a view
+/// model), so every binding in the XAML - including the wheel-dial/pedal-bar visualizers -
+/// reads and writes that single entry's calibration properties live while the poll loop
+/// keeps updating <c>LatestRawReading</c>/<c>LiveOutputPercentage</c> in the background.
+/// </summary>
 public partial class CalibrationDialog : Window
 {
     public CalibrationDialog()

@@ -1,4 +1,17 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+﻿<!--
+    Main window: DataContext is MainWindowViewModel. Most "dialogs" here (dependency banner,
+    Settings, Update prompts, Create Profile) are IsVisible-toggled overlay Borders stacked
+    in the outer Grid at the bottom of this file, not separate windows - see MainWindow.axaml.cs
+    for the two real exceptions (Auto-Bind Wizard, Calibration).
+
+    A recurring pattern worth knowing before reading further: rows inside GroupedMappings/
+    Mappings ItemsControls are rendered via DataTemplates whose own DataContext is the row
+    item (a DeviceMappingGroup or MappingEntry), not this window's view model. Anything in
+    those templates that needs to call back to MainWindowViewModel (e.g. RemoveMappingCommand)
+    reaches it via the compiled-binding path "#RootWindow.((vm:MainWindowViewModel)DataContext).X",
+    using this window's own x:Name (RootWindow, set below) to hop back out to its DataContext.
+-->
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -7,7 +20,7 @@
         xmlns:services="using:ECCR.Services"
         xmlns:views="using:ECCR.Views"
         xmlns:converters="using:ECCR.Converters"
-        mc:Ignorable="d" 
+        mc:Ignorable="d"
         d:DesignWidth="1100" 
         d:DesignHeight="700"
         Width="1100"

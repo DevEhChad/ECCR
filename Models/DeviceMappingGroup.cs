@@ -3,6 +3,13 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ECCR.Models;
 
+/// <summary>
+/// Purely a UI grouping: the main window's mapping list is rendered per physical device
+/// (one collapsible section per <see cref="DeviceName"/>) rather than as one flat list of
+/// <see cref="MappingEntry"/> rows. Rebuilt from <c>MainWindowViewModel.Mappings</c> by
+/// <c>MainWindowViewModel.RebuildGroupedMappings</c> whenever the underlying collection
+/// changes - it is not itself persisted.
+/// </summary>
 public partial class DeviceMappingGroup : ObservableObject
 {
     public string DeviceName { get; }

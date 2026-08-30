@@ -20,6 +20,19 @@ using Velopack;
 
 namespace ECCR.ViewModels;
 
+/// <summary>
+/// The app's central view model and the hub everything else plugs into. Owns the live
+/// <see cref="Mappings"/> list (the single source of truth for every axis/button binding),
+/// drives the DirectInput poll loop via <see cref="InputDeviceManager"/> and feeds calibrated
+/// values to <see cref="IVirtualFeeder"/>, and hosts <see cref="HidHide"/> /
+/// <see cref="AutoBind"/> as sub-view-models that share this instance's device list and
+/// mapping collection rather than owning their own. Persistence is split two ways: app-wide
+/// preferences live in <c>%AppData%/ECCR/settings.json</c> (<see cref="SaveAppSettings"/> /
+/// <see cref="LoadAppSettings"/>), while the actual bindings for the active profile live in
+/// <c>%AppData%/ECCR/Profiles/{name}.json</c> (<see cref="SaveProfileToDisk"/> /
+/// <see cref="LoadSelectedProfile"/>) and are auto-saved on essentially every edit via
+/// <see cref="AutoSaveCurrentProfile"/>.
+/// </summary>
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly InputDeviceManager? _deviceManager;
@@ -187,6 +200,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _profilesDirectory = Path.Combine(_baseDirectory, "Profiles");
         _settingsFilePath = Path.Combine(_baseDirectory, "settings.json");
 
+        // The Avalonia XAML previewer instantiates this via <Design.DataContext> without a
+        // real window/desktop lifetime, so it must not touch DirectInput, drivers, or the
+        // filesystem - just enough state to make the designer render something sensible.
         if (Design.IsDesignMode)
         {
             AppVersion = "v1.0.7";
@@ -338,6 +354,14 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Builds the fixed list backing every "Channel" dropdown in the app - the complete
+    /// vocabulary of target strings the feeders/converters pattern-match against. This is
+    /// the one place that vocabulary is defined; adding a new virtual output channel means
+    /// adding it here *and* teaching <see cref="ECCR.Services.VirtualFeederService"/> or
+    /// <see cref="ECCR.Services.VJoyFeederService"/> (whichever backend it belongs to) to
+    /// recognize the new string.
+    /// </summary>
     private void InitializeVirtualOutputs()
     {
         AvailableVirtualOutputs.Clear();
@@ -405,6 +429,15 @@ public partial class MainWindowViewModel : ViewModelBase
         AutoSaveCurrentProfile();
     }
 
+    /// <summary>
+    /// Fired once per physical device per DirectInput poll tick (every ~4ms, see
+    /// <c>InputDeviceManager.StartPolling</c>). Runs in one of two mutually exclusive modes
+    /// depending on <see cref="_listeningEntry"/>: normal feed-through (find every mapping
+    /// bound to this device and push calibrated values to <see cref="_feeder"/>), or capture
+    /// mode while the "Click to Bind" listener is armed (watch for the next button press or
+    /// large axis movement on any device and bind that to the listening entry). The two
+    /// never run in the same tick so a listening session can't also be feeding stale output.
+    /// </summary>
     private void ProcessInputPolling(ECCR.Services.RawDeviceInputState state)
     {
         if (IsShuttingDown) return;
@@ -426,6 +459,11 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 var mapping = Mappings[i];
 
+                // A mapping loaded from a profile has a device name but no live GUID yet
+                // (DirectInput instance GUIDs aren't stable across reconnects/reboots), so
+                // match by name until the device is seen once, then pin to its GUID below -
+                // this also lets the fallback name match keep working if the same device
+                // happens to enumerate under a different GUID after a replug.
                 bool isMatchingDevice = mapping.SourceDeviceGuid == state.InstanceGuid ||
                     (mapping.SourceDeviceGuid == Guid.Empty && string.Equals(mapping.SourceDeviceName, state.DeviceName, StringComparison.OrdinalIgnoreCase)) ||
                     (string.Equals(mapping.SourceDeviceName, state.DeviceName, StringComparison.OrdinalIgnoreCase));
@@ -456,12 +494,20 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        // Capture mode: the first poll after StartListening just records each axis's
+        // current resting value as a baseline (rather than binding on it), since without a
+        // baseline any already-off-zero axis would immediately "trigger" a bind the instant
+        // listening starts.
         if (!_axisBaselines.TryGetValue(state.InstanceGuid, out var baselines))
         {
             _axisBaselines[state.InstanceGuid] = (int[])state.Axes.Clone();
             return;
         }
 
+        // Buttons are checked before axes: a firm button press is an unambiguous signal,
+        // while a wheel/pedal can drift enough on its own to cross the axis threshold below,
+        // so preferring buttons avoids accidentally capturing axis noise when the user meant
+        // to press a button that happens to share a poll tick with it.
         for (int i = 0; i < state.Buttons.Length; i++)
         {
             if (state.Buttons[i])
@@ -472,6 +518,8 @@ public partial class MainWindowViewModel : ViewModelBase
             }
         }
 
+        // 10000 out of a 0-65535 raw range (~15%) is the movement threshold for "the user is
+        // actually moving this axis" vs. normal jitter on an unmoved one.
         for (int i = 0; i < state.Axes.Length; i++)
         {
             if (Math.Abs(state.Axes[i] - baselines[i]) > 10000)
@@ -506,6 +554,14 @@ public partial class MainWindowViewModel : ViewModelBase
         });
     }
 
+    /// <summary>
+    /// Picks a default target channel the instant an axis/button is captured via
+    /// "Click to Bind" (see <see cref="AssignDetectedInput"/>), so a new binding is never
+    /// left pointed at nothing before the user gets a chance to change it. This is a
+    /// separate, simpler per-index guess from the full <see cref="DevicePresetService.GeneratePreset"/>
+    /// table the Auto-Bind Wizard uses - it only needs one reasonable answer per index
+    /// rather than a complete preset for every input at once.
+    /// </summary>
     private static string GuessBestTargetChannel(string deviceName, InputType type, int index)
     {
         var category = DevicePresetService.DetectCategory(deviceName);
@@ -651,6 +707,11 @@ public partial class MainWindowViewModel : ViewModelBase
         };
     }
 
+    /// <summary>
+    /// Arms (or, if already armed for this entry, disarms) capture mode - see
+    /// <see cref="ProcessInputPolling"/> for what happens on the polling thread while armed.
+    /// Bound to each mapping row's physical-input button in the main grid.
+    /// </summary>
     [RelayCommand]
     public void StartListening(MappingEntry entry)
     {
@@ -853,6 +914,13 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Recomputes <see cref="GroupedMappings"/> (the per-device sections the main grid
+    /// renders) from the flat <see cref="Mappings"/> list. Called after any add/remove/rename
+    /// that could change grouping rather than kept incrementally in sync, since the mapping
+    /// list is small and this is cheap; each group's expand/collapse state is preserved
+    /// across the rebuild by name so re-grouping doesn't visually collapse everything.
+    /// </summary>
     public void RebuildGroupedMappings()
     {
         var expandedStates = GroupedMappings.ToDictionary(g => g.DeviceName, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
@@ -1025,6 +1093,13 @@ public partial class MainWindowViewModel : ViewModelBase
         AutoSaveCurrentProfile();
     }
 
+    /// <summary>
+    /// There's no explicit "Save Profile" step for most edits - almost every mutation to
+    /// <see cref="Mappings"/> or a mapping's properties calls this. The loading guards exist
+    /// because both profile load and settings load populate/mutate observable
+    /// collections/properties that would otherwise re-trigger this and overwrite the file
+    /// that's still mid-read with (at that point) incomplete in-memory data.
+    /// </summary>
     private void AutoSaveCurrentProfile()
     {
         if (_isLoadingProfile || _isLoadingSettings || string.IsNullOrWhiteSpace(SelectedProfile)) return;

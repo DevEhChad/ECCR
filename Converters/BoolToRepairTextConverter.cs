@@ -4,6 +4,7 @@ using Avalonia.Data.Converters;
 
 namespace ECCR.Converters;
 
+/// <summary>Labels the Settings dialog's per-driver install button: "Install" if missing, "Reinstall / Repair" if already present.</summary>
 public class BoolToRepairTextConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

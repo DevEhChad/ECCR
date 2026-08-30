@@ -5,6 +5,12 @@ using Microsoft.Win32;
 
 namespace ECCR.Services;
 
+/// <summary>
+/// "Run on Windows Startup" via the classic per-user Run registry key (no scheduled task,
+/// no startup folder shortcut). The registered command line always includes
+/// <c>--minimized</c> so a login-triggered launch goes straight to the tray instead of
+/// popping the main window open at boot - see <see cref="ECCR.App"/>'s handling of that flag.
+/// </summary>
 public static class StartupManager
 {
     private const string AppName = "EhChads Controller Remapper";

@@ -1,4 +1,11 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+﻿<!--
+    Auto-Bind Wizard: DataContext is AutoBindWizardViewModel (not MainWindowViewModel), set
+    directly by ECCR.ViewModels.AutoBindWizardViewModel.OpenAutoBindWizard. Lets the user
+    pick a connected device, previews the full preset DevicePresetService.GeneratePreset
+    would generate for it, then applies it in one shot (replacing any existing mappings for
+    that device).
+-->
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ECCR.ViewModels"
         xmlns:models="using:ECCR.Models"

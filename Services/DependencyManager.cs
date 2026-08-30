@@ -21,6 +21,14 @@ public class DriverStatusInfo
     public string? UninstallString { get; set; }
 }
 
+/// <summary>
+/// Detects and (un)installs the three native drivers ECCR depends on: ViGEmBus (virtual
+/// Xbox/DualShock pads), HidHide (device cloaking), and vJoy (virtual DirectInput wheel).
+/// Detection is registry-based rather than an API call (see <see cref="CheckServiceOrRegistry"/>)
+/// since all three ship as either a kernel service, a listed "Programs and Features" entry,
+/// or both. Installers are downloaded straight from each project's GitHub Releases and run
+/// elevated (UAC prompt) - there's no bundled/offline installer.
+/// </summary>
 public class DependencyManager
 {
     private static readonly HttpClient _httpClient = new();
@@ -147,6 +155,14 @@ public class DependencyManager
         return false;
     }
 
+    /// <summary>
+    /// A driver counts as "installed" if either its kernel service key exists under
+    /// Services (fast check, doesn't need the service to be running) or an
+    /// Uninstall registry entry matching <paramref name="displayNameSubstring"/> is found
+    /// (also checked so an app that installed a driver's userspace tooling but not the
+    /// kernel-mode service - or vice versa - still reports something sensible, and so the
+    /// uninstall string is available for <see cref="UninstallDriverAsync"/>).
+    /// </summary>
     private DriverStatusInfo CheckServiceOrRegistry(string serviceName, string displayNameSubstring)
     {
         var info = new DriverStatusInfo();

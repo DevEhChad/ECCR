@@ -4,6 +4,22 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ECCR.Models;
 
+/// <summary>
+/// One binding: a single physical axis or button on a physical device, routed to a single
+/// virtual output channel. This is the core unit of the whole app - a profile is just a
+/// list of these, the main window's grid is one row per entry, and
+/// <c>MainWindowViewModel.ProcessInputPolling</c> walks the full list on every DirectInput
+/// poll to find matches and feed the virtual devices.
+/// <see cref="TargetOutput"/> is a plain display string (e.g. "[Xbox] Xbox A (Cross / South
+/// / Handbrake)" or "[Wheel] Steering (Axis X)") rather than an enum: its "[Xbox]"/"[Wheel]"
+/// prefix is what <see cref="ECCR.Services.CompositeFeederService"/> pattern-matches on to
+/// decide whether an entry feeds the ViGEm or vJoy backend, and the rest of the string is
+/// pattern-matched again downstream to pick the specific axis/button. This keeps the UI's
+/// dropdown list, the auto-bind presets, and the feeders all working off one shared
+/// vocabulary of strings instead of a brittle parallel enum that would need to stay in sync
+/// with three places at once - the tradeoff is that renaming a target string anywhere means
+/// grepping for every place that matches against it.
+/// </summary>
 public partial class MappingEntry : ObservableObject
 {
     [JsonIgnore]
@@ -66,11 +82,22 @@ public partial class MappingEntry : ObservableObject
         OnPropertyChanged(nameof(IsAxis));
     }
 
+    /// <summary>
+    /// Turns one raw DirectInput axis reading (0-65535) into a calibrated 0.0-1.0 output
+    /// value, applying (in order) the user's min/max/center calibration range, deadzone, and
+    /// inversion. Called once per poll per axis mapping from
+    /// <c>MainWindowViewModel.ProcessInputPolling</c>, so it also doubles as the live-reading
+    /// update for the Calibration dialog's bars/dial (<see cref="LatestRawReading"/>,
+    /// <see cref="LiveRawPercentage"/>, <see cref="LiveOutputPercentage"/>).
+    /// </summary>
     public double CalculateCalibratedValue(int rawVal)
     {
         LatestRawReading = rawVal;
         LiveRawPercentage = Math.Clamp(rawVal / 65535.0, 0.0, 1.0);
 
+        // Rescale the raw value into the user-calibrated [RawMin, RawMax] window so a wheel
+        // or pedal that never quite reaches the DirectInput extremes still maps to a full
+        // 0..1 output range.
         int min = Math.Min(RawMin, RawMax);
         int max = Math.Max(RawMin, RawMax);
         if (max - min <= 0) max = min + 1;
@@ -78,6 +105,9 @@ public partial class MappingEntry : ObservableObject
         double clamped = Math.Clamp(rawVal, min, max);
         double normalized = (clamped - min) / (double)(max - min);
 
+        // Sticks/steering rest at the middle of their travel (0.5), not at zero, so their
+        // deadzone has to be carved out symmetrically around the center rather than from the
+        // low end - otherwise a small deadzone would only mask drift on one side of center.
         bool isCenteredAxis = TargetOutput.Contains("Stick") || TargetOutput.Contains("Steer") || TargetOutput.Contains("Steering");
 
         if (isCenteredAxis)
@@ -91,6 +121,8 @@ public partial class MappingEntry : ObservableObject
             }
             else
             {
+                // Rescale the remaining travel outside the deadzone back up to the full
+                // 0..0.5 half-range so output still reaches 0.0/1.0 at the physical extremes.
                 offset = Math.Sign(offset) * ((Math.Abs(offset) - halfDz) / (0.5 - halfDz)) * 0.5;
             }
 
@@ -98,6 +130,7 @@ public partial class MappingEntry : ObservableObject
         }
         else
         {
+            // Pedals/triggers rest at 0, so their deadzone is a simple low-end cutoff.
             if (Deadzone > 0.0)
             {
                 if (normalized < Deadzone)
@@ -116,6 +149,9 @@ public partial class MappingEntry : ObservableObject
         return LiveOutputPercentage;
     }
     
+    // Not currently read anywhere - badge glyph/color for a mapping's physical input is
+    // instead computed on the fly by Converters/ButtonBadgeConverter.cs (its own BadgeInfo
+    // type). Left here in case that's not obvious from a grep; safe to remove if unused.
     public string Glyph { get; set; } = string.Empty;
     public string Foreground { get; set; } = string.Empty;
 }
