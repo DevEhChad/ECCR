@@ -1,30 +1,29 @@
-﻿<!--
-    Auto-Bind Wizard: DataContext is AutoBindWizardViewModel (not MainWindowViewModel), set
-    directly by ECCR.ViewModels.AutoBindWizardViewModel.OpenAutoBindWizard. Lets the user
-    pick a connected device, previews the full preset DevicePresetService.GeneratePreset
-    would generate for it, then applies it in one shot (replacing any existing mappings for
-    that device).
+<!--
+    Auto Bind page (formerly a separate popup Window, AutoBindWizardWindow - see product
+    decision to promote it to a full sidebar page). DataContext is AutoBindWizardViewModel
+    directly, registered as-is into MainWindowViewModel's _pageViewModels. Lets the user pick a
+    connected device, preview the full preset DevicePresetService.GeneratePreset would
+    generate for it, then apply it in one shot (replacing any existing mappings for that
+    device) - identical behavior to the old wizard window, just hosted inline instead of as a
+    modal dialog.
 -->
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:ECCR.ViewModels"
-        xmlns:models="using:ECCR.Models"
-        xmlns:services="using:ECCR.Services"
-        xmlns:converters="using:ECCR.Converters"
-        x:Class="ECCR.Views.AutoBindWizardWindow"
-        x:DataType="vm:AutoBindWizardViewModel"
-        Title="Auto-Bind Wizard"
-        Width="650" Height="580"
-        WindowStartupLocation="CenterOwner"
-        Background="#0E1118"
-        Foreground="White"
-        CanResize="false">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             xmlns:converters="using:ECCR.Converters"
+             x:Class="ECCR.Views.AutoBindWizardView"
+             x:DataType="vm:AutoBindWizardViewModel">
 
-    <Window.Resources>
+    <Design.DataContext>
+        <vm:AutoBindWizardViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
         <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
-    </Window.Resources>
+    </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto, Auto, *, Auto" Margin="20">
+    <Grid RowDefinitions="Auto, Auto, *, Auto" Margin="24">
         <!-- Header -->
         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
             <TextBlock Text="⚡ Auto-Bind Configuration Wizard" FontWeight="Bold" FontSize="18" Foreground="White"/>
@@ -81,10 +80,9 @@
         </Border>
 
         <!-- Footer Buttons -->
-        <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto, Auto" Margin="0,16,0,0">
+        <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto" Margin="0,16,0,0">
             <Button Grid.Column="0" Content="🔄 Regenerate Preset" Command="{Binding PopulateWizardPresetCommand}" Background="#1F283C" Foreground="White" Padding="14,8" CornerRadius="6"/>
-            <Button Grid.Column="2" Content="Cancel" Click="OnCancelClick" Background="#262D3D" Foreground="White" Padding="16,8" CornerRadius="6" Margin="0,0,10,0"/>
-            <Button Grid.Column="3" Content="Apply Configuration" Command="{Binding ApplyWizardBindingsCommand}" Click="OnApplyClick" Background="#00B074" Foreground="White" FontWeight="Bold" Padding="18,8" CornerRadius="6"/>
+            <Button Grid.Column="2" Content="Apply Configuration" Command="{Binding ApplyWizardBindingsCommand}" Background="#00B074" Foreground="White" FontWeight="Bold" Padding="18,8" CornerRadius="6"/>
         </Grid>
     </Grid>
-</Window>
+</UserControl>

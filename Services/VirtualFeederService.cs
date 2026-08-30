@@ -145,6 +145,20 @@ public class VirtualFeederService : IVirtualFeeder
                 byte val = (byte)(Math.Clamp(normalizedValue, 0.0, 1.0) * 255.0);
                 controller.SetSliderValue(Xbox360Slider.RightTrigger, val);
             }
+            else
+            {
+                // Nothing analog matched - this is an axis (e.g. an auto-bound wheel's analog
+                // clutch/handbrake pedal) whose default target is really a digital Xbox 360
+                // button such as LB or A (Xbox 360 has no free analog input left for it once
+                // both sticks and both triggers are spoken for). Without this fallback the
+                // value was silently dropped - never reaching the virtual pad at all - so
+                // instead threshold it into a button press/release.
+                var btn = MapTargetToXboxButton(targetOutput);
+                if (btn != null)
+                {
+                    controller.SetButtonState(btn, normalizedValue > 0.5);
+                }
+            }
 
             controller.SubmitReport();
         }

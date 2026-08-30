@@ -1,0 +1,91 @@
+<!-- Home dashboard: hero banner + device summary + quick-action cards. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             mc:Ignorable="d"
+             d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="ECCR.Views.HomeView"
+             x:DataType="vm:HomeViewModel"
+             x:Name="HomeRoot">
+
+    <Design.DataContext>
+        <vm:HomeViewModel/>
+    </Design.DataContext>
+
+    <ScrollViewer Margin="24">
+        <StackPanel Spacing="16" MaxWidth="900" HorizontalAlignment="Center">
+
+            <!-- Hero banner -->
+            <Border CornerRadius="12" Height="160" ClipToBounds="True">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Color="#1A2E4C" Offset="0"/>
+                        <GradientStop Color="#0E1118" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid ColumnDefinitions="Auto, *" Margin="24">
+                    <Border Grid.Column="0" Background="#121622" BorderBrush="#3E7BFA" BorderThickness="2" CornerRadius="16" Width="56" Height="56" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="🎮" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                        <TextBlock Text="ECCR" FontWeight="Bold" FontSize="24" Foreground="White"/>
+                        <TextBlock Text="Your rig, your rules." FontSize="13" Foreground="#8B95A5"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Device summary -->
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Connected Devices" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+                    <ItemsControl ItemsSource="{Binding StatusBar.GamepadStatuses}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="10"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:ControllerStatus">
+                                <Border Classes="pill">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="🎮" FontSize="12"/>
+                                        <TextBlock Text="{Binding DeviceInstanceName}" FontSize="11" Foreground="White"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="No gamepad connected." FontSize="12" Foreground="#4B5563" IsVisible="{Binding !StatusBar.HasGamepads}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Quick action cards -->
+            <TextBlock Text="Quick Actions" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE" Margin="0,4,0,0"/>
+            <ItemsControl ItemsSource="{Binding QuickActionCards}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:NavItem">
+                        <Button Classes="neutral" Width="280" Height="80" Margin="0,0,12,12"
+                                Command="{Binding #HomeRoot.((vm:HomeViewModel)DataContext).NavigateToCommand}"
+                                CommandParameter="{Binding Page}">
+                            <Grid ColumnDefinitions="Auto, *">
+                                <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="24" VerticalAlignment="Center" Margin="4,0,14,0"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding Label}" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

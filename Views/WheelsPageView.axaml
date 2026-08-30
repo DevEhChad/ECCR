@@ -1,0 +1,46 @@
+<!-- Direct Input/Wheels page: device browser for wheel/pedal-class hardware. No battery/LED columns - that HID reporting is Sony-gamepad-only. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ECCR.Views.WheelsPageView"
+             x:DataType="vm:WheelsPageViewModel">
+
+    <Design.DataContext>
+        <vm:WheelsPageViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto, *" Margin="24">
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,16">
+            <TextBlock Text="🛞 Direct Input / Wheels" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <TextBlock Text="Every connected wheel, pedal set, or shifter recognized via DirectInput." FontSize="12" Foreground="#8B95A5"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="10">
+                <ItemsControl ItemsSource="{Binding Devices}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Border Classes="card" Margin="0,0,0,10">
+                                <Grid ColumnDefinitions="Auto, *">
+                                    <Border Grid.Column="0" Background="#1E2B45" CornerRadius="24" Width="44" Height="44" Margin="0,0,14,0">
+                                        <TextBlock Text="🛞" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{Binding}" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                                        <TextBlock Text="Direct Input Device" FontSize="11" Foreground="#8B95A5"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="No wheels, pedals, or shifters connected." Foreground="#4B5563" FontSize="13" IsVisible="{Binding !HasDevices}"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

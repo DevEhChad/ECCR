@@ -1,0 +1,55 @@
+<!-- Controllers page: a richer device browser for gamepad-class devices (name, connection type, battery, category). -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             mc:Ignorable="d"
+             d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ECCR.Views.ControllersPageView"
+             x:DataType="vm:ControllersPageViewModel">
+
+    <Design.DataContext>
+        <vm:ControllersPageViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto, *" Margin="24">
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,16">
+            <TextBlock Text="🎮 Controllers" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <TextBlock Text="Every connected gamepad-class device, with live battery and connection info for DualSense/DualShock 4." FontSize="12" Foreground="#8B95A5"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="10">
+                <ItemsControl ItemsSource="{Binding Devices}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:ControllerStatus">
+                            <Border Classes="card" Margin="0,0,0,10">
+                                <Grid ColumnDefinitions="Auto, *, Auto">
+                                    <Border Grid.Column="0" Background="#1E2B45" CornerRadius="24" Width="44" Height="44" Margin="0,0,14,0">
+                                        <TextBlock Text="🎮" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{Binding DeviceInstanceName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                                        <TextBlock Text="{Binding Category}" FontSize="11" Foreground="#8B95A5"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" IsVisible="{Binding IsBatterySupported}">
+                                        <StackPanel Spacing="0" HorizontalAlignment="Right">
+                                            <TextBlock Text="{Binding BatteryPercent, StringFormat='{}{0}%'}" FontSize="14" FontWeight="SemiBold" Foreground="#00E599" HorizontalAlignment="Right"/>
+                                            <TextBlock Text="{Binding ConnectionType}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                        </StackPanel>
+                                        <TextBlock Text="⚡" FontSize="16" IsVisible="{Binding IsCharging}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="No battery data" FontSize="11" Foreground="#4B5563" VerticalAlignment="Center" IsVisible="{Binding !IsBatterySupported}"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="No gamepad-class controllers connected." Foreground="#4B5563" FontSize="13" IsVisible="{Binding !HasDevices}"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

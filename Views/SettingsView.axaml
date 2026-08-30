@@ -1,0 +1,228 @@
+<!--
+    Settings page: near-verbatim cut of the old "SETTINGS MODAL" overlay content from
+    MainWindow.axaml, minus the modal chrome (scrim, centered card, close button). DataContext
+    is SettingsViewModel, a thin forwarder to MainWindowViewModel - see that class's doc
+    comment. Version number stays here per product decision (not moved to About).
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:converters="using:ECCR.Converters"
+             mc:Ignorable="d"
+             d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="ECCR.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <Design.DataContext>
+        <vm:SettingsViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
+        <converters:BoolToRepairTextConverter x:Key="BoolToRepairTextConverter"/>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto, *, Auto" Margin="24">
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,16">
+            <TextBlock Text="⚙️ Application Settings &amp; Modules" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <TextBlock Text="Configure startup preferences, drivers, Velopack updates, and app state." Foreground="#8B95A5" FontSize="12"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" Padding="0,0,8,0">
+            <StackPanel Spacing="14" MaxWidth="760" HorizontalAlignment="Left">
+
+                <!-- 1. System Integration -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="System Integration &amp; Tray Behavior" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Run on Windows Startup" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Starts ECCR in the background when your computer boots up." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartWithWindows}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Run in System Tray" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Keep ECCR active in the taskbar notification area." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding RunInSystemTray}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Minimize to System Tray" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Hides the main window to the notification area when minimized." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding MinimizeToTray}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Closing Window Minimizes to Tray" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Clicking the 'X' button hides ECCR to tray instead of quitting." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding CloseMinimizesToTray}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 2. Driver & Module Lifecycle Management -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Grid.Column="0" Text="Driver &amp; System Module Management" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+                            <TextBlock Grid.Column="1" Text="{Binding DriverInstallProgressText}" IsVisible="{Binding IsBusyWithDriverAction}" Foreground="#FFB84D" FontSize="11" FontWeight="SemiBold"/>
+                        </Grid>
+
+                        <!-- ViGEmBus Row -->
+                        <Grid ColumnDefinitions="*, Auto, Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="ViGEmBus (Virtual Controller Emulation)" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Required for Xbox 360 &amp; DualShock feeder output." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Content="{Binding IsViGEmInstalled, Converter={StaticResource BoolToRepairTextConverter}}"
+                                    Command="{Binding InstallDriverCommand}" CommandParameter="ViGEmBus"
+                                    IsEnabled="{Binding !IsBusyWithDriverAction}"
+                                    Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                            <Button Grid.Column="2"
+                                    Content="Uninstall"
+                                    Command="{Binding UninstallDriverCommand}" CommandParameter="ViGEmBus"
+                                    IsEnabled="{Binding IsViGEmInstalled}"
+                                    Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                        </Grid>
+
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                        <!-- HidHide Row -->
+                        <Grid ColumnDefinitions="*, Auto, Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="Nefarius HidHide (Device Cloaking Driver)" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Hides physical devices from games to prevent double-input bugs." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Content="{Binding IsHidHideServiceInstalled, Converter={StaticResource BoolToRepairTextConverter}}"
+                                    Command="{Binding InstallDriverCommand}" CommandParameter="HidHide"
+                                    IsEnabled="{Binding !IsBusyWithDriverAction}"
+                                    Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                            <Button Grid.Column="2"
+                                    Content="Uninstall"
+                                    Command="{Binding UninstallDriverCommand}" CommandParameter="HidHide"
+                                    IsEnabled="{Binding IsHidHideServiceInstalled}"
+                                    Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                        </Grid>
+
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                        <!-- vJoy Row -->
+                        <Grid ColumnDefinitions="*, Auto, Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="vJoy (Virtual Joystick / DirectInput Axis Output)" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Required for DirectInput wheel splits and custom joystick output." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Content="{Binding IsVJoyInstalled, Converter={StaticResource BoolToRepairTextConverter}}"
+                                    Command="{Binding InstallDriverCommand}" CommandParameter="VJoy"
+                                    IsEnabled="{Binding !IsBusyWithDriverAction}"
+                                    Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                            <Button Grid.Column="2"
+                                    Content="Uninstall"
+                                    Command="{Binding UninstallDriverCommand}" CommandParameter="VJoy"
+                                    IsEnabled="{Binding IsVJoyInstalled}"
+                                    Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 3. Velopack Updates -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Software Updates (Velopack)" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE"/>
+
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Check for Updates on Startup" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Automatically look for newer versions when ECCR starts." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoCheckForUpdates}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Show Changelog After Update" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Pop up what's new whenever ECCR finishes updating." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowChangelogOnUpdate}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+
+                        <Border Background="#10141E" CornerRadius="6" Padding="12" Margin="0,4,0,0" BorderBrush="#1F283C" BorderThickness="1">
+                            <Grid ColumnDefinitions="*, Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
+                                    <TextBlock Text="{Binding UpdateStatusText}" FontWeight="SemiBold" FontSize="12" Foreground="#D0D0E0"/>
+                                    <ProgressBar IsVisible="{Binding IsInstallingUpdate}" Value="{Binding UpdateDownloadProgress}" Maximum="100" Height="6" CornerRadius="3"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="10,0,0,0">
+                                    <Button Content="🔄 Check Now" Command="{Binding CheckForUpdatesManualCommand}" IsEnabled="{Binding !IsCheckingForUpdates}" Background="#1F283C" Foreground="White" FontSize="11" Padding="10,6" CornerRadius="5"/>
+                                    <Button Content="⬇ Install &amp; Restart" Command="{Binding InstallUpdateAndRestartCommand}" IsVisible="{Binding IsUpdateAvailable}" IsEnabled="{Binding !IsInstallingUpdate}" Background="#00B074" Foreground="White" FontWeight="Bold" FontSize="11" Padding="12,6" CornerRadius="5"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Grid ColumnDefinitions="*, Auto, Auto" Margin="0,2,0,0">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="Changelog" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Browse the full release history." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="📋 View Changelog" Command="{Binding OpenChangelogCommand}"
+                                    Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
+                            <Button Grid.Column="2" Content="🔗 GitHub" Command="{Binding OpenChangelogOnGitHubCommand}"
+                                    Background="#1F283C" Foreground="#70A0FF" FontSize="11" Padding="10,5" CornerRadius="5"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 4. Factory Reset App State -->
+                <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#3D2026" BorderThickness="1">
+                    <Grid ColumnDefinitions="*, Auto">
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Reset Application Settings &amp; Profiles" FontWeight="Bold" FontSize="13" Foreground="#FFAAAA"/>
+                            <TextBlock Text="Clears your settings.json and resets profiles back to defaults." FontSize="11" Foreground="#888899"/>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Content="Reset to Factory Defaults"
+                                Command="{Binding ResetAllSettingsCommand}"
+                                Background="#331A20" BorderBrush="#772A38" BorderThickness="1" Foreground="#FFAAAA"
+                                FontSize="11" FontWeight="SemiBold" Padding="14,6" CornerRadius="5"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- FOOTER: version number lives here, not About -->
+        <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="0,14,0,0" MaxWidth="760" HorizontalAlignment="Stretch">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding DisplayVersionText}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="#70A0FF"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Left"/>
+
+            <Button Grid.Column="1"
+                    Content="Save Preferences"
+                    Command="{Binding CloseSettingsCommand}"
+                    HorizontalAlignment="Right"
+                    Background="#00B074"
+                    Foreground="White"
+                    FontWeight="SemiBold"
+                    Padding="20,8"
+                    CornerRadius="6"/>
+        </Grid>
+    </Grid>
+</UserControl>

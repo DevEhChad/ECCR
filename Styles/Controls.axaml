@@ -1,0 +1,73 @@
+<!--
+    Reusable control styles (Style Classes) built on top of Styles/Colors.axaml's palette, for
+    new pages introduced by the sidebar/shell overhaul. Existing pages keep their inline-styled
+    Borders/Buttons untouched - these classes are additive, not a replacement.
+-->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Card: the "Background=#121622 BorderBrush=#20283C CornerRadius=8" panel pattern repeated throughout the app -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <!-- Status pill: small rounded badge used by the device-status bar and Home's quick-action cards -->
+    <Style Selector="Border.pill">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="10,5"/>
+    </Style>
+
+    <!-- Buttons: the three recurring variants -->
+    <Style Selector="Button.primary">
+        <Setter Property="Background" Value="{DynamicResource AccentGreenSolidBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="14,8"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <Style Selector="Button.neutral">
+        <Setter Property="Background" Value="{DynamicResource RowBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource RowBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <Style Selector="Button.danger">
+        <Setter Property="Background" Value="{DynamicResource AccentRedBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentRedBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentRedTextBrush}"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <!-- Sidebar nav row -->
+    <Style Selector="Button.navItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Margin" Value="8,2"/>
+    </Style>
+    <Style Selector="Button.navItem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+    <!-- Additive: applied on top of .navItem (not a standalone style) when a row is the active page. -->
+    <Style Selector="Button.navItem.navItemSelected">
+        <Setter Property="Background" Value="{DynamicResource SidebarSelectedBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+
+</Styles>

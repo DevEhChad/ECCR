@@ -74,11 +74,17 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _newVersionNumber = string.Empty;
 
+    // Changelog Viewer (also doubles as the post-update "what's new" popup)
     [ObservableProperty]
-    private bool _isPostUpdateOpen = false;
+    private bool _isChangelogOpen = false;
 
     [ObservableProperty]
-    private string _postUpdateMessage = string.Empty;
+    private string _changelogSubtitle = string.Empty;
+
+    [ObservableProperty]
+    private bool _showChangelogOnUpdate = true;
+
+    public ObservableCollection<ChangelogBlock> ChangelogEntries { get; } = new();
 
     [ObservableProperty]
     private string _mappingStatus = "Active";
@@ -175,6 +181,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<MappingEntry> Mappings { get; } = new();
     public ObservableCollection<DeviceMappingGroup> GroupedMappings { get; } = new();
+
+    /// <summary>
+    /// <see cref="GroupedMappings"/> filtered to gamepad-class devices (PlayStation/Xbox/
+    /// Nintendo/generic gamepad) - backs the Controller Mapping page. Same
+    /// <see cref="DeviceMappingGroup"/> instances as <see cref="GroupedMappings"/>, not copies.
+    /// </summary>
+    public ObservableCollection<DeviceMappingGroup> GamepadGroupedMappings { get; } = new();
+
+    /// <summary>
+    /// <see cref="GroupedMappings"/> filtered to wheel/pedal-class devices - backs the Device
+    /// Mapping (Direct Input/Wheels) page. Same <see cref="DeviceMappingGroup"/> instances as
+    /// <see cref="GroupedMappings"/>, not copies.
+    /// </summary>
+    public ObservableCollection<DeviceMappingGroup> WheelGroupedMappings { get; } = new();
     public ObservableCollection<string> ConnectedDevices { get; } = new();
     public ObservableCollection<string> AvailableVirtualOutputs { get; } = new();
     public ObservableCollection<PlayerTargetOption> PlayerTargets { get; } = new()
@@ -190,6 +210,26 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Auto-Bind wizard state and preset generation.</summary>
     public AutoBindWizardViewModel AutoBind { get; }
+
+    /// <summary>Persistent top device-status bar state (battery/connection for gamepad-class devices), visible on every page.</summary>
+    public DeviceStatusBarViewModel StatusBar { get; } = new();
+
+    private readonly ControllerHidService _controllerHidService = new();
+    private readonly Dictionary<AppPage, ViewModelBase> _pageViewModels = new();
+    private ControllerLedViewModel? _controllerLedViewModel;
+
+    // Shell navigation
+    [ObservableProperty]
+    private AppPage _currentPage = AppPage.Home;
+
+    [ObservableProperty]
+    private ViewModelBase? _currentPageViewModel;
+
+    [ObservableProperty]
+    private bool _isSidebarCollapsed = false;
+
+    public ObservableCollection<NavItem> PrimaryNavItems { get; } = new();
+    public ObservableCollection<NavItem> UtilityNavItems { get; } = new();
 
     private MappingEntry? _listeningEntry;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
@@ -236,6 +276,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 AutoSaveCurrentProfile();
             });
 
+        InitializeShellNavigation();
+
         LoadProfileListFromDisk();
         LoadAppSettings();
         CheckPostUpdateStatus();
@@ -251,6 +293,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     AutoBind.WizardSelectedDevice = ConnectedDevices[0];
                 }
+
+                StatusBar.SyncConnectedDevices(devices);
             });
         };
 
@@ -259,6 +303,12 @@ public partial class MainWindowViewModel : ViewModelBase
         _deviceManager.RefreshDevices();
         _pollStopwatch.Start();
         _deviceManager.StartPolling(pollIntervalMs: 4);
+
+        _controllerHidService.OnStatusUpdated += statuses =>
+        {
+            Dispatcher.UIThread.Post(() => StatusBar.ApplyHidStatuses(statuses));
+        };
+        _controllerHidService.Start();
 
         LoadSelectedProfile();
         RefreshDependencyStates();
@@ -273,6 +323,85 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             _ = CheckForUpdatesAsync(isBackgroundCheck: true);
         }
+    }
+
+    /// <summary>
+    /// Builds every sidebar page view model (eagerly, once, so in-progress page state like
+    /// HidHide's loaded device list survives navigating away and back - same lifetime pattern
+    /// as <see cref="HidHide"/>/<see cref="AutoBind"/> themselves), the primary/utility nav
+    /// item lists, and selects Home as the initial page.
+    /// </summary>
+    private void InitializeShellNavigation()
+    {
+        _pageViewModels[AppPage.Home] = new HomeViewModel(StatusBar, BuildQuickActionCards(), NavigateToCommand);
+        _pageViewModels[AppPage.Controllers] = new ControllersPageViewModel(StatusBar.GamepadStatuses);
+        _pageViewModels[AppPage.Wheels] = new WheelsPageViewModel(this);
+        _pageViewModels[AppPage.ControllerMapping] = new ControllerMappingViewModel(GamepadGroupedMappings);
+        _pageViewModels[AppPage.DeviceMapping] = new DeviceMappingViewModel(WheelGroupedMappings);
+        _controllerLedViewModel = new ControllerLedViewModel(StatusBar.GamepadStatuses, _controllerHidService, AutoSaveCurrentProfile);
+        _pageViewModels[AppPage.ControllerLed] = _controllerLedViewModel;
+        _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this);
+        _pageViewModels[AppPage.HidHide] = HidHide;
+        _pageViewModels[AppPage.AutoBind] = AutoBind;
+        _pageViewModels[AppPage.About] = new AboutViewModel(AppVersion);
+        _pageViewModels[AppPage.Settings] = new SettingsViewModel(this);
+
+        PrimaryNavItems.Add(new NavItem(AppPage.Home, "Home", "🏠"));
+        PrimaryNavItems.Add(new NavItem(AppPage.Controllers, "Controllers", "🎮"));
+        PrimaryNavItems.Add(new NavItem(AppPage.Wheels, "Direct Input/Wheels", "🛞"));
+        PrimaryNavItems.Add(new NavItem(AppPage.ControllerMapping, "Controller Mapping", "🎯"));
+        PrimaryNavItems.Add(new NavItem(AppPage.DeviceMapping, "Device Mapping", "🗺️"));
+        PrimaryNavItems.Add(new NavItem(AppPage.ControllerLed, "Controller LED", "💡"));
+        PrimaryNavItems.Add(new NavItem(AppPage.Profiles, "Profiles", "📄"));
+
+        UtilityNavItems.Add(new NavItem(AppPage.HidHide, "HidHide", "🛡"));
+        UtilityNavItems.Add(new NavItem(AppPage.AutoBind, "Auto Bind", "⚡"));
+        UtilityNavItems.Add(new NavItem(AppPage.About, "About", "ℹ️"));
+        UtilityNavItems.Add(new NavItem(AppPage.Settings, "Settings", "⚙️"));
+
+        CurrentPageViewModel = _pageViewModels[AppPage.Home];
+        foreach (var item in PrimaryNavItems) item.IsSelected = item.Page == AppPage.Home;
+    }
+
+    private ObservableCollection<NavItem> BuildQuickActionCards() => new()
+    {
+        new NavItem(AppPage.Controllers, "Controllers", "🎮", "View connected and offline controllers."),
+        new NavItem(AppPage.Profiles, "Profiles", "📄", "Manage and switch profiles."),
+        new NavItem(AppPage.HidHide, "HidHide", "🛡", "Hide physical devices from games."),
+        new NavItem(AppPage.AutoBind, "Auto Bind", "⚡", "Generate a starting set of bindings."),
+        new NavItem(AppPage.Settings, "Settings", "⚙️", "Manage app settings."),
+        new NavItem(AppPage.About, "About", "ℹ️", "Changelog and links.")
+    };
+
+    [RelayCommand]
+    public void NavigateTo(AppPage page)
+    {
+        CurrentPage = page;
+        CurrentPageViewModel = _pageViewModels[page];
+
+        foreach (var item in PrimaryNavItems) item.IsSelected = item.Page == page;
+        foreach (var item in UtilityNavItems) item.IsSelected = item.Page == page;
+
+        // Replaces the old Open*Menu()-triggered refresh/preselect behavior now that HidHide
+        // and Auto-Bind are always-present pages instead of explicitly opened dialogs.
+        if (page == AppPage.HidHide)
+        {
+            HidHide.RefreshHidDevices();
+            HidHide.RefreshHidApplications();
+        }
+        else if (page == AppPage.AutoBind)
+        {
+            AutoBind.PrepareForNavigation();
+        }
+    }
+
+    [RelayCommand]
+    public void ToggleSidebarCollapsed() => IsSidebarCollapsed = !IsSidebarCollapsed;
+
+    partial void OnIsSidebarCollapsedChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
     }
 
     private async Task AutoInstallMissingDriversAsync()
@@ -310,16 +439,64 @@ public partial class MainWindowViewModel : ViewModelBase
         WindowTitle = $"EhChads Controller Remapper - {AppVersion}";
     }
 
+    /// <summary>
+    /// Detects "the version that just launched differs from the version that last ran" (i.e.
+    /// an update just applied) and, if <see cref="ShowChangelogOnUpdate"/> is enabled, pops
+    /// the changelog viewer open scoped to just the new version's notes. When the toggle is
+    /// off, the update is silent - no popup at all - the user can still open the full
+    /// changelog from Settings whenever they want.
+    /// </summary>
     private void CheckPostUpdateStatus()
     {
-        if (!string.IsNullOrEmpty(_currentSettings.LastRunVersion) && _currentSettings.LastRunVersion != AppVersion)
+        if (!string.IsNullOrEmpty(_currentSettings.LastRunVersion) && _currentSettings.LastRunVersion != AppVersion && ShowChangelogOnUpdate)
         {
-            PostUpdateMessage = $"You just updated to {AppVersion}!";
-            IsPostUpdateOpen = true;
+            ShowChangelogForVersion(AppVersion, $"🎉 You just updated to {AppVersion}!");
         }
 
         _currentSettings.LastRunVersion = AppVersion;
         SaveAppSettings();
+    }
+
+    /// <summary>Loads and opens the changelog overlay scoped to one version's section (used by the post-update popup).</summary>
+    private void ShowChangelogForVersion(string version, string subtitle)
+    {
+        string? markdown = ChangelogService.LoadBundledMarkdown();
+        if (markdown == null) return;
+
+        string cleanVersion = version.TrimStart('v', 'V');
+        string? section = ChangelogService.ExtractVersionSection(markdown, cleanVersion) ?? markdown;
+
+        ChangelogEntries.Clear();
+        foreach (var block in ChangelogService.Parse(section)) ChangelogEntries.Add(block);
+
+        ChangelogSubtitle = subtitle;
+        IsChangelogOpen = true;
+    }
+
+    [RelayCommand]
+    public void OpenChangelog()
+    {
+        string? markdown = ChangelogService.LoadBundledMarkdown();
+        if (markdown == null) return;
+
+        ChangelogEntries.Clear();
+        foreach (var block in ChangelogService.Parse(markdown)) ChangelogEntries.Add(block);
+
+        ChangelogSubtitle = "Full Version History";
+        IsChangelogOpen = true;
+    }
+
+    [RelayCommand]
+    public void CloseChangelog() => IsChangelogOpen = false;
+
+    [RelayCommand]
+    public void OpenChangelogOnGitHub()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://github.com/DevEhChad/ECCR/blob/main/CHANGELOG.md") { UseShellExecute = true });
+        }
+        catch { }
     }
 
     partial void OnIsVirtualOutputActiveChanged(bool value)
@@ -840,6 +1017,12 @@ public partial class MainWindowViewModel : ViewModelBase
         SaveAppSettings();
     }
 
+    partial void OnShowChangelogOnUpdateChanged(bool value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
+    }
+
     [RelayCommand]
     public async Task CheckForUpdatesManual()
     {
@@ -887,9 +1070,6 @@ public partial class MainWindowViewModel : ViewModelBase
     public void DismissUpdatePrompt() => IsUpdatePromptOpen = false;
 
     [RelayCommand]
-    public void DismissPostUpdate() => IsPostUpdateOpen = false;
-
-    [RelayCommand]
     public async Task InstallUpdateAndRestart()
     {
         if (_availableUpdateInfo == null) return;
@@ -925,6 +1105,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var expandedStates = GroupedMappings.ToDictionary(g => g.DeviceName, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
         GroupedMappings.Clear();
+        GamepadGroupedMappings.Clear();
+        WheelGroupedMappings.Clear();
 
         var grouped = Mappings.GroupBy(m => string.IsNullOrWhiteSpace(m.SourceDeviceName) ? "Unassigned Device" : m.SourceDeviceName).OrderBy(g => g.Key);
         foreach (var group in grouped)
@@ -935,6 +1117,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
             foreach (var mapping in group) deviceGroup.Entries.Add(mapping);
             GroupedMappings.Add(deviceGroup);
+
+            var category = DevicePresetService.DetectCategory(group.Key);
+            if (DevicePresetService.IsWheelOrPedalCategory(category))
+            {
+                WheelGroupedMappings.Add(deviceGroup);
+            }
+            else
+            {
+                GamepadGroupedMappings.Add(deviceGroup);
+            }
         }
     }
 
@@ -1123,9 +1315,12 @@ public partial class MainWindowViewModel : ViewModelBase
                     MinimizeToTray = settings.MinimizeToTray;
                     CloseMinimizesToTray = settings.CloseMinimizesToTray;
                     AutoCheckForUpdates = settings.AutoCheckForUpdates;
+                    ShowChangelogOnUpdate = settings.ShowChangelogOnUpdate;
 
                     IsVirtualOutputActive = settings.IsVirtualOutputActive;
                     _feeder.SetActive(IsVirtualOutputActive);
+
+                    IsSidebarCollapsed = settings.IsSidebarCollapsed;
 
                     HidHide.ApplySettings(settings);
 
@@ -1155,7 +1350,9 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.MinimizeToTray = MinimizeToTray;
             _currentSettings.CloseMinimizesToTray = CloseMinimizesToTray;
             _currentSettings.AutoCheckForUpdates = AutoCheckForUpdates;
+            _currentSettings.ShowChangelogOnUpdate = ShowChangelogOnUpdate;
             _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
+            _currentSettings.IsSidebarCollapsed = IsSidebarCollapsed;
             HidHide.WriteSettings(_currentSettings);
 
             File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true }));
@@ -1237,7 +1434,12 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 ProfileName = profileName,
                 OutputMode = VirtualEmulationMode.DirectInputWheel,
-                Mappings = Mappings.ToList()
+                Mappings = Mappings.ToList(),
+                LedRed = (byte)(_controllerLedViewModel?.Red ?? 0),
+                LedGreen = (byte)(_controllerLedViewModel?.Green ?? 122),
+                LedBlue = (byte)(_controllerLedViewModel?.Blue ?? 255),
+                LedMode = _controllerLedViewModel?.EffectMode ?? LedEffectMode.Static,
+                LedSpeed = _controllerLedViewModel?.EffectSpeed ?? 1.0
             };
             File.WriteAllText(Path.Combine(_profilesDirectory, $"{profileName}.json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -1259,6 +1461,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     foreach (var m in profile.Mappings) Mappings.Add(m);
                     RebuildGroupedMappings();
                     UpdateVirtualDeviceSummary();
+                    ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
                     return;
                 }
             }
@@ -1267,11 +1470,35 @@ public partial class MainWindowViewModel : ViewModelBase
             AddMapping();
             RebuildGroupedMappings();
             UpdateVirtualDeviceSummary();
+            ApplyProfileLedColor(0, 122, 255, LedEffectMode.Static, 1.0);
         }
         finally
         {
             _isLoadingProfile = false;
         }
+    }
+
+    /// <summary>
+    /// Restores the just-loaded profile's saved LED color into the Controller LED page, and
+    /// best-effort re-applies it to a connected supported device (e.g. so switching from a
+    /// "Racing" profile to a "Default" profile also switches the lightbar color) - failure here
+    /// (no supported device connected, HID write error) never blocks profile loading itself.
+    /// </summary>
+    private void ApplyProfileLedColor(byte r, byte g, byte b, LedEffectMode mode = LedEffectMode.Static, double speed = 1.0)
+    {
+        if (_controllerLedViewModel == null) return;
+
+        _controllerLedViewModel.SetColorFromProfile(r, g, b, mode, speed);
+
+        try
+        {
+            var device = StatusBar.GamepadStatuses.FirstOrDefault(d => d.IsLedSupported);
+            if (device != null)
+            {
+                _controllerHidService.SetLightbarColor(device.VendorId, device.ProductId, r, g, b);
+            }
+        }
+        catch { }
     }
 
     public void CleanupAndShutdown()
@@ -1280,6 +1507,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             _deviceManager?.StopPolling();
             _deviceManager?.Dispose();
+            _controllerHidService.Dispose();
+            _controllerLedViewModel?.Dispose();
             _feeder.Dispose();
             SaveAppSettings();
             AutoSaveCurrentProfile();

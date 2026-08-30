@@ -2,12 +2,10 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ECCR.Models;
 using ECCR.Services;
-using ECCR.Views;
 
 namespace ECCR.ViewModels;
 
@@ -58,8 +56,13 @@ public partial class AutoBindWizardViewModel : ViewModelBase
         _onBindingsApplied = onBindingsApplied;
     }
 
-    [RelayCommand]
-    public async Task OpenAutoBindWizard()
+    /// <summary>
+    /// Preselects a device and its DirectInput Wheel vs. Xbox Gamepad target, and regenerates
+    /// the preset preview - run every time the Auto-Bind page is navigated to (see
+    /// <c>MainWindowViewModel.OnCurrentPageChanged</c>) rather than behind an explicit "open"
+    /// action, since the page is now always part of the shell instead of a popup wizard.
+    /// </summary>
+    public void PrepareForNavigation()
     {
         if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(WizardSelectedDevice))
         {
@@ -74,25 +77,15 @@ public partial class AutoBindWizardViewModel : ViewModelBase
             // DevicePresetService.IsWheelOrPedalCategory inline instead of calling it.
             var cat = DevicePresetService.DetectCategory(WizardSelectedDevice);
             WizardTargetIsWheel = (cat == DeviceHardwareCategory.MozaEsxWheel ||
-                                   cat == DeviceHardwareCategory.MozaWheel || 
-                                   cat == DeviceHardwareCategory.LogitechRig || 
-                                   cat == DeviceHardwareCategory.FanatecRig || 
-                                   cat == DeviceHardwareCategory.ThrustmasterRig || 
-                                   cat == DeviceHardwareCategory.SimagicRig || 
+                                   cat == DeviceHardwareCategory.MozaWheel ||
+                                   cat == DeviceHardwareCategory.LogitechRig ||
+                                   cat == DeviceHardwareCategory.FanatecRig ||
+                                   cat == DeviceHardwareCategory.ThrustmasterRig ||
+                                   cat == DeviceHardwareCategory.SimagicRig ||
                                    cat == DeviceHardwareCategory.GenericWheelOrPedals);
         }
 
         PopulateWizardPreset();
-
-        var wizard = new AutoBindWizardWindow
-        {
-            DataContext = this
-        };
-
-        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
-        {
-            await wizard.ShowDialog(desktop.MainWindow);
-        }
     }
 
     [RelayCommand]

@@ -1,0 +1,66 @@
+<!--
+    Profiles page: profile select/save/create/delete, moved out of MainWindow's footer +
+    "Create Profile" overlay into its own page. DataContext is ProfilesViewModel, a thin
+    forwarder to MainWindowViewModel - see that class's doc comment.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ECCR.Views.ProfilesView"
+             x:DataType="vm:ProfilesViewModel">
+
+    <Design.DataContext>
+        <vm:ProfilesViewModel/>
+    </Design.DataContext>
+
+    <Panel Margin="24">
+        <StackPanel Spacing="16" MaxWidth="640" HorizontalAlignment="Center">
+            <StackPanel Spacing="2">
+                <TextBlock Text="📄 Profiles" FontWeight="Bold" FontSize="18" Foreground="White"/>
+                <TextBlock Text="Switch between saved mapping profiles, or create/delete one." FontSize="12" Foreground="#8B95A5"/>
+            </StackPanel>
+
+            <Border Background="#161B26" CornerRadius="8" Padding="16" BorderBrush="#20283C" BorderThickness="1">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Active Profile" FontWeight="SemiBold" FontSize="13" Foreground="#BAC2DE"/>
+                    <ComboBox ItemsSource="{Binding Profiles}"
+                              SelectedItem="{Binding SelectedProfile}"
+                              HorizontalAlignment="Stretch"
+                              CornerRadius="6"
+                              Background="#1B202E"
+                              BorderBrush="#2F384C"/>
+
+                    <Grid ColumnDefinitions="*, *, *" Margin="0,4,0,0">
+                        <Button Grid.Column="0" Content="+ New Profile" Command="{Binding OpenCreateProfileDialogCommand}"
+                                Margin="0,0,4,0" Padding="10,8" CornerRadius="6" HorizontalContentAlignment="Center"
+                                Background="#232A3B" BorderBrush="#3D4B6E"/>
+                        <Button Grid.Column="1" Content="Save Profile" Command="{Binding SaveCurrentProfileCommand}"
+                                Margin="4,0,4,0" Padding="10,8" CornerRadius="6" HorizontalContentAlignment="Center"
+                                FontWeight="SemiBold" Background="#1A4A38" BorderBrush="#266D53"/>
+                        <Button Grid.Column="2" Content="🗑 Delete Profile" Command="{Binding DeleteCurrentProfileCommand}"
+                                Margin="4,0,0,0" Padding="10,8" CornerRadius="6" HorizontalContentAlignment="Center"
+                                Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- CREATE PROFILE OVERLAY -->
+        <Border IsVisible="{Binding IsCreatingProfile}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="#161B26" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="10" Padding="24" Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Create New Profile" FontSize="18" FontWeight="Bold"/>
+                    <TextBox Text="{Binding CustomProfileInput}" Watermark="Enter profile name (e.g., Assetto Rig)" CornerRadius="6" Background="#0E1118" Padding="10,8"/>
+                    <Grid ColumnDefinitions="*, *">
+                        <Button Grid.Column="0" Content="Cancel" Command="{Binding CancelCreateProfileCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,6,0" Background="#262D3D" CornerRadius="6"/>
+                        <Button Grid.Column="1" Content="Create &amp; Save" Command="{Binding ConfirmCreateProfileCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="6,0,0,0" FontWeight="SemiBold" Background="#00B074" CornerRadius="6"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Panel>
+</UserControl>
