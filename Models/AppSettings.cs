@@ -22,6 +22,17 @@ public class AppSettings
     public bool IsHidHideActive { get; set; } = false;
     public bool IsAppListInverted { get; set; } = false;
     public bool IsSidebarCollapsed { get; set; } = false;
+
+    // Gyro-aim / touch-aim: map a Sony device's motion sensor or touchpad to the Right Stick
+    // of a chosen Player's virtual Xbox 360 controller. App-wide (not per-profile) since which
+    // physical device supplies motion/touch input is a hardware fact, not a per-game mapping.
+    public bool GyroAimEnabled { get; set; } = false;
+    public string? GyroAimSourceDeviceName { get; set; }
+    public uint GyroAimTargetPlayer { get; set; } = 1;
+    public bool TouchAimEnabled { get; set; } = false;
+    public string? TouchAimSourceDeviceName { get; set; }
+    public uint TouchAimTargetPlayer { get; set; } = 1;
+
     public List<string> BlockedInstanceIds { get; set; } = new();
     public List<string> WhitelistedApplications { get; set; } = new();
 }

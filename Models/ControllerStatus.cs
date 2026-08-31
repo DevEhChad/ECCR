@@ -44,4 +44,28 @@ public partial class ControllerStatus : ObservableObject
 
     [ObservableProperty]
     private bool _isLedSupported;
+
+    /// <summary>True for Sony devices this service actively parses gyro/touch data from (same population scope as battery).</summary>
+    [ObservableProperty]
+    private bool _isMotionSupported;
+
+    /// <summary>Gyro rate, normalized to roughly -1..1 for "aim sensitivity" use rather than physical units - see <see cref="ECCR.Services.ControllerHidService"/>'s parsing comment.</summary>
+    [ObservableProperty]
+    private double _gyroPitch;
+
+    [ObservableProperty]
+    private double _gyroYaw;
+
+    [ObservableProperty]
+    private double _gyroRoll;
+
+    [ObservableProperty]
+    private bool _touchActive;
+
+    /// <summary>Touch X/Y normalized 0..1 across the touchpad surface; meaningless while <see cref="TouchActive"/> is false.</summary>
+    [ObservableProperty]
+    private double _touchX;
+
+    [ObservableProperty]
+    private double _touchY;
 }

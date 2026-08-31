@@ -12,6 +12,13 @@ namespace ECCR.Services;
 /// </summary>
 public class VJoyFeederService : IVirtualFeeder
 {
+    // vJoy is output-only (no rumble/force-feedback callback path from games), so this is
+    // never raised - it exists purely to satisfy IVirtualFeeder so CompositeFeederService can
+    // treat all three backends uniformly. True wheel force-feedback (torque effects sent back
+    // to the physical wheel via DirectInput's separate FFB API) is a distinct, unimplemented
+    // subsystem - out of scope here.
+    public event Action<uint, byte, byte>? RumbleReceived { add { } remove { } }
+
     private const uint ButtonPaddleUp = 33;
     private const uint ButtonPaddleDown = 34;
     private const uint ButtonGear1 = 35;

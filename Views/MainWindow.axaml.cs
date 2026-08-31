@@ -1,6 +1,8 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Platform;
 using ECCR.ViewModels;
 
 namespace ECCR.Views;
@@ -24,6 +26,18 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        // Wheel force-feedback needs a real HWND to exclusively acquire the physical wheel
+        // (see WheelForceFeedbackService.SetWindowHandle) - not available yet at construction,
+        // only once the window has actually been shown by the platform.
+        Opened += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                var handle = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+                vm.SetNativeWindowHandle(handle);
+            }
+        };
     }
 
     /// <summary>
@@ -56,6 +70,31 @@ public partial class MainWindow : Window
         }
 
         base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// Routes Esc (cancel) / Backspace (clear) to an in-progress "Click to Bind" capture -
+    /// see <see cref="MainWindowViewModel.StartListening"/>. Scoped to <see cref="MainWindowViewModel.IsListening"/>
+    /// so this never swallows Backspace while the user is typing in a normal TextBox elsewhere
+    /// in the app (profile name entry, HidHide app path, etc).
+    /// </summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && vm.IsListening)
+        {
+            if (e.Key == Key.Escape)
+            {
+                vm.CancelListening();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Back)
+            {
+                vm.ClearListeningBinding();
+                e.Handled = true;
+            }
+        }
+
+        base.OnKeyDown(e);
     }
 
     /// <summary>Mirrors OnClosing's tray behavior for the minimize button/gesture: minimizing hides to tray instead of showing a taskbar-minimized window, when that setting is on.</summary>

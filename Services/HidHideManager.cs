@@ -331,18 +331,7 @@ public class HidHideManager
                 try
                 {
                     using var joystick = new Joystick(directInput, d.InstanceGuid);
-                    string? interfacePath = joystick.Properties.InterfacePath;
-
-                    if (!string.IsNullOrWhiteSpace(interfacePath))
-                    {
-                        string clean = interfacePath.TrimStart('\\', '?', '.');
-                        int guidIndex = clean.LastIndexOf('{');
-                        if (guidIndex > 0)
-                        {
-                            clean = clean.Substring(0, guidIndex).TrimEnd('#');
-                        }
-                        instanceId = clean.Replace('#', '\\');
-                    }
+                    instanceId = ExtractInstanceIdFromInterfacePath(joystick.Properties.InterfacePath) ?? string.Empty;
                 }
                 catch { }
 
@@ -443,6 +432,75 @@ public class HidHideManager
         }
 
         return list.OrderBy(d => d.FriendlyName).ToList();
+    }
+
+    /// <summary>
+    /// HidHide's blocklist is keyed by Windows device instance path (VID_xxxx&amp;PID_xxxx\...),
+    /// not DirectInput's InstanceGuid, so it has to be recovered from the device's raw
+    /// interface path. A typical interface path looks like
+    /// "\\?\HID#VID_1234&amp;PID_5678#7&amp;abc123&amp;0&amp;0000#{guid}" - strip the leading "\\?\"/"."
+    /// noise and the trailing "#{class guid}" suffix, then swap the remaining "#" separators
+    /// back to "\" to get the instance ID form HidHide expects. Shared by
+    /// <see cref="GetConnectedHidDevices"/>'s enumeration and <see cref="ResolveInstanceId"/>'s
+    /// single-device lookup.
+    /// </summary>
+    private static string? ExtractInstanceIdFromInterfacePath(string? interfacePath)
+    {
+        if (string.IsNullOrWhiteSpace(interfacePath)) return null;
+
+        string clean = interfacePath.TrimStart('\\', '?', '.');
+        int guidIndex = clean.LastIndexOf('{');
+        if (guidIndex > 0)
+        {
+            clean = clean.Substring(0, guidIndex).TrimEnd('#');
+        }
+        return clean.Replace('#', '\\');
+    }
+
+    /// <summary>Recovers one device's HidHide instance ID from its DirectInput instance GUID - the single-device counterpart of <see cref="GetConnectedHidDevices"/>'s enumeration pass.</summary>
+    public string? ResolveInstanceId(Guid directInputGuid)
+    {
+        if (_hidHide == null || !IsInstalled) return null;
+
+        try
+        {
+            using var directInput = new DirectInput();
+            using var joystick = new Joystick(directInput, directInputGuid);
+            return ExtractInstanceIdFromInterfacePath(joystick.Properties.InterfacePath);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Adds a physical device to HidHide's live blocklist the instant it becomes a mapping
+    /// source, so a game can never see both it and ECCR's virtual output at once (which reads
+    /// as doubled/fighting input - the same reason a wheel needs to be cloaked for FFB to be
+    /// authoritative, see <see cref="ECCR.Services.WheelForceFeedbackService"/>). Only adds -
+    /// never removes - so this can't undo a hide the user set for an unrelated reason; enforcement
+    /// itself still depends on the separate global <see cref="IsGlobalActive"/> toggle the user
+    /// controls, this just keeps the per-device list correct and ready. Returns the resolved
+    /// instance ID (for the caller to also live-update any open HidHide dialog's checkbox list),
+    /// or null if resolution/cloaking didn't happen (driver not installed, virtual device, lookup failure).
+    /// </summary>
+    public string? EnsureDeviceCloaked(Guid directInputGuid, string? deviceName)
+    {
+        if (_hidHide == null || !IsInstalled || directInputGuid == Guid.Empty) return null;
+        if (IsVirtualDevice(deviceName, null)) return null;
+
+        string? instanceId = ResolveInstanceId(directInputGuid);
+        if (string.IsNullOrWhiteSpace(instanceId) || IsVirtualDevice(deviceName, instanceId)) return null;
+
+        try
+        {
+            var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
+            if (!blocked.Contains(instanceId))
+            {
+                _hidHide.AddBlockedInstanceId(instanceId);
+                LogDebug($"EnsureDeviceCloaked: auto-cloaked '{deviceName}' ({instanceId}) - now a mapping source.");
+            }
+            return instanceId;
+        }
+        catch { return null; }
     }
 
     private static bool IsNonGamingPeripheral(string name, string deviceId)

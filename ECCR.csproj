@@ -8,7 +8,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
     <!-- Single Source of Truth for App Version -->
-    <Version>1.0.8</Version>
+    <Version>1.1.0</Version>
 
     <!-- Application & Task Manager Metadata -->
     <Product>EhChads Controller Remapper</Product>

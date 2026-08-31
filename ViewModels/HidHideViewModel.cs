@@ -235,6 +235,36 @@ public partial class HidHideViewModel : ViewModelBase
         _saveSettings();
     }
 
+    /// <summary>
+    /// Live-cloaks a physical device the instant it becomes a mapping source - see
+    /// <see cref="HidHideManager.EnsureDeviceCloaked"/> for why (prevents a game from seeing
+    /// both the raw device and ECCR's virtual output at once). Called from
+    /// <c>MainWindowViewModel.OnMappingEntryPropertyChanged</c> whenever a mapping's
+    /// <c>SourceDeviceGuid</c> resolves to a real device.
+    /// </summary>
+    public void EnsureDeviceCloaked(Guid instanceGuid, string? deviceName)
+    {
+        if (_hidHideManager == null) return;
+
+        string? instanceId = _hidHideManager.EnsureDeviceCloaked(instanceGuid, deviceName);
+        if (string.IsNullOrWhiteSpace(instanceId)) return;
+
+        var openDialogEntry = HidDevices.FirstOrDefault(d => string.Equals(d.DeviceInstanceId, instanceId, StringComparison.OrdinalIgnoreCase));
+        if (openDialogEntry != null) openDialogEntry.IsHidden = true;
+
+        _settingsAccessor().BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
+        _saveSettings();
+    }
+
+    /// <summary>
+    /// Turns cloaking off at the driver level without touching <see cref="IsHidHideActive"/> or
+    /// persisting anything - called from <c>MainWindowViewModel.CleanupAndShutdown</c> so every
+    /// physical device becomes visible to other apps again the moment ECCR exits, while the
+    /// user's actual preference (re-applied via <see cref="ApplySettings"/> on next launch)
+    /// stays saved as whatever it was.
+    /// </summary>
+    public void DisableCloakingForShutdown() => _hidHideManager?.SetGlobalHidingState(false);
+
     partial void OnIsAppListInvertedChanged(bool value)
     {
         if (_isApplyingSettings || _hidHideManager == null) return;

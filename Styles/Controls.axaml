@@ -70,4 +70,27 @@
         <Setter Property="Foreground" Value="White"/>
     </Style>
 
+    <!-- Horizontal tab strip (Controller Mapping page): a pill row, unlike the sidebar's
+         vertical navItem, with a bottom-border accent on the active tab. -->
+    <Style Selector="Button.mappingTab">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="Padding" Value="14,9"/>
+        <Setter Property="CornerRadius" Value="6,6,0,0"/>
+        <Setter Property="Margin" Value="0,0,2,0"/>
+        <Setter Property="BorderThickness" Value="0,0,0,2"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.mappingTab:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+    <!-- Additive: applied on top of .mappingTab (not a standalone style) when it's the active tab. -->
+    <Style Selector="Button.mappingTab.mappingTabSelected">
+        <Setter Property="Background" Value="{DynamicResource SidebarSelectedBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentGreenSolidBrush}"/>
+    </Style>
+
 </Styles>

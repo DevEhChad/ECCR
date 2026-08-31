@@ -24,6 +24,9 @@ public class VirtualFeederService : IVirtualFeeder
     private readonly object _lock = new();
     private bool _isActive = true;
 
+    /// <summary>Raised whenever a game rumbles a virtual Xbox 360 controller: (targetDeviceId, largeMotor, smallMotor).</summary>
+    public event Action<uint, byte, byte>? RumbleReceived;
+
     public bool IsActive => _isActive;
 
     public VirtualFeederService()
@@ -82,6 +85,8 @@ public class VirtualFeederService : IVirtualFeeder
             try
             {
                 var controller = _viGEmClient.CreateXbox360Controller();
+                controller.FeedbackReceived += (_, e) =>
+                    RumbleReceived?.Invoke(targetDeviceId, e.LargeMotor, e.SmallMotor);
                 controller.Connect();
                 _xboxControllers[targetDeviceId] = controller;
                 return controller;

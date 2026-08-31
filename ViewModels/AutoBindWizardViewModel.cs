@@ -33,14 +33,25 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     [ObservableProperty]
     private bool _wizardTargetIsWheel = false;
 
+    /// <summary>
+    /// Which virtual player slot newly-applied bindings are assigned to. Defaults to Player 1
+    /// but is user-selectable (see the wizard's "Assign to Player" combo) so re-running Auto
+    /// Bind on a device previously bulk-assigned to P2-P4 doesn't silently reset it to P1.
+    /// </summary>
+    [ObservableProperty]
+    private uint _wizardTargetPlayer = 1;
+
     public ObservableCollection<PresetBindingItem> WizardBindings { get; } = new();
 
     /// <summary>Shared with the host view model; populated as devices are detected.</summary>
     public ObservableCollection<string> ConnectedDevices { get; }
 
+    /// <summary>Shared with the host view model; backs the "Assign to Player" combo.</summary>
+    public ObservableCollection<PlayerTargetOption> PlayerTargets { get; }
+
     /// <summary>Design-time constructor.</summary>
     public AutoBindWizardViewModel()
-        : this(new ObservableCollection<string>(), () => new List<DeviceHardwareInfo>(), new ObservableCollection<MappingEntry>(), () => { })
+        : this(new ObservableCollection<string>(), () => new List<DeviceHardwareInfo>(), new ObservableCollection<MappingEntry>(), new ObservableCollection<PlayerTargetOption>(), () => { })
     {
     }
 
@@ -48,11 +59,13 @@ public partial class AutoBindWizardViewModel : ViewModelBase
         ObservableCollection<string> connectedDevices,
         Func<List<DeviceHardwareInfo>> connectedDeviceInfo,
         ObservableCollection<MappingEntry> mappings,
+        ObservableCollection<PlayerTargetOption> playerTargets,
         Action onBindingsApplied)
     {
         ConnectedDevices = connectedDevices;
         _connectedDeviceInfo = connectedDeviceInfo;
         _mappings = mappings;
+        PlayerTargets = playerTargets;
         _onBindingsApplied = onBindingsApplied;
     }
 
@@ -129,7 +142,7 @@ public partial class AutoBindWizardViewModel : ViewModelBase
                 SourceType = item.Type,
                 SourceIndex = item.PhysicalIndex,
                 SourceDisplayName = item.PhysicalName,
-                TargetDeviceId = 1,
+                TargetDeviceId = WizardTargetPlayer,
                 TargetOutput = item.DefaultTargetOutput,
                 Deadzone = item.Type == InputType.Axis ? 0.08 : 0.0,
                 RawMin = 0,

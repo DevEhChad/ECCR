@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-08-31
+
+### 🚀 Added
+- **Real Wheel Force Feedback:** A game's force-feedback effects (spring, damper, friction, constant/ramp/periodic forces) now relay live from its virtual `[Wheel]` device all the way back to the real wheel — decoded from vJoy's PID packet callback and replayed as native DirectInput effects on the physical device. This was previously flagged as out of scope; `vJoyFeederService` was output-only.
+- **Wheel Settings Tab:** New per-device tab on the Device Mapping page for rotation degrees, force-feedback master toggle + strength (0–200%), individual spring/damper/friction effect toggles, invert-force, an "FFB not detected" capability banner, and a shortcut into HidHide cloaking.
+- **Controller Mapping Redesign:** The Controller Mapping page is now a tabbed layout (Button Mapping, Deadzones, Motion, Sticks, Touchpad, More Options) scoped to a device picker, alongside a profile switcher and virtual-device indicator in the header.
+- **Gyro-Aim & Touch-Aim:** DualSense/DualShock 4 gyro yaw/pitch or touchpad finger position can now drive the Right Stick of a chosen Player's virtual Xbox 360 controller directly, with live gyro/touch readouts on the new Motion/Touchpad tabs.
+- **Virtual DualShock 4 Output:** Added a ViGEm-backed virtual DualShock 4 target (`[DS4] ...`) alongside the existing Xbox 360 and vJoy wheel outputs, for games that expect a native PlayStation controller layout.
+- **"+ New Binding" Restored:** Re-added the page-level control for starting a brand-new binding from scratch on both the Controller Mapping and Device Mapping pages, placing it in an "Uncategorized Device"/"Uncategorized Wheel Device" group in the correct section until a real input is captured.
+- **Capture Hardening:** Click-to-Bind now auto-cancels after 7 seconds of no input, Esc cancels an in-progress capture without touching the existing binding, and Backspace clears it — with an on-page hint explaining all three.
+- **Live HidHide Auto-Cloaking:** A physical device is now cloaked from every other application the instant it becomes a mapping source (and reconciled for every device already in a loaded profile), closing the gap where a game could see both the raw device and ECCR's virtual output at once and receive doubled/fighting input.
+
+### 🔄 Changed
+- **Full Shutdown Teardown:** Exiting ECCR now also live-disables HidHide cloaking and the virtual output devices, so every physical device is visible and every virtual one is gone the moment the process exits — the saved on/off preferences are untouched and simply reapply on next launch.
+- **Device Mapping Page Redesign:** Rebuilt to match the new Controller Mapping page's tab-strip/device-picker pattern via a shared `DeviceMappingGroupsPanel`, instead of a single flat grid.
+- **`WheelDeviceSettings` Is Now Live:** Converted to an observable model wired into profile save/load and the new Wheel Settings tab — previously scaffolded but completely unused by the app.
+
+### 🛠️ Fixed
+- **Re-Bind Cancel No Longer Blanked the Label:** Canceling an in-progress re-bind of an already-bound key used to permanently show "Click to Bind" even though the underlying binding was untouched; canceling now correctly restores the real label.
+- **New Bindings Landing in the Wrong Section:** "+ New Binding" used to guess an already-connected real device as the source, which could silently place a brand-new binding under an unrelated device's group (sometimes in the wrong section entirely) instead of leaving it unbound for Click-to-Bind.
+
+---
+
 ## [1.0.8] - 2026-08-30
 
 ### 🚀 Added

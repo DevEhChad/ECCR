@@ -364,6 +364,10 @@ public static class DevicePresetService
         if (isMoza)
         {
             list.Add(new PresetBindingItem { PhysicalName = "Steering Wheel (Axis X)", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Steering (Axis X)" : "[Xbox] Left Stick X (Steer / Horizontal)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Throttle Pedal (Axis Y)", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Right Trigger (RT / Gas Axis)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Brake Pedal (Axis Z)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Brake (Axis Z)" : "[Xbox] Left Trigger (LT / Brake Axis)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Clutch Pedal (Axis Rx)", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Clutch (Axis Rx)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Handbrake (Axis Ry)", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Handbrake (Axis Ry)" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
             list.Add(new PresetBindingItem { PhysicalName = "Moza A Button (Xbox Ⓐ)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 1" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
             list.Add(new PresetBindingItem { PhysicalName = "Moza B Button (Xbox Ⓑ)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 2" : "[Xbox] Xbox B (Circle / East)" });
             list.Add(new PresetBindingItem { PhysicalName = "Moza X Button (Xbox Ⓧ)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 3" : "[Xbox] Xbox X (Square / West / Shift Down)" });
@@ -414,7 +418,21 @@ public static class DevicePresetService
                     18 => "[Wheel] Reverse Gear",
                     _ => $"[Wheel] Button {i + 1}"
                 };
-                list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, i), Type = InputType.Button, PhysicalIndex = i, DefaultTargetOutput = targetIsWheel ? gearTarget : $"[Xbox] Xbox A (Cross / South / Handbrake)" });
+                // In Xbox mode these 7 shifter buttons must land on distinct channels rather
+                // than all collapsing onto one - D-Pad and Menu/View/Guide are otherwise unused
+                // by this preset branch, so they're free to repurpose as gear indicators.
+                string xboxTarget = i switch
+                {
+                    12 => "[Xbox] D-Pad Up",
+                    13 => "[Xbox] D-Pad Down",
+                    14 => "[Xbox] D-Pad Left",
+                    15 => "[Xbox] D-Pad Right",
+                    16 => "[Xbox] Xbox Menu (Start / Options)",
+                    17 => "[Xbox] Xbox View (Back / Map / Share)",
+                    18 => "[Xbox] Xbox Guide (Home / Guide)",
+                    _ => "[Xbox] Xbox A (Cross / South / Handbrake)"
+                };
+                list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, i), Type = InputType.Button, PhysicalIndex = i, DefaultTargetOutput = targetIsWheel ? gearTarget : xboxTarget });
             }
         }
         else

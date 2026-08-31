@@ -40,6 +40,15 @@ public class ControllerHidService : IDisposable
     {
         public required HidDevice Device;
         public required HidStream Stream;
+
+        // Output reports are full-state writes, not incremental - the lightbar (color/mode)
+        // and rumble (motor intensities) writers below share a device's single output report,
+        // so each remembers the other's last-written value and re-sends both together on every
+        // write. Without this, calling SetRumble would silently reset the lightbar to black
+        // (and vice versa) since whichever write happened second would zero out the bytes the
+        // other one owns.
+        public byte LastRed, LastGreen, LastBlue;
+        public byte LastLargeMotor, LastSmallMotor;
     }
 
     private readonly Dictionary<string, OpenDevice> _openDevices = new();
@@ -68,10 +77,17 @@ public class ControllerHidService : IDisposable
     /// <summary>Raised on a background thread every poll tick with the latest status for every open Sony device.</summary>
     public event Action<List<ControllerStatus>>? OnStatusUpdated;
 
+    // Battery/lightbar only needed occasional polling, but gyro/touch (added alongside those)
+    // need to be read often enough to be usable for live aim/touch mapping - ~30Hz is a
+    // reasonable middle ground that stays cheap (a few hundred bytes per read) without the
+    // pileup risk of trying to hit a full 125Hz-class polling rate on a background Timer.
+    private const int PollIntervalMs = 33;
+    private int _pollInProgress;
+
     public void Start()
     {
         RefreshDevices();
-        _pollTimer = new Timer(_ => PollOnce(), null, dueTime: 0, period: 2000);
+        _pollTimer = new Timer(_ => PollOnce(), null, dueTime: 0, period: PollIntervalMs);
     }
 
     public void Stop()
@@ -128,7 +144,9 @@ public class ControllerHidService : IDisposable
 
                         if (dev.TryOpen(config, out var stream))
                         {
-                            try { stream.ReadTimeout = 300; } catch { }
+                            // Shorter than PollIntervalMs so a quiet/disconnected device's read
+                            // times out well before the next tick fires instead of piling up.
+                            try { stream.ReadTimeout = 25; } catch { }
                             _openDevices[dev.DevicePath] = new OpenDevice { Device = dev, Stream = stream };
                             LogDebug($"Opened device VID={dev.VendorID:X4} PID={dev.ProductID:X4} " +
                                      $"MaxInputReportLength={dev.GetMaxInputReportLength()} MaxOutputReportLength={dev.GetMaxOutputReportLength()} " +
@@ -168,10 +186,34 @@ public class ControllerHidService : IDisposable
         catch { }
     }
 
+    private int _ticksSinceRefresh;
+
     private void PollOnce()
     {
         if (_disposed) return;
-        RefreshDevices();
+
+        // Re-entrancy guard: a Timer callback can fire again before the previous one finishes
+        // if a Read() ever takes longer than PollIntervalMs - skip this tick rather than pile
+        // up overlapping reads on the same HidStream.
+        if (Interlocked.Exchange(ref _pollInProgress, 1) != 0) return;
+        try
+        {
+            PollOnceCore();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _pollInProgress, 0);
+        }
+    }
+
+    private void PollOnceCore()
+    {
+        // Device enumeration (WMI-backed) is far heavier than a report read - only do it once
+        // per second's worth of ticks, not on every ~33ms tick.
+        if (_ticksSinceRefresh++ % Math.Max(1, 1000 / PollIntervalMs) == 0)
+        {
+            RefreshDevices();
+        }
 
         List<OpenDevice> snapshot;
         lock (_lock) { snapshot = _openDevices.Values.ToList(); }
@@ -231,6 +273,12 @@ public class ControllerHidService : IDisposable
                 bool full = (buffer[54] & 0x20) != 0;
                 status.BatteryPercent = full ? 100 : Math.Clamp(level * 10 + 5, 0, 100);
                 status.IsCharging = charging;
+                // Confirmed against a live DualSense (2026-08-30 diagnostic capture): offset 12
+                // is actually the sensor timestamp (steadily increasing every sample), 14 is a
+                // constant/reserved value - the real gyro triple sits 4 bytes later than the
+                // community table this was first derived from assumed (that table's button
+                // block is 3 bytes; this hardware's is 4).
+                ParseMotionAndTouch(status, buffer, length, gyroOffset: 16, touchOffset: 33);
             }
             else
             {
@@ -242,6 +290,7 @@ public class ControllerHidService : IDisposable
                 status.BatteryPercent = cableConnected
                     ? Math.Clamp((level + 1) * 10, 0, 100)
                     : Math.Clamp(level * 10 + 5, 0, 100);
+                ParseMotionAndTouch(status, buffer, length, gyroOffset: 13, touchOffset: 35);
             }
 
             return status;
@@ -264,6 +313,9 @@ public class ControllerHidService : IDisposable
             status.BatteryPercent = cableConnected
                 ? Math.Clamp((level + 1) * 10, 0, 100)
                 : Math.Clamp(level * 10 + 5, 0, 100);
+            // Same +2 byte shift observed between this BT battery offset (32) and the USB one
+            // (30) applied to the USB gyro/touch offsets too.
+            ParseMotionAndTouch(status, buffer, length, gyroOffset: 15, touchOffset: 37);
 
             return status;
         }
@@ -277,6 +329,9 @@ public class ControllerHidService : IDisposable
             bool charging = (buffer[56] & 0x08) != 0;
             status.BatteryPercent = Math.Clamp(level * 10 + 5, 0, 100);
             status.IsCharging = charging;
+            // Same +2 byte shift observed between this BT battery offset (55) and the USB one
+            // (53) applied to the corrected USB gyro/touch offsets (16/33) above.
+            ParseMotionAndTouch(status, buffer, length, gyroOffset: 18, touchOffset: 35);
 
             return status;
         }
@@ -286,6 +341,67 @@ public class ControllerHidService : IDisposable
         status.ConnectionType = ControllerConnectionType.Unknown;
         status.IsBatterySupported = false;
         return status;
+    }
+
+    /// <summary>
+    /// Fills in <see cref="ControllerStatus.GyroPitch"/>/<see cref="ControllerStatus.GyroYaw"/>/
+    /// <see cref="ControllerStatus.GyroRoll"/> and <see cref="ControllerStatus.TouchActive"/>/
+    /// <see cref="ControllerStatus.TouchX"/>/<see cref="ControllerStatus.TouchY"/> from a
+    /// recognized input report. <paramref name="gyroOffset"/> is the buffer index of the first
+    /// of three little-endian int16 gyro axes (6 bytes total); <paramref name="touchOffset"/>
+    /// is the index of the first touch point's 4-byte packed record (byte0 bit7 clear = actively
+    /// touching, bytes1-3 = 12-bit X + 12-bit Y packed the same way on both device types). The
+    /// USB DualSense offsets (16/33) were confirmed against a live controller (raw report
+    /// capture: bytes 16-21 sit near zero with only single-digit LSB jitter at rest, exactly
+    /// where a still gyro triple should read, and byte 33 held constant at a fixed "not
+    /// touching" bit pattern with no finger on the pad) - the community report-layout table
+    /// this was first derived from turned out to assume a 3-byte button block where this
+    /// hardware actually uses 4, which is why the confirmed offsets land 4 bytes later than
+    /// that table implied. DS4's offsets and the Bluetooth variants of both device types are
+    /// still only offset-by-analogy from that same correction and remain unverified - same
+    /// "needs real-hardware validation" caveat as the rest of this file.
+    /// </summary>
+    private static void ParseMotionAndTouch(ControllerStatus status, byte[] buffer, int length, int gyroOffset, int touchOffset)
+    {
+        if (length > gyroOffset + 5)
+        {
+            status.IsMotionSupported = true;
+
+            short gx = (short)(buffer[gyroOffset] | (buffer[gyroOffset + 1] << 8));
+            short gy = (short)(buffer[gyroOffset + 2] | (buffer[gyroOffset + 3] << 8));
+            short gz = (short)(buffer[gyroOffset + 4] | (buffer[gyroOffset + 5] << 8));
+
+            // Raw gyro units aren't physically calibrated here (no vendor-documented
+            // deg/s-per-LSB scale factor was verified) - divided down to a roughly -1..1 "aim
+            // sensitivity" range instead of a physical unit, since bindable gyro-aim is the
+            // only consumer today.
+            const double gyroScale = 8192.0;
+            status.GyroPitch = Math.Clamp(gx / gyroScale, -1.0, 1.0);
+            status.GyroYaw = Math.Clamp(gy / gyroScale, -1.0, 1.0);
+            status.GyroRoll = Math.Clamp(gz / gyroScale, -1.0, 1.0);
+        }
+
+        if (length > touchOffset + 3)
+        {
+            byte b0 = buffer[touchOffset];
+            byte b1 = buffer[touchOffset + 1];
+            byte b2 = buffer[touchOffset + 2];
+            byte b3 = buffer[touchOffset + 3];
+
+            bool active = (b0 & 0x80) == 0; // bit7 clear = finger down
+            status.TouchActive = active;
+
+            if (active)
+            {
+                int rawX = b1 | ((b2 & 0x0F) << 8);
+                int rawY = (b2 >> 4) | (b3 << 4);
+                // DS4/DualSense touchpad surface is documented at roughly 1920x943/1942
+                // depending on model - close enough that a fixed 1920x943 normalization is
+                // "in bounds" for either without needing per-model detection.
+                status.TouchX = Math.Clamp(rawX / 1920.0, 0.0, 1.0);
+                status.TouchY = Math.Clamp(rawY / 943.0, 0.0, 1.0);
+            }
+        }
     }
 
     /// <summary>
@@ -301,32 +417,67 @@ public class ControllerHidService : IDisposable
             return false;
         }
 
-        OpenDevice? target;
-        int candidateCount;
-        lock (_lock)
-        {
-            var candidates = _openDevices.Values.Where(d => d.Device.ProductID == productId).ToList();
-            candidateCount = candidates.Count;
-            // Prefer the interface with the largest output report - a DualSense/DS4 exposing more
-            // than one HidDevice entry for the same PID (secondary/auxiliary interface, or a
-            // dongle) is far more likely to accept the full lightbar-control report on whichever
-            // interface actually supports the biggest output report.
-            target = candidates.OrderByDescending(d => d.Device.GetMaxOutputReportLength()).FirstOrDefault();
-        }
-
+        var target = FindOutputTarget(productId, out int candidateCount);
         if (target == null)
         {
             LogDebug($"SetLightbarColor: no open device found for PID={productId:X4} ({candidateCount} candidates).");
             return false;
         }
 
+        target.LastRed = r;
+        target.LastGreen = g;
+        target.LastBlue = b;
+        return WriteOutputReport(target, productId, "SetLightbarColor");
+    }
+
+    /// <summary>
+    /// Sets rumble motor intensity for a Sony device already tracked by this service - the
+    /// physical-side counterpart of a game rumbling a virtual Xbox 360/DualShock4 pad (see
+    /// <see cref="Services.CompositeFeederService.RumbleReceived"/>, forwarded here by
+    /// <c>MainWindowViewModel</c>). <paramref name="largeMotor"/> is the low-frequency/strong
+    /// motor, <paramref name="smallMotor"/> the high-frequency/weak one - same convention ViGEm
+    /// uses for both virtual pad types, so callers can forward the values through unchanged.
+    /// </summary>
+    public bool SetRumble(int vendorId, int productId, byte largeMotor, byte smallMotor)
+    {
+        if (vendorId != SonyVendorId) return false;
+
+        var target = FindOutputTarget(productId, out _);
+        if (target == null) return false;
+
+        target.LastLargeMotor = largeMotor;
+        target.LastSmallMotor = smallMotor;
+        return WriteOutputReport(target, productId, "SetRumble");
+    }
+
+    private OpenDevice? FindOutputTarget(int productId, out int candidateCount)
+    {
+        lock (_lock)
+        {
+            var candidates = _openDevices.Values.Where(d => d.Device.ProductID == productId).ToList();
+            candidateCount = candidates.Count;
+            // Prefer the interface with the largest output report - a DualSense/DS4 exposing more
+            // than one HidDevice entry for the same PID (secondary/auxiliary interface, or a
+            // dongle) is far more likely to accept the full lightbar/rumble-control report on
+            // whichever interface actually supports the biggest output report.
+            return candidates.OrderByDescending(d => d.Device.GetMaxOutputReportLength()).FirstOrDefault();
+        }
+    }
+
+    /// <summary>
+    /// Output reports are full-state writes, so lightbar and rumble share one write combining
+    /// both the device's last-known color and last-known motor intensities - see the
+    /// <see cref="OpenDevice"/> fields this reads from.
+    /// </summary>
+    private bool WriteOutputReport(OpenDevice target, int productId, string callerForLog)
+    {
         try
         {
             bool isDualSense = productId == DualSenseProductId;
             int outLen = target.Device.GetMaxOutputReportLength();
             if (outLen <= 0)
             {
-                LogDebug($"SetLightbarColor: PID={productId:X4} MaxOutputReportLength is {outLen}, aborting.");
+                LogDebug($"{callerForLog}: PID={productId:X4} MaxOutputReportLength is {outLen}, aborting.");
                 return false;
             }
 
@@ -335,41 +486,52 @@ public class ControllerHidService : IDisposable
             if (isDualSense)
             {
                 buffer[0] = 0x02;
-                buffer[1] = 0x00; // valid_flag0: leave unset (matches dualsensectl's minimal known-working color-only report)
+                buffer[1] = 0x01; // valid_flag0: DS_OUTPUT_VALID_FLAG0_COMPATIBLE_VIBRATION (bit 0x01), per hid-playstation.c
                 buffer[2] = 0x04; // valid_flag1: DS_OUTPUT_VALID_FLAG1_LIGHTBAR_CONTROL_ENABLE (bit 0x04), verified against hid-playstation.c
+                if (outLen > 4)
+                {
+                    buffer[3] = target.LastSmallMotor; // motor_right (weak/high-freq)
+                    buffer[4] = target.LastLargeMotor; // motor_left (strong/low-freq)
+                }
                 // RGB lightbar bytes - verified against Linux hid-playstation.c, dualsensectl, and pydualsense (all three agree).
                 if (outLen > 47)
                 {
-                    buffer[45] = r;
-                    buffer[46] = g;
-                    buffer[47] = b;
+                    buffer[45] = target.LastRed;
+                    buffer[46] = target.LastGreen;
+                    buffer[47] = target.LastBlue;
                 }
                 else
                 {
-                    LogDebug($"SetLightbarColor: DualSense outLen={outLen} is too short for the RGB offsets (need >47) - report format may differ on this interface.");
+                    LogDebug($"{callerForLog}: DualSense outLen={outLen} is too short for the RGB offsets (need >47) - report format may differ on this interface.");
                 }
             }
             else
             {
                 buffer[0] = 0x05;
                 buffer[1] = 0xFF; // flags: enable rumble + LED + flash
+                if (outLen > 4)
+                {
+                    buffer[3] = target.LastSmallMotor; // right/weak motor - best-effort offset, matches the RGB-at-6/7/8 layout already in use here
+                    buffer[4] = target.LastLargeMotor; // left/strong motor
+                }
                 if (outLen > 8)
                 {
-                    buffer[6] = r;
-                    buffer[7] = g;
-                    buffer[8] = b;
+                    buffer[6] = target.LastRed;
+                    buffer[7] = target.LastGreen;
+                    buffer[8] = target.LastBlue;
                 }
             }
 
-            LogDebug($"SetLightbarColor: writing PID={productId:X4} outLen={outLen} candidates={candidateCount} " +
-                     $"RGB=({r},{g},{b}) buffer[0..2]=({buffer[0]:X2},{buffer[1]:X2},{buffer[2]:X2})");
+            LogDebug($"{callerForLog}: writing PID={productId:X4} outLen={outLen} " +
+                     $"RGB=({target.LastRed},{target.LastGreen},{target.LastBlue}) motors=(L{target.LastLargeMotor},S{target.LastSmallMotor}) " +
+                     $"buffer[0..2]=({buffer[0]:X2},{buffer[1]:X2},{buffer[2]:X2})");
             target.Stream.Write(buffer);
-            LogDebug("SetLightbarColor: Write() returned without throwing.");
+            LogDebug($"{callerForLog}: Write() returned without throwing.");
             return true;
         }
         catch (Exception ex)
         {
-            LogDebug($"SetLightbarColor: Write() threw for PID={productId:X4}: {ex.GetType().Name}: {ex.Message}");
+            LogDebug($"{callerForLog}: Write() threw for PID={productId:X4}: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

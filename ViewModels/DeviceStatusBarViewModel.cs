@@ -67,6 +67,13 @@ public partial class DeviceStatusBarViewModel : ViewModelBase
             match.IsCharging = hid.IsCharging;
             match.ConnectionType = hid.ConnectionType;
             match.IsLedSupported = hid.IsLedSupported;
+            match.IsMotionSupported = hid.IsMotionSupported;
+            match.GyroPitch = hid.GyroPitch;
+            match.GyroYaw = hid.GyroYaw;
+            match.GyroRoll = hid.GyroRoll;
+            match.TouchActive = hid.TouchActive;
+            match.TouchX = hid.TouchX;
+            match.TouchY = hid.TouchY;
         }
     }
 }

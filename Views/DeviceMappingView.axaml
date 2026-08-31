@@ -1,8 +1,10 @@
 <!--
     Device Mapping (Direct Input/Wheels) page: the same per-input binding grid as
-    ControllerMappingView, filtered to wheel/pedal-class devices instead
-    (ItemsSource = GroupEntries = MainWindowViewModel.WheelGroupedMappings). See
-    ControllerMappingView.axaml's doc comment - identical rationale and binding pattern.
+    ControllerMappingView, filtered to wheel/pedal-class devices (ItemsSource = GroupEntries =
+    MainWindowViewModel.WheelGroupedMappings), plus a Wheel Settings tab for the whole-wheel
+    tuning ControllerMappingView has no equivalent of (rotation, force feedback strength/effect
+    toggles/invert - see WheelDeviceSettings). See ControllerMappingView.axaml's doc comment for
+    the shared tab-strip/device-picker pattern this follows.
 -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -10,9 +12,9 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ECCR.ViewModels"
              xmlns:models="using:ECCR.Models"
-             xmlns:converters="using:ECCR.Converters"
+             xmlns:shared="using:ECCR.Views.Shared"
              mc:Ignorable="d"
-             d:DesignWidth="1000" d:DesignHeight="700"
+             d:DesignWidth="1000" d:DesignHeight="760"
              x:Class="ECCR.Views.DeviceMappingView"
              x:DataType="vm:DeviceMappingViewModel">
 
@@ -20,277 +22,147 @@
         <vm:DeviceMappingViewModel/>
     </Design.DataContext>
 
-    <UserControl.Resources>
-        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
-    </UserControl.Resources>
-
-    <Grid RowDefinitions="Auto, Auto, *" Margin="16,10">
+    <Grid RowDefinitions="Auto, Auto, Auto, *" Margin="16,10">
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
             <TextBlock Text="🛞 Device Mapping" FontWeight="Bold" FontSize="18" Foreground="White"/>
             <TextBlock Text="Bind axes and buttons for Direct Input wheels, pedals, and shifters." FontSize="12" Foreground="#8B95A5"/>
+            <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,6,0,0">
+                <TextBlock FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap">
+                    <Run Text="💡" />
+                    <Run Text="Click any binding, then press a button or move an axis to capture it - you have 7 seconds. "/>
+                    <Run Text="Esc" FontWeight="Bold" Foreground="#D0D0E0"/>
+                    <Run Text=" cancels, "/>
+                    <Run Text="Backspace" FontWeight="Bold" Foreground="#D0D0E0"/>
+                    <Run Text=" clears the binding."/>
+                </TextBlock>
+            </Border>
         </StackPanel>
 
-        <!-- Column Headers -->
-        <Grid Grid.Row="1" ColumnDefinitions="32, 1.8*, 0.9*, 1.4*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
-            <Border Grid.ColumnSpan="8" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,6"/>
-            <TextBlock Grid.Column="0" Text="Select" FontSize="11" FontWeight="SemiBold" Foreground="#8B95A5" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Grid.Column="1" Text="Physical Key / Axis" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Grid.Column="2" Text="Type" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Grid.Column="3" Text="Virtual Player Slot" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Grid.Column="4" Text="Channel" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Grid.Column="5" Text="Dead Zone" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock Grid.Column="6" Text="Calibration" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-        </Grid>
+        <!-- Device picker: scopes the Wheel Settings tab -->
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10">
+            <Grid ColumnDefinitions="Auto, *">
+                <TextBlock Grid.Column="0" Text="Device" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding GroupEntries}"
+                          SelectedValue="{Binding SelectedDeviceName}"
+                          SelectedValueBinding="{Binding DeviceName}"
+                          HorizontalAlignment="Stretch"
+                          CornerRadius="6"
+                          Background="#10141E">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:DeviceMappingGroup">
+                            <TextBlock Text="{Binding DeviceName}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+        </Border>
 
-        <!-- Collapsible Device Mapping Groups -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,4">
-            <ItemsControl ItemsSource="{Binding GroupEntries}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="models:DeviceMappingGroup">
-                        <Border Background="#121622" BorderBrush="#20283C" BorderThickness="1" CornerRadius="8" Margin="0,0,0,10">
-                            <Expander IsExpanded="{Binding IsExpanded}"
-                                      HorizontalAlignment="Stretch"
-                                      HorizontalContentAlignment="Stretch"
-                                      Background="Transparent"
-                                      BorderThickness="0"
-                                      Padding="0">
+        <!-- Tab strip -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsButtonMappingTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.ButtonMapping}"
+                    Content="Button Mapping"/>
+            <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsWheelSettingsTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.WheelSettings}"
+                    Content="Wheel Settings"/>
+        </StackPanel>
 
-                                <Expander.Header>
-                                    <Grid ColumnDefinitions="Auto, *, Auto, Auto" HorizontalAlignment="Stretch" Margin="0,2">
-                                        <Border Grid.Column="0" Background="#1E2B45" CornerRadius="5" Padding="8,3" Margin="0,0,12,0" VerticalAlignment="Center">
-                                            <TextBlock Text="🛞 DEVICE" FontSize="10" FontWeight="Bold" Foreground="#3E7BFA"/>
-                                        </Border>
+        <!-- Tab content -->
+        <Panel Grid.Row="3">
 
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding DeviceName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
-                                            <Border Background="#1A202E" CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding EntryCount, StringFormat='{}{0} Binds Active'}" FontSize="11" Foreground="#8B95A5"/>
-                                            </Border>
-                                        </StackPanel>
+            <!-- Button Mapping: today's full grouped list across all devices, unaffected by the
+                 device picker above. -->
+            <Grid RowDefinitions="Auto, Auto, *" IsVisible="{Binding IsButtonMappingTabSelected}">
+                <Button Grid.Row="0" Content="+ New Binding" HorizontalAlignment="Right" Margin="0,0,0,8"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddWheelMappingCommand}"
+                        Background="#1A4A38" BorderBrush="#266D53" Foreground="White" FontWeight="SemiBold" Padding="12,7" CornerRadius="6"
+                        ToolTip.Tip="Adds a new unbound row - click it, then press a button or move an axis to bind it."/>
+                <Grid Grid.Row="1" ColumnDefinitions="32, 1.8*, 0.9*, 1.4*, 1.8*, 1.4*, 1*, 36" Margin="14,0,14,8">
+                    <Border Grid.ColumnSpan="8" BorderThickness="0,0,0,2" BorderBrush="#262D3D" Padding="0,0,0,6"/>
+                    <TextBlock Grid.Column="0" Text="Select" FontSize="11" FontWeight="SemiBold" Foreground="#8B95A5" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="Physical Key / Axis" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="2" Text="Type" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="3" Text="Virtual Player Slot" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="4" Text="Channel" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="5" Text="Dead Zone" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="6" Text="Calibration" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+                <shared:DeviceMappingGroupsPanel Grid.Row="2" ItemsSource="{Binding GroupEntries}" DeviceIconGlyph="🛞"/>
+            </Grid>
 
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,14,0">
-                                            <TextBlock Text="Assign to Player:" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
-                                            <ComboBox ItemsSource="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlayerTargets}"
-                                                      PlaceholderText="Select Player..."
-                                                      Width="180"
-                                                      CornerRadius="5"
-                                                      Background="#10141E"
-                                                      FontSize="11"
-                                                      SelectionChanged="OnBulkTargetSelectionChanged">
-                                                <ComboBox.ItemTemplate>
-                                                    <DataTemplate x:DataType="models:PlayerTargetOption">
-                                                        <Grid ColumnDefinitions="Auto, *">
-                                                            <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
-                                                                <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
-                                                            </Border>
-                                                            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11"/>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
-                                        </StackPanel>
+            <!-- Wheel Settings: rotation + force feedback tuning for the device picked above. -->
+            <ScrollViewer IsVisible="{Binding IsWheelSettingsTabSelected}">
+                <StackPanel Spacing="10" MaxWidth="640" HorizontalAlignment="Left">
+                    <TextBlock Text="No wheel/pedal devices bound yet - use Button Mapping to bind one first." Foreground="#8B95A5" FontSize="12"
+                               IsVisible="{Binding !HasSelectedDevice}" Margin="4,8"/>
 
-                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,12,0">
-                                            <Button Content="Select All"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectAllInGroupCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    Background="#161B26" Foreground="#BAC2DE" FontSize="10" Padding="6,4" CornerRadius="4"/>
-                                            <Button Content="Deselect"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeselectAllInGroupCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    Background="#161B26" Foreground="#BAC2DE" FontSize="10" Padding="6,4" CornerRadius="4"/>
-                                            <Button Content="🗑 Remove"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveSelectedInGroupCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="10" Padding="6,4" CornerRadius="4"/>
-                                            <Button Content="+ Add Key"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddMappingToDeviceCommand}"
-                                                    CommandParameter="{Binding DeviceName}"
-                                                    Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" FontSize="11" Padding="10,4" CornerRadius="5"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Expander.Header>
-
-                                <ItemsControl ItemsSource="{Binding Entries}" HorizontalAlignment="Stretch" Margin="8,4,8,10">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="models:MappingEntry">
-                                            <Grid ColumnDefinitions="32, 1.8*, 0.9*, 1.4*, 1.8*, 1.4*, 1*, 36"
-                                                  HorizontalAlignment="Stretch"
-                                                  Margin="0,3">
-
-                                                <CheckBox Grid.Column="0"
-                                                          IsChecked="{Binding IsSelected}"
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Center"/>
-
-                                                <Button Grid.Column="1"
-                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).StartListeningCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Stretch"
-                                                        Margin="3,0"
-                                                        Padding="6,4"
-                                                        Background="#1F283C"
-                                                        BorderBrush="#3D4B6E"
-                                                        BorderThickness="1"
-                                                        CornerRadius="6">
-                                                    <Grid ColumnDefinitions="Auto, *">
-                                                        <Border Grid.Column="0"
-                                                                x:DataType="converters:BadgeInfo"
-                                                                DataContext="{Binding SourceDisplayName, Converter={StaticResource ButtonBadgeConverter}}"
-                                                                IsVisible="{Binding HasBadge}"
-                                                                Background="{Binding Background}"
-                                                                BorderBrush="{Binding Border}"
-                                                                BorderThickness="1"
-                                                                CornerRadius="10"
-                                                                Width="22" Height="22"
-                                                                Margin="0,0,8,0"
-                                                                VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding Glyph}"
-                                                                       Foreground="{Binding Foreground}"
-                                                                       FontSize="12"
-                                                                       FontWeight="Bold"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center"/>
-                                                        </Border>
-
-                                                        <TextBlock Grid.Column="1"
-                                                                   Text="{Binding SourceDisplayName}"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Left"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                    </Grid>
-                                                </Button>
-
-                                                <ComboBox Grid.Column="2"
-                                                          SelectedItem="{Binding SourceType}"
-                                                          HorizontalAlignment="Stretch"
-                                                          MinWidth="60"
-                                                          Margin="3,0"
-                                                          CornerRadius="6"
-                                                          Background="#161B26">
-                                                    <models:InputType>Axis</models:InputType>
-                                                    <models:InputType>Button</models:InputType>
-                                                </ComboBox>
-
-                                                <ComboBox Grid.Column="3"
-                                                          ItemsSource="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlayerTargets}"
-                                                          SelectedValue="{Binding TargetDeviceId}"
-                                                          SelectedValueBinding="{Binding Id}"
-                                                          HorizontalAlignment="Stretch"
-                                                          MinWidth="90"
-                                                          Margin="3,0"
-                                                          CornerRadius="6"
-                                                          Background="#161B26">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="models:PlayerTargetOption">
-                                                            <Grid ColumnDefinitions="Auto, *">
-                                                                <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
-                                                                    <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
-                                                                </Border>
-                                                                <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11"/>
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-
-                                                <ComboBox Grid.Column="4"
-                                                          ItemsSource="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AvailableVirtualOutputs}"
-                                                          SelectedItem="{Binding TargetOutput}"
-                                                          MaxDropDownHeight="300"
-                                                          HorizontalAlignment="Stretch"
-                                                          Margin="3,0"
-                                                          CornerRadius="6"
-                                                          Background="#161B26">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="x:String">
-                                                            <Grid ColumnDefinitions="Auto, *" x:CompileBindings="False">
-                                                                <Border Grid.Column="0"
-                                                                        x:DataType="converters:BadgeInfo"
-                                                                        DataContext="{Binding Converter={StaticResource ButtonBadgeConverter}}"
-                                                                        IsVisible="{Binding HasBadge}"
-                                                                        Background="{Binding Background}"
-                                                                        BorderBrush="{Binding Border}"
-                                                                        BorderThickness="1"
-                                                                        CornerRadius="10"
-                                                                        Width="20" Height="20"
-                                                                        Margin="0,0,8,0"
-                                                                        VerticalAlignment="Center">
-                                                                    <TextBlock Text="{Binding Glyph}"
-                                                                               Foreground="{Binding Foreground}"
-                                                                               FontSize="11"
-                                                                               FontWeight="Bold"
-                                                                               HorizontalAlignment="Center"
-                                                                               VerticalAlignment="Center"/>
-                                                                </Border>
-                                                                <TextBlock Grid.Column="1"
-                                                                           Text="{Binding}"
-                                                                           VerticalAlignment="Center"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-
-                                                <Panel Grid.Column="5" Margin="4,0" HorizontalAlignment="Stretch">
-                                                    <Grid ColumnDefinitions="*, 36" IsVisible="{Binding IsAxis}" HorizontalAlignment="Stretch">
-                                                        <Slider Grid.Column="0"
-                                                                Minimum="0.0"
-                                                                Maximum="0.5"
-                                                                Value="{Binding Deadzone}"
-                                                                HorizontalAlignment="Stretch"
-                                                                MinWidth="60"
-                                                                VerticalAlignment="Center"/>
-                                                        <TextBlock Grid.Column="1"
-                                                                   Text="{Binding Deadzone, StringFormat='{}{0:P0}'}"
-                                                                   FontSize="11"
-                                                                   Foreground="#8B95A5"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Right"/>
-                                                    </Grid>
-                                                    <TextBlock Text="—"
-                                                               Foreground="#4B5563"
-                                                               HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center"
-                                                               IsVisible="{Binding !IsAxis}"/>
-                                                </Panel>
-
-                                                <Panel Grid.Column="6" Margin="3,0" HorizontalAlignment="Stretch">
-                                                    <Button Content="Calibrate"
-                                                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenCalibrationCommand}"
-                                                            CommandParameter="{Binding}"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Center"
-                                                            Background="#1B2130"
-                                                            BorderBrush="#2B354C"
-                                                            CornerRadius="6"
-                                                            IsVisible="{Binding IsAxis}"/>
-                                                    <TextBlock Text="—"
-                                                               Foreground="#4B5563"
-                                                               HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center"
-                                                               IsVisible="{Binding !IsAxis}"/>
-                                                </Panel>
-
-                                                <Button Grid.Column="7"
-                                                        Content="✕"
-                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveMappingCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        Foreground="#FF5C5C"
-                                                        Background="Transparent"
-                                                        BorderThickness="0"
-                                                        FontWeight="Bold"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </Expander>
+                    <StackPanel Spacing="10" IsVisible="{Binding HasSelectedDevice}">
+                    <StackPanel Spacing="10" DataContext="{Binding SelectedWheelSettings}" x:DataType="models:WheelDeviceSettings">
+                        <Border Classes="card" IsVisible="{Binding !$parent[UserControl].((vm:DeviceMappingViewModel)DataContext).IsSelectedDeviceForceFeedbackCapable}">
+                            <TextBlock Text="This device isn't reporting force-feedback support to Windows - rotation/deadzone settings still apply, but effects (spring/damper/friction/etc.) won't reach it." Foreground="#FFAAAA" FontSize="12" TextWrapping="Wrap"/>
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Rotation" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                <TextBlock Text="Degrees of physical lock-to-lock rotation this wheel is configured for (set on the wheel's own firmware/driver - this doesn't change that, only how ECCR scales spring-effect torque near the limits)." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                <Grid ColumnDefinitions="*, 56">
+                                    <Slider Grid.Column="0" Minimum="90" Maximum="1080" TickFrequency="90" IsSnapToTickEnabled="True" Value="{Binding RotationDegrees}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding RotationDegrees, StringFormat='{}{0}°'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="*, Auto">
+                                    <TextBlock Grid.Column="0" Text="Force Feedback" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" VerticalAlignment="Center"/>
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ForceFeedbackEnabled}" OnContent="Enabled" OffContent="Disabled"/>
+                                </Grid>
+                                <TextBlock Text="Relays a game's force-feedback effects from its virtual wheel back to this physical wheel in real time." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+
+                                <StackPanel Spacing="10" IsEnabled="{Binding ForceFeedbackEnabled}">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Strength" FontSize="11" Foreground="#8B95A5"/>
+                                        <Grid ColumnDefinitions="*, 50">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="200" Value="{Binding ForceFeedbackStrengthPercent}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding ForceFeedbackStrengthPercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <Grid ColumnDefinitions="*, Auto" Margin="0,4,0,0">
+                                        <TextBlock Grid.Column="0" Text="Spring (center-seeking force)" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding SpringEffectEnabled}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Damper (velocity resistance)" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding DamperEffectEnabled}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Friction" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding FrictionEffectEnabled}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Invert Force Direction" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertForce}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="card">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Cloaking" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                <TextBlock Text="For force feedback and full remapping to be authoritative, games must only see ECCR's virtual wheel - hide this device's raw input from other applications via HidHide." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                <Button Content="🛡 Open HidHide Cloaking" Command="{Binding $parent[UserControl].((vm:DeviceMappingViewModel)DataContext).OpenHidHideCommand}"
+                                        Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,8" CornerRadius="6" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Panel>
     </Grid>
 </UserControl>

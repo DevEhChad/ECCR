@@ -24,4 +24,7 @@ public class UserProfile
     /// <summary>Saved lightbar animation mode/speed for this profile - see <see cref="LedEffectMode"/>.</summary>
     public LedEffectMode LedMode { get; set; } = LedEffectMode.Static;
     public double LedSpeed { get; set; } = 1.0;
+
+    /// <summary>Rotation/force-feedback tuning per wheel device name - see <see cref="WheelDeviceSettings"/>.</summary>
+    public Dictionary<string, WheelDeviceSettings> WheelSettings { get; set; } = new();
 }

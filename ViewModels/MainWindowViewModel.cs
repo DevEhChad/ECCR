@@ -38,6 +38,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly InputDeviceManager? _deviceManager;
     private readonly DependencyManager _dependencyManager = new();
     private readonly IVirtualFeeder _feeder = new CompositeFeederService();
+    private readonly WheelForceFeedbackService _wheelForceFeedback = new();
     private readonly UpdateService _updateService = new();
     private readonly Stopwatch _pollStopwatch = new();
     private readonly string _baseDirectory;
@@ -56,6 +57,26 @@ public partial class MainWindowViewModel : ViewModelBase
     // Virtual Output Master Toggle
     [ObservableProperty]
     private bool _isVirtualOutputActive = true;
+
+    // Gyro-aim / touch-aim: see AppSettings' matching fields for persistence and
+    // ApplyMotionAndTouchAim for how these drive the virtual Right Stick.
+    [ObservableProperty]
+    private bool _gyroAimEnabled;
+
+    [ObservableProperty]
+    private string? _gyroAimSourceDeviceName;
+
+    [ObservableProperty]
+    private uint _gyroAimTargetPlayer = 1;
+
+    [ObservableProperty]
+    private bool _touchAimEnabled;
+
+    [ObservableProperty]
+    private string? _touchAimSourceDeviceName;
+
+    [ObservableProperty]
+    private uint _touchAimTargetPlayer = 1;
 
     // Dynamic Version & Clean Window Title
     [ObservableProperty]
@@ -196,8 +217,27 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<DeviceMappingGroup> WheelGroupedMappings { get; } = new();
     public ObservableCollection<string> ConnectedDevices { get; } = new();
-    public ObservableCollection<string> AvailableVirtualOutputs { get; } = new();
-    public ObservableCollection<PlayerTargetOption> PlayerTargets { get; } = new()
+
+    /// <summary>
+    /// Static (not per-instance): there is only ever one of these app-wide, both are built
+    /// once and never rebuilt/replaced afterward, and XAML rows deep inside nested
+    /// DataTemplates bind to them via "{x:Static vm:MainWindowViewModel.X}" instead of the
+    /// "$parent[Window].((vm:MainWindowViewModel)DataContext).X" ancestor-walk pattern used
+    /// for everything else on this page. That distinction matters: a ComboBox's SelectedItem/
+    /// SelectedValue binds directly off its row's own immediate DataContext (available the
+    /// instant the row's DataTemplate is realized), while an ItemsSource reached via a
+    /// $parent[Window] ancestor walk only resolves once the row is attached to the live visual
+    /// tree - a moment later. Avalonia's ComboBox does not retroactively re-match a
+    /// SelectedItem/SelectedValue that arrived before ItemsSource had anything to match against,
+    /// so every Channel/Virtual Player Slot dropdown rendered blank despite the underlying
+    /// MappingEntry data being correct (confirmed via UI Automation: item lists populated fine,
+    /// but no item ever reported IsSelected=true). An x:Static binding has no such race - it
+    /// resolves synchronously at compile/load time with no ambient-DataContext or
+    /// visual-tree dependency.
+    /// </summary>
+    public static ObservableCollection<string> AvailableVirtualOutputs { get; } = BuildAvailableVirtualOutputs();
+
+    public static ObservableCollection<PlayerTargetOption> PlayerTargets { get; } = new()
     {
         new PlayerTargetOption { Id = 1, DisplayName = "Player 1 (Primary / Rig)", ShortBadge = "P1", Description = "Combined Wheel, Pedals, Shifter & Controller", TextColorHex = "#5CFFBE", BgColorHex = "#122A1E", BorderColorHex = "#00E599" },
         new PlayerTargetOption { Id = 2, DisplayName = "Player 2 (Split-Screen)", ShortBadge = "P2", Description = "Independent Virtual Controller #2", TextColorHex = "#FFAF70", BgColorHex = "#2B1D12", BorderColorHex = "#FA8B3E" },
@@ -232,7 +272,67 @@ public partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<NavItem> UtilityNavItems { get; } = new();
 
     private MappingEntry? _listeningEntry;
+    private string _preListenDisplayName = "Click to Bind";
+    private DispatcherTimer? _listenTimeoutTimer;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
+
+    /// <summary>
+    /// Rotation/force-feedback tuning per wheel device name, keyed and persisted the same way
+    /// as <see cref="UserProfile.WheelSettings"/> (round-tripped in <see cref="SaveProfileToDisk"/>/
+    /// <see cref="LoadSelectedProfile"/>). Entries are created lazily via
+    /// <see cref="GetOrCreateWheelSettings"/> - the Wheel Settings tab (<see cref="DeviceMappingViewModel"/>)
+    /// is the only consumer today.
+    /// </summary>
+    public Dictionary<string, WheelDeviceSettings> WheelSettings { get; private set; } = new();
+
+    /// <summary>Underlying real force-feedback relay (vJoy PID packets -> real wheel effects) - see its own doc comment.</summary>
+    public WheelForceFeedbackService WheelForceFeedback => _wheelForceFeedback;
+
+    public WheelDeviceSettings GetOrCreateWheelSettings(string deviceName)
+    {
+        if (WheelSettings.TryGetValue(deviceName, out var existing)) return existing;
+
+        var settings = new WheelDeviceSettings();
+        settings.PropertyChanged += OnWheelSettingsPropertyChanged;
+        WheelSettings[deviceName] = settings;
+        return settings;
+    }
+
+    private void OnWheelSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        SyncWheelForceFeedbackMappings();
+        AutoSaveCurrentProfile();
+    }
+
+    /// <summary>
+    /// Resolves, for each Player slot (vJoy device ID 1-4), whichever physical wheel currently
+    /// feeds that slot's "[Wheel] Steering" target - the one axis mapping that unambiguously
+    /// identifies "the" wheel for FFB purposes - and pushes it into
+    /// <see cref="_wheelForceFeedback"/>. Called whenever a mapping or a wheel's
+    /// <see cref="WheelDeviceSettings"/> changes; idempotent.
+    /// </summary>
+    private void SyncWheelForceFeedbackMappings()
+    {
+        for (uint targetDeviceId = 1; targetDeviceId <= 4; targetDeviceId++)
+        {
+            var steeringEntry = Mappings.FirstOrDefault(m =>
+                m.TargetDeviceId == targetDeviceId &&
+                m.SourceDeviceGuid != Guid.Empty &&
+                m.TargetOutput.StartsWith("[Wheel] Steering", StringComparison.OrdinalIgnoreCase));
+
+            if (steeringEntry == null)
+            {
+                _wheelForceFeedback.RemoveWheelMapping(targetDeviceId);
+                continue;
+            }
+
+            var settings = GetOrCreateWheelSettings(steeringEntry.SourceDeviceName);
+            _wheelForceFeedback.UpdateWheelMapping(targetDeviceId, steeringEntry.SourceDeviceGuid, settings);
+        }
+    }
+
+    /// <summary>Forwarded from <c>MainWindow.OnOpened</c> once a real platform window handle exists - see <see cref="WheelForceFeedbackService.SetWindowHandle"/>.</summary>
+    public void SetNativeWindowHandle(IntPtr handle) => _wheelForceFeedback.SetWindowHandle(handle);
 
     public MainWindowViewModel()
     {
@@ -259,7 +359,6 @@ public partial class MainWindowViewModel : ViewModelBase
         Directory.CreateDirectory(_profilesDirectory);
 
         ResolveAppVersion();
-        InitializeVirtualOutputs();
         Mappings.CollectionChanged += OnMappingsCollectionChanged;
 
         HidHide = new HidHideViewModel(() => _currentSettings, SaveAppSettings);
@@ -269,6 +368,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ConnectedDevices,
             () => _deviceManager?.GetConnectedDevices() ?? new List<DeviceHardwareInfo>(),
             Mappings,
+            PlayerTargets,
             () =>
             {
                 RebuildGroupedMappings();
@@ -287,8 +387,21 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             Dispatcher.UIThread.Post(() =>
             {
-                ConnectedDevices.Clear();
-                foreach (var d in devices) ConnectedDevices.Add(d.InstanceName);
+                // Diff instead of unconditional Clear()+re-add: a name that's still present
+                // must never be removed-then-re-added within the same tick, since
+                // ConnectedDevices is two-way bound to AutoBind.WizardSelectedDevice (and other
+                // pages) - a momentary empty collection would otherwise snap the user's
+                // selection back to whatever ends up first in the rebuilt list.
+                var newNames = devices.Select(d => d.InstanceName).ToList();
+                for (int i = ConnectedDevices.Count - 1; i >= 0; i--)
+                {
+                    if (!newNames.Contains(ConnectedDevices[i])) ConnectedDevices.RemoveAt(i);
+                }
+                foreach (var name in newNames)
+                {
+                    if (!ConnectedDevices.Contains(name)) ConnectedDevices.Add(name);
+                }
+
                 if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(AutoBind.WizardSelectedDevice))
                 {
                     AutoBind.WizardSelectedDevice = ConnectedDevices[0];
@@ -307,8 +420,26 @@ public partial class MainWindowViewModel : ViewModelBase
         _controllerHidService.OnStatusUpdated += statuses =>
         {
             Dispatcher.UIThread.Post(() => StatusBar.ApplyHidStatuses(statuses));
+            ApplyMotionAndTouchAim(statuses);
         };
         _controllerHidService.Start();
+
+        // Forwards a game's rumble feedback (via either virtual pad type) to whichever
+        // physical Sony device(s) are mapped into that player slot - the reverse direction of
+        // the axis/button feed above.
+        _feeder.RumbleReceived += (targetDeviceId, largeMotor, smallMotor) =>
+        {
+            var guids = Mappings
+                .Where(m => m.TargetDeviceId == targetDeviceId && m.SourceDeviceGuid != Guid.Empty)
+                .Select(m => m.SourceDeviceGuid)
+                .Distinct();
+
+            foreach (var guid in guids)
+            {
+                var (vendorId, productId) = ControllerHidService.GetVidPid(guid);
+                _controllerHidService.SetRumble(vendorId, productId, largeMotor, smallMotor);
+            }
+        };
 
         LoadSelectedProfile();
         RefreshDependencyStates();
@@ -336,8 +467,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _pageViewModels[AppPage.Home] = new HomeViewModel(StatusBar, BuildQuickActionCards(), NavigateToCommand);
         _pageViewModels[AppPage.Controllers] = new ControllersPageViewModel(StatusBar.GamepadStatuses);
         _pageViewModels[AppPage.Wheels] = new WheelsPageViewModel(this);
-        _pageViewModels[AppPage.ControllerMapping] = new ControllerMappingViewModel(GamepadGroupedMappings);
-        _pageViewModels[AppPage.DeviceMapping] = new DeviceMappingViewModel(WheelGroupedMappings);
+        _pageViewModels[AppPage.ControllerMapping] = new ControllerMappingViewModel(this, GamepadGroupedMappings);
+        _pageViewModels[AppPage.DeviceMapping] = new DeviceMappingViewModel(this, WheelGroupedMappings);
         _controllerLedViewModel = new ControllerLedViewModel(StatusBar.GamepadStatuses, _controllerHidService, AutoSaveCurrentProfile);
         _pageViewModels[AppPage.ControllerLed] = _controllerLedViewModel;
         _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this);
@@ -499,9 +630,17 @@ public partial class MainWindowViewModel : ViewModelBase
         catch { }
     }
 
+    partial void OnGyroAimEnabledChanged(bool value) => SaveAppSettings();
+    partial void OnGyroAimSourceDeviceNameChanged(string? value) => SaveAppSettings();
+    partial void OnGyroAimTargetPlayerChanged(uint value) => SaveAppSettings();
+    partial void OnTouchAimEnabledChanged(bool value) => SaveAppSettings();
+    partial void OnTouchAimSourceDeviceNameChanged(string? value) => SaveAppSettings();
+    partial void OnTouchAimTargetPlayerChanged(uint value) => SaveAppSettings();
+
     partial void OnIsVirtualOutputActiveChanged(bool value)
     {
         _feeder.SetActive(value);
+        _wheelForceFeedback.SetActive(value);
         UpdateVirtualDeviceSummary();
         MappingStatus = value ? "Active" : "Standby (Disabled)";
         SaveAppSettings();
@@ -537,11 +676,12 @@ public partial class MainWindowViewModel : ViewModelBase
     /// the one place that vocabulary is defined; adding a new virtual output channel means
     /// adding it here *and* teaching <see cref="ECCR.Services.VirtualFeederService"/> or
     /// <see cref="ECCR.Services.VJoyFeederService"/> (whichever backend it belongs to) to
-    /// recognize the new string.
+    /// recognize the new string. Static because <see cref="AvailableVirtualOutputs"/> is
+    /// static (see that property's doc comment) - built once at type-load time.
     /// </summary>
-    private void InitializeVirtualOutputs()
+    private static ObservableCollection<string> BuildAvailableVirtualOutputs()
     {
-        AvailableVirtualOutputs.Clear();
+        var outputs = new ObservableCollection<string>();
 
         string[] xboxBinds = [
             "[Xbox] Left Stick X (Steer / Horizontal)",
@@ -566,7 +706,7 @@ public partial class MainWindowViewModel : ViewModelBase
             "[Xbox] Xbox View (Back / Map / Share)",
             "[Xbox] Xbox Guide (Home / Guide)"
         ];
-        foreach (var bind in xboxBinds) AvailableVirtualOutputs.Add(bind);
+        foreach (var bind in xboxBinds) outputs.Add(bind);
 
         string[] wheelBinds = [
             "[Wheel] Steering (Axis X)",
@@ -587,9 +727,72 @@ public partial class MainWindowViewModel : ViewModelBase
             "[Wheel] 7th Gear",
             "[Wheel] Reverse Gear"
         ];
-        foreach (var bind in wheelBinds) AvailableVirtualOutputs.Add(bind);
+        foreach (var bind in wheelBinds) outputs.Add(bind);
 
-        for (int i = 1; i <= 32; i++) AvailableVirtualOutputs.Add($"[Wheel] Button {i}");
+        for (int i = 1; i <= 32; i++) outputs.Add($"[Wheel] Button {i}");
+
+        string[] ds4Binds = [
+            "[DS4] Left Stick X (Steer / Horizontal)",
+            "[DS4] Left Stick Y (Steer / Vertical)",
+            "[DS4] Right Stick X (Camera / Look Horizontal)",
+            "[DS4] Right Stick Y (Camera / Look Vertical)",
+            "[DS4] L2 Trigger (Brake Axis)",
+            "[DS4] R2 Trigger (Gas Axis)",
+            "[DS4] Cross (X / South)",
+            "[DS4] Circle (O / East)",
+            "[DS4] Square (Sq / West)",
+            "[DS4] Triangle (Tri / North)",
+            "[DS4] L1 (Left Bumper / Clutch)",
+            "[DS4] R1 (Right Bumper)",
+            "[DS4] L3 (Left Stick Click)",
+            "[DS4] R3 (Right Stick Click)",
+            "[DS4] D-Pad Up",
+            "[DS4] D-Pad Down",
+            "[DS4] D-Pad Left",
+            "[DS4] D-Pad Right",
+            "[DS4] Options (Start)",
+            "[DS4] Share (Back)",
+            "[DS4] PS (Guide)",
+            "[DS4] Touchpad Click"
+        ];
+        foreach (var bind in ds4Binds) outputs.Add(bind);
+
+        return outputs;
+    }
+
+    /// <summary>
+    /// Drives Gyro-Aim/Touch-Aim (see the matching properties and <c>AppSettings</c> fields):
+    /// when enabled, feeds the chosen source device's gyro yaw/pitch or touch X/Y straight to
+    /// the Right Stick of the chosen Player's virtual Xbox 360 controller, bypassing the
+    /// MappingEntry/profile system entirely - this is a lightweight, always-Xbox-360, always-
+    /// Right-Stick feature rather than a fully generalized bindable channel, deliberately kept
+    /// simple. Runs on <see cref="ControllerHidService"/>'s own background poll thread (called
+    /// from the same handler that also dispatches <see cref="StatusBar"/>'s UI update), not the
+    /// UI thread - <see cref="_feeder"/> is safe to call from any thread.
+    /// </summary>
+    private void ApplyMotionAndTouchAim(List<ControllerStatus> statuses)
+    {
+        if (GyroAimEnabled && !string.IsNullOrEmpty(GyroAimSourceDeviceName))
+        {
+            var src = StatusBar.GamepadStatuses.FirstOrDefault(s => s.DeviceInstanceName == GyroAimSourceDeviceName);
+            var hid = src != null ? statuses.FirstOrDefault(s => s.VendorId == src.VendorId && s.ProductId == src.ProductId) : null;
+            if (hid != null && hid.IsMotionSupported)
+            {
+                _feeder.UpdateAxis(GyroAimTargetPlayer, "[Xbox] Right Stick X (Camera / Look Horizontal)", (hid.GyroYaw + 1.0) / 2.0);
+                _feeder.UpdateAxis(GyroAimTargetPlayer, "[Xbox] Right Stick Y (Camera / Look Vertical)", (hid.GyroPitch + 1.0) / 2.0);
+            }
+        }
+
+        if (TouchAimEnabled && !string.IsNullOrEmpty(TouchAimSourceDeviceName))
+        {
+            var src = StatusBar.GamepadStatuses.FirstOrDefault(s => s.DeviceInstanceName == TouchAimSourceDeviceName);
+            var hid = src != null ? statuses.FirstOrDefault(s => s.VendorId == src.VendorId && s.ProductId == src.ProductId) : null;
+            if (hid is { IsMotionSupported: true, TouchActive: true })
+            {
+                _feeder.UpdateAxis(TouchAimTargetPlayer, "[Xbox] Right Stick X (Camera / Look Horizontal)", hid.TouchX);
+                _feeder.UpdateAxis(TouchAimTargetPlayer, "[Xbox] Right Stick Y (Camera / Look Vertical)", hid.TouchY);
+            }
+        }
     }
 
     public void BulkChangeDeviceTarget(string deviceName, uint targetDeviceId)
@@ -724,9 +927,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
             RebuildGroupedMappings();
             UpdateVirtualDeviceSummary();
-            MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
-            _listeningEntry = null;
-            _axisBaselines.Clear();
+            StopListening();
             AutoSaveCurrentProfile();
         });
     }
@@ -884,27 +1085,76 @@ public partial class MainWindowViewModel : ViewModelBase
         };
     }
 
+    /// <summary>True while a "Click to Bind" capture is armed - drives Esc/Backspace routing in <c>MainWindow.OnKeyDown</c> and the hint banner's active state.</summary>
+    public bool IsListening => _listeningEntry != null;
+
     /// <summary>
-    /// Arms (or, if already armed for this entry, disarms) capture mode - see
+    /// Arms (or, if already armed for this entry, cancels) capture mode - see
     /// <see cref="ProcessInputPolling"/> for what happens on the polling thread while armed.
-    /// Bound to each mapping row's physical-input button in the main grid.
+    /// Bound to each mapping row's physical-input button in the main grid. Auto-cancels after
+    /// 7 seconds of no input (<see cref="_listenTimeoutTimer"/>); Esc (<see cref="CancelListening"/>)
+    /// and Backspace (<see cref="ClearListeningBinding"/>) are routed in from <c>MainWindow.OnKeyDown</c>
+    /// while <see cref="IsListening"/> is true.
     /// </summary>
     [RelayCommand]
     public void StartListening(MappingEntry entry)
     {
         if (_listeningEntry == entry)
         {
-            entry.SourceDisplayName = "Click to Bind";
-            MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
-            _listeningEntry = null;
-            _axisBaselines.Clear();
+            CancelListening();
             return;
         }
 
+        if (_listeningEntry != null) CancelListening();
+
+        _preListenDisplayName = entry.SourceDisplayName;
         _axisBaselines.Clear();
-        entry.SourceDisplayName = "Listening...";
+        entry.SourceDisplayName = "Listening... (Esc to cancel, Backspace to clear, 7s timeout)";
         MappingStatus = $"Listening ({entry.TargetOutput})";
         _listeningEntry = entry;
+        OnPropertyChanged(nameof(IsListening));
+
+        _listenTimeoutTimer?.Stop();
+        _listenTimeoutTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
+        _listenTimeoutTimer.Tick += (_, _) => CancelListening();
+        _listenTimeoutTimer.Start();
+    }
+
+    /// <summary>Aborts an in-progress capture without touching the entry's existing binding - restores whatever label it showed before listening started.</summary>
+    public void CancelListening()
+    {
+        if (_listeningEntry == null) return;
+        _listeningEntry.SourceDisplayName = _preListenDisplayName;
+        StopListening();
+    }
+
+    /// <summary>Wipes the currently-listening entry back to a fully unbound state.</summary>
+    public void ClearListeningBinding()
+    {
+        if (_listeningEntry == null) return;
+        var entry = _listeningEntry;
+
+        // Falls back into whichever "Uncategorized ..." group matches the section the entry
+        // was already in (by its old device name's category) rather than always landing in the
+        // gamepad section - clearing a wheel binding should keep it visible on the wheel page.
+        bool wasWheel = DevicePresetService.IsWheelOrPedalCategory(DevicePresetService.DetectCategory(entry.SourceDeviceName));
+        entry.SourceDeviceName = wasWheel ? UncategorizedWheelDeviceName : UncategorizedGamepadDeviceName;
+        entry.SourceDeviceGuid = Guid.Empty;
+        entry.SourceIndex = 0;
+        entry.SourceDisplayName = "Click to Bind";
+        StopListening();
+        RebuildGroupedMappings();
+        AutoSaveCurrentProfile();
+    }
+
+    private void StopListening()
+    {
+        _listenTimeoutTimer?.Stop();
+        _listenTimeoutTimer = null;
+        _listeningEntry = null;
+        _axisBaselines.Clear();
+        MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
+        OnPropertyChanged(nameof(IsListening));
     }
 
     [RelayCommand]
@@ -938,7 +1188,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var item in selected)
         {
-            if (_listeningEntry == item) _listeningEntry = null;
+            if (_listeningEntry == item) StopListening();
             Mappings.Remove(item);
         }
 
@@ -967,7 +1217,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var item in selected)
         {
-            if (_listeningEntry == item) _listeningEntry = null;
+            if (_listeningEntry == item) StopListening();
             Mappings.Remove(item);
         }
 
@@ -1108,7 +1358,7 @@ public partial class MainWindowViewModel : ViewModelBase
         GamepadGroupedMappings.Clear();
         WheelGroupedMappings.Clear();
 
-        var grouped = Mappings.GroupBy(m => string.IsNullOrWhiteSpace(m.SourceDeviceName) ? "Unassigned Device" : m.SourceDeviceName).OrderBy(g => g.Key);
+        var grouped = Mappings.GroupBy(m => string.IsNullOrWhiteSpace(m.SourceDeviceName) ? UncategorizedGamepadDeviceName : m.SourceDeviceName).OrderBy(g => g.Key);
         foreach (var group in grouped)
         {
             var deviceGroup = new DeviceMappingGroup(group.Key);
@@ -1155,26 +1405,44 @@ public partial class MainWindowViewModel : ViewModelBase
         AutoSaveCurrentProfile();
     }
 
+    /// <summary>
+    /// Placeholder "device name" for a mapping that hasn't been bound to a real physical device
+    /// yet - <see cref="DevicePresetService.DetectCategory"/> falls through to
+    /// <see cref="DeviceHardwareCategory.GenericGamepad"/> for both of these (neither contains
+    /// a recognized brand/wheel keyword), which is what routes them to
+    /// <see cref="GamepadGroupedMappings"/>/<see cref="WheelGroupedMappings"/> respectively in
+    /// <see cref="RebuildGroupedMappings"/> - no separate "which section did this come from"
+    /// field needed. Once <see cref="AssignDetectedInput"/> captures a real input, it overwrites
+    /// <see cref="MappingEntry.SourceDeviceName"/> unconditionally, so the entry moves into (or
+    /// creates) that device's own group automatically on the next rebuild.
+    /// </summary>
+    private const string UncategorizedGamepadDeviceName = "Uncategorized Device";
+
+    /// <summary>Wheel-section counterpart of <see cref="UncategorizedGamepadDeviceName"/> - contains "wheel" so <see cref="DevicePresetService.DetectCategory"/> routes it to <see cref="WheelGroupedMappings"/> instead.</summary>
+    private const string UncategorizedWheelDeviceName = "Uncategorized Wheel Device";
+
     [RelayCommand]
-    public void AddMapping()
+    public void AddGamepadMapping() => AddUncategorizedMapping(isWheel: false);
+
+    [RelayCommand]
+    public void AddWheelMapping() => AddUncategorizedMapping(isWheel: true);
+
+    /// <summary>
+    /// Adds a brand-new, not-yet-bound mapping to whichever section (<see cref="AddGamepadMapping"/>
+    /// vs <see cref="AddWheelMapping"/>) its "+ New Binding" button was clicked from - it shows
+    /// up under an "Uncategorized ..." group in that section only, never guessing a real
+    /// connected device the way this used to (which is what caused a brand-new binding to land
+    /// under an arbitrary already-mapped device's group, sometimes in the wrong section
+    /// entirely). Click-to-Bind on the resulting row still works exactly as before.
+    /// </summary>
+    private void AddUncategorizedMapping(bool isWheel)
     {
-        string defaultDevice = ConnectedDevices.Count > 0 ? ConnectedDevices[0] : "Select Device...";
-        var targetDevice = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == defaultDevice);
-        var category = DevicePresetService.DetectCategory(defaultDevice);
-
-        string defaultTarget = category switch
-        {
-            DeviceHardwareCategory.PlayStationController or DeviceHardwareCategory.NintendoController or DeviceHardwareCategory.XboxGamepad => "[Xbox] Xbox A (Cross / South / Handbrake)",
-            _ => "[Wheel] Gas / Throttle (Axis Y)"
-        };
-
         Mappings.Add(new MappingEntry
         {
-            SourceDeviceName = defaultDevice,
-            SourceDeviceGuid = targetDevice?.InstanceGuid ?? Guid.Empty,
+            SourceDeviceName = isWheel ? UncategorizedWheelDeviceName : UncategorizedGamepadDeviceName,
             SourceDisplayName = "Click to Bind",
             TargetDeviceId = 1,
-            TargetOutput = defaultTarget
+            TargetOutput = isWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Xbox A (Cross / South / Handbrake)"
         });
         RebuildGroupedMappings();
         UpdateVirtualDeviceSummary();
@@ -1184,7 +1452,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void RemoveMapping(MappingEntry entry)
     {
-        if (_listeningEntry == entry) _listeningEntry = null;
+        if (_listeningEntry == entry) StopListening();
         Mappings.Remove(entry);
         RebuildGroupedMappings();
         UpdateVirtualDeviceSummary();
@@ -1268,8 +1536,25 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnMappingsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.NewItems != null) foreach (MappingEntry item in e.NewItems) item.PropertyChanged += OnMappingEntryPropertyChanged;
+        if (e.NewItems != null)
+        {
+            foreach (MappingEntry item in e.NewItems)
+            {
+                item.PropertyChanged += OnMappingEntryPropertyChanged;
+
+                // A newly-added entry can already have its device GUID set via object
+                // initializer (AddMappingToDevice, the Auto-Bind wizard) - that never raises
+                // PropertyChanged, so OnMappingEntryPropertyChanged's cloak hook alone would
+                // miss it. Skipped during profile load: SyncHidHideCloakingForAllMappings()
+                // already covers that in one deduplicated pass after the whole profile is in.
+                if (!_isLoadingProfile && item.SourceDeviceGuid != Guid.Empty)
+                {
+                    HidHide.EnsureDeviceCloaked(item.SourceDeviceGuid, item.SourceDeviceName);
+                }
+            }
+        }
         if (e.OldItems != null) foreach (MappingEntry item in e.OldItems) item.PropertyChanged -= OnMappingEntryPropertyChanged;
+        SyncWheelForceFeedbackMappings();
     }
 
     private void OnMappingEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1281,6 +1566,22 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (e.PropertyName == nameof(MappingEntry.SourceDeviceName)) RebuildGroupedMappings();
         if (e.PropertyName == nameof(MappingEntry.TargetDeviceId)) UpdateVirtualDeviceSummary();
+
+        if (e.PropertyName is nameof(MappingEntry.TargetOutput) or nameof(MappingEntry.TargetDeviceId)
+            or nameof(MappingEntry.SourceDeviceGuid) or nameof(MappingEntry.SourceDeviceName))
+        {
+            SyncWheelForceFeedbackMappings();
+        }
+
+        // A device becoming a mapping source is exactly when it needs to stop being visible to
+        // other apps (games) - otherwise a game can see both the raw device and ECCR's virtual
+        // output at once, which reads as doubled/fighting input. This can fire from the
+        // DirectInput polling thread (see ProcessInputPolling's SourceDeviceGuid re-pin), so
+        // hop to the UI thread before touching HidHide/its observable device list.
+        if (e.PropertyName == nameof(MappingEntry.SourceDeviceGuid) && sender is MappingEntry { SourceDeviceGuid: var guid } changedEntry && guid != Guid.Empty)
+        {
+            Dispatcher.UIThread.Post(() => HidHide.EnsureDeviceCloaked(guid, changedEntry.SourceDeviceName));
+        }
 
         AutoSaveCurrentProfile();
     }
@@ -1322,6 +1623,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     IsSidebarCollapsed = settings.IsSidebarCollapsed;
 
+                    GyroAimEnabled = settings.GyroAimEnabled;
+                    GyroAimSourceDeviceName = settings.GyroAimSourceDeviceName;
+                    GyroAimTargetPlayer = settings.GyroAimTargetPlayer;
+                    TouchAimEnabled = settings.TouchAimEnabled;
+                    TouchAimSourceDeviceName = settings.TouchAimSourceDeviceName;
+                    TouchAimTargetPlayer = settings.TouchAimTargetPlayer;
+
                     HidHide.ApplySettings(settings);
 
                     if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
@@ -1353,6 +1661,12 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.ShowChangelogOnUpdate = ShowChangelogOnUpdate;
             _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
             _currentSettings.IsSidebarCollapsed = IsSidebarCollapsed;
+            _currentSettings.GyroAimEnabled = GyroAimEnabled;
+            _currentSettings.GyroAimSourceDeviceName = GyroAimSourceDeviceName;
+            _currentSettings.GyroAimTargetPlayer = GyroAimTargetPlayer;
+            _currentSettings.TouchAimEnabled = TouchAimEnabled;
+            _currentSettings.TouchAimSourceDeviceName = TouchAimSourceDeviceName;
+            _currentSettings.TouchAimTargetPlayer = TouchAimTargetPlayer;
             HidHide.WriteSettings(_currentSettings);
 
             File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true }));
@@ -1439,7 +1753,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 LedGreen = (byte)(_controllerLedViewModel?.Green ?? 122),
                 LedBlue = (byte)(_controllerLedViewModel?.Blue ?? 255),
                 LedMode = _controllerLedViewModel?.EffectMode ?? LedEffectMode.Static,
-                LedSpeed = _controllerLedViewModel?.EffectSpeed ?? 1.0
+                LedSpeed = _controllerLedViewModel?.EffectSpeed ?? 1.0,
+                WheelSettings = WheelSettings
             };
             File.WriteAllText(Path.Combine(_profilesDirectory, $"{profileName}.json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -1462,20 +1777,51 @@ public partial class MainWindowViewModel : ViewModelBase
                     RebuildGroupedMappings();
                     UpdateVirtualDeviceSummary();
                     ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
+                    LoadWheelSettings(profile.WheelSettings);
+                    SyncHidHideCloakingForAllMappings();
                     return;
                 }
             }
 
             Mappings.Clear();
-            AddMapping();
+            AddUncategorizedMapping(isWheel: false);
             RebuildGroupedMappings();
             UpdateVirtualDeviceSummary();
             ApplyProfileLedColor(0, 122, 255, LedEffectMode.Static, 1.0);
+            LoadWheelSettings(new Dictionary<string, WheelDeviceSettings>());
         }
         finally
         {
             _isLoadingProfile = false;
         }
+    }
+
+    /// <summary>
+    /// Reconciles HidHide's live blocklist against every mapping's already-resolved device
+    /// GUID right after a profile loads - <see cref="OnMappingEntryPropertyChanged"/>'s
+    /// per-change hook only fires when <c>SourceDeviceGuid</c> actually changes, which a
+    /// profile round-tripping the same (still-valid) GUID never does, so a freshly-loaded
+    /// profile's devices wouldn't otherwise get cloaked until each one happened to reconnect
+    /// with a new GUID.
+    /// </summary>
+    private void SyncHidHideCloakingForAllMappings()
+    {
+        foreach (var guid in Mappings.Where(m => m.SourceDeviceGuid != Guid.Empty).Select(m => m.SourceDeviceGuid).Distinct())
+        {
+            var entry = Mappings.First(m => m.SourceDeviceGuid == guid);
+            HidHide.EnsureDeviceCloaked(guid, entry.SourceDeviceName);
+        }
+    }
+
+    /// <summary>Swaps in a freshly-deserialized <see cref="WheelSettings"/> dictionary, re-subscribing each entry the same way <see cref="GetOrCreateWheelSettings"/> does for one created on demand.</summary>
+    private void LoadWheelSettings(Dictionary<string, WheelDeviceSettings> settings)
+    {
+        foreach (var existing in WheelSettings.Values) existing.PropertyChanged -= OnWheelSettingsPropertyChanged;
+
+        WheelSettings = settings;
+        foreach (var entry in WheelSettings.Values) entry.PropertyChanged += OnWheelSettingsPropertyChanged;
+
+        SyncWheelForceFeedbackMappings();
     }
 
     /// <summary>
@@ -1501,17 +1847,32 @@ public partial class MainWindowViewModel : ViewModelBase
         catch { }
     }
 
+    /// <summary>
+    /// Full teardown for a real app exit (not a minimize-to-tray hide - see <c>MainWindow.OnClosing</c>):
+    /// persists whatever the user's settings currently are, then live-disables everything that
+    /// would otherwise keep affecting the rest of the system after the process is gone - virtual
+    /// output devices (vJoy/ViGEm, via <see cref="_feeder"/>/<see cref="_wheelForceFeedback"/>'s
+    /// own Dispose) and HidHide cloaking (<see cref="HidHideViewModel.DisableCloakingForShutdown"/>,
+    /// which only flips the driver's live master switch, not the saved preference) so every
+    /// physical device is visible and every virtual one is gone the moment ECCR exits. Settings
+    /// are saved first so this live-disable step never gets persisted as the user's actual
+    /// preference - both re-apply automatically via <see cref="LoadAppSettings"/> on next launch.
+    /// </summary>
     public void CleanupAndShutdown()
     {
         try
         {
+            SaveAppSettings();
+            AutoSaveCurrentProfile();
+
+            HidHide.DisableCloakingForShutdown();
+
             _deviceManager?.StopPolling();
             _deviceManager?.Dispose();
             _controllerHidService.Dispose();
             _controllerLedViewModel?.Dispose();
             _feeder.Dispose();
-            SaveAppSettings();
-            AutoSaveCurrentProfile();
+            _wheelForceFeedback.Dispose();
         }
         catch { }
     }
