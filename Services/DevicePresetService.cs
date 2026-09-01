@@ -36,6 +36,22 @@ public enum DeviceHardwareCategory
 /// </summary>
 public static class DevicePresetService
 {
+    /// <summary>
+    /// Which raw <see cref="RawDeviceInputState.Axes"/> index drives each analog stick, for the
+    /// Visual Binder's live moving-stick graphics - consolidates the same per-category numbering
+    /// already implicit in <see cref="GetAxisDisplayName"/> (PlayStation/Nintendo: right stick is
+    /// Z/RotationZ, not RotationX/RotationY) rather than re-deriving it from display strings.
+    /// Wheel/pedal categories have no sticks; the Xbox/Generic branch is also the fallback for
+    /// any unrecognized gamepad, since it's the conventional DirectInput axis ordering.
+    /// </summary>
+    public static (int leftX, int leftY, int rightX, int rightY) GetStickAxisIndices(string deviceName)
+    {
+        var category = DetectCategory(deviceName);
+        if (IsWheelOrPedalCategory(category)) return (-1, -1, -1, -1);
+        if (category is DeviceHardwareCategory.PlayStationController or DeviceHardwareCategory.NintendoController) return (0, 1, 2, 5);
+        return (0, 1, 3, 4);
+    }
+
     public static bool IsWheelOrPedalCategory(DeviceHardwareCategory category) =>
         category is DeviceHardwareCategory.MozaEsxWheel or DeviceHardwareCategory.MozaWheel or
                      DeviceHardwareCategory.LogitechRig or DeviceHardwareCategory.FanatecRig or

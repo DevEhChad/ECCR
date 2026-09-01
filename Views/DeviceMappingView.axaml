@@ -98,7 +98,8 @@
                                IsVisible="{Binding !HasSelectedDevice}" Margin="4,8"/>
 
                     <StackPanel Spacing="10" IsVisible="{Binding HasSelectedDevice}">
-                    <StackPanel Spacing="10" DataContext="{Binding SelectedWheelSettings}" x:DataType="models:WheelDeviceSettings">
+                    <StackPanel Spacing="10" DataContext="{Binding SelectedWheelSettings}">
+                    <StackPanel Spacing="10" x:DataType="models:WheelDeviceSettings">
                         <Border Classes="card" IsVisible="{Binding !$parent[UserControl].((vm:DeviceMappingViewModel)DataContext).IsSelectedDeviceForceFeedbackCapable}">
                             <TextBlock Text="This device isn't reporting force-feedback support to Windows - rotation/deadzone settings still apply, but effects (spring/damper/friction/etc.) won't reach it." Foreground="#FFAAAA" FontSize="12" TextWrapping="Wrap"/>
                         </Border>
@@ -159,6 +160,7 @@
                                         Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,8" CornerRadius="6" HorizontalAlignment="Left"/>
                             </StackPanel>
                         </Border>
+                    </StackPanel>
                     </StackPanel>
                     </StackPanel>
                 </StackPanel>

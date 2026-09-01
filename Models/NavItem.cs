@@ -1,3 +1,4 @@
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ECCR.Models;
@@ -13,16 +14,18 @@ public partial class NavItem : ObservableObject
     public AppPage Page { get; }
     public string Label { get; }
     public string IconGlyph { get; }
+    public Bitmap? IconImage { get; }
     public string Description { get; }
 
     [ObservableProperty]
     private bool _isSelected;
 
-    public NavItem(AppPage page, string label, string iconGlyph, string description = "")
+    public NavItem(AppPage page, string label, string iconGlyph, string description = "", Bitmap? iconImage = null)
     {
         Page = page;
         Label = label;
         IconGlyph = iconGlyph;
+        IconImage = iconImage;
         Description = description;
     }
 }

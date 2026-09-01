@@ -204,5 +204,14 @@
                 </Grid>
             </Border>
         </Border>
+
+        <!-- Global version stamp, visible bottom-right on every page -->
+        <TextBlock Text="{Binding AppVersion}"
+                   FontSize="11"
+                   Foreground="#5A6478"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Bottom"
+                   Margin="0,0,14,8"
+                   IsHitTestVisible="False"/>
     </Grid>
 </Window>

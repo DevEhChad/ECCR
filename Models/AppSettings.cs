@@ -23,6 +23,9 @@ public class AppSettings
     public bool IsAppListInverted { get; set; } = false;
     public bool IsSidebarCollapsed { get; set; } = false;
 
+    /// <summary>Filename stem (no extension) of the Visual Binder's controller skin, under Assets/ControllerSkins/.</summary>
+    public string ControllerSkin { get; set; } = "White-Red-Faced";
+
     // Gyro-aim / touch-aim: map a Sony device's motion sensor or touchpad to the Right Stick
     // of a chosen Player's virtual Xbox 360 controller. App-wide (not per-profile) since which
     // physical device supplies motion/touch input is a hardware fact, not a per-game mapping.

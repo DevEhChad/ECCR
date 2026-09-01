@@ -10,6 +10,8 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -257,6 +259,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ControllerHidService _controllerHidService = new();
     private readonly Dictionary<AppPage, ViewModelBase> _pageViewModels = new();
     private ControllerLedViewModel? _controllerLedViewModel;
+    private ControllerMappingViewModel? _controllerMappingViewModel;
+    private DeviceMappingViewModel? _deviceMappingViewModel;
 
     // Shell navigation
     [ObservableProperty]
@@ -272,6 +276,13 @@ public partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<NavItem> UtilityNavItems { get; } = new();
 
     private MappingEntry? _listeningEntry;
+
+    /// <summary>
+    /// Fired once per physical device per poll tick with a live, calibration-independent
+    /// snapshot of its raw button/stick state - purely for UI animation (the Visual Binder's
+    /// moving stick graphics and pressed-button highlights), not consumed by the feeder path.
+    /// </summary>
+    public event Action<LiveDeviceInputState>? OnLiveDeviceStateUpdated;
     private string _preListenDisplayName = "Click to Bind";
     private DispatcherTimer? _listenTimeoutTimer;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
@@ -464,11 +475,19 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private void InitializeShellNavigation()
     {
-        _pageViewModels[AppPage.Home] = new HomeViewModel(StatusBar, BuildQuickActionCards(), NavigateToCommand);
-        _pageViewModels[AppPage.Controllers] = new ControllersPageViewModel(StatusBar.GamepadStatuses);
-        _pageViewModels[AppPage.Wheels] = new WheelsPageViewModel(this);
-        _pageViewModels[AppPage.ControllerMapping] = new ControllerMappingViewModel(this, GamepadGroupedMappings);
-        _pageViewModels[AppPage.DeviceMapping] = new DeviceMappingViewModel(this, WheelGroupedMappings);
+        var homeIcon = LoadIcon("Full-HomeLogo.png");
+        var devicesIcon = LoadIcon("Full-DevicesLogo.png");
+        var controllerIcon = LoadIcon("Full-ControllerLogo.png");
+        var wheelIcon = LoadIcon("Full-WheelLogo.png");
+        var ledIcon = LoadIcon("Full-LEDLogo.png");
+        var hidHideIcon = LoadIcon("Full-HidHide.png");
+
+        _pageViewModels[AppPage.Home] = new HomeViewModel(StatusBar, BuildQuickActionCards(devicesIcon, hidHideIcon), NavigateToCommand);
+        _pageViewModels[AppPage.ConnectedDevices] = new ConnectedDevicesPageViewModel(this, StatusBar.AllDeviceStatuses);
+        _controllerMappingViewModel = new ControllerMappingViewModel(this, GamepadGroupedMappings);
+        _pageViewModels[AppPage.ControllerMapping] = _controllerMappingViewModel;
+        _deviceMappingViewModel = new DeviceMappingViewModel(this, WheelGroupedMappings);
+        _pageViewModels[AppPage.DeviceMapping] = _deviceMappingViewModel;
         _controllerLedViewModel = new ControllerLedViewModel(StatusBar.GamepadStatuses, _controllerHidService, AutoSaveCurrentProfile);
         _pageViewModels[AppPage.ControllerLed] = _controllerLedViewModel;
         _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this);
@@ -477,15 +496,14 @@ public partial class MainWindowViewModel : ViewModelBase
         _pageViewModels[AppPage.About] = new AboutViewModel(AppVersion);
         _pageViewModels[AppPage.Settings] = new SettingsViewModel(this);
 
-        PrimaryNavItems.Add(new NavItem(AppPage.Home, "Home", "🏠"));
-        PrimaryNavItems.Add(new NavItem(AppPage.Controllers, "Controllers", "🎮"));
-        PrimaryNavItems.Add(new NavItem(AppPage.Wheels, "Direct Input/Wheels", "🛞"));
-        PrimaryNavItems.Add(new NavItem(AppPage.ControllerMapping, "Controller Mapping", "🎯"));
-        PrimaryNavItems.Add(new NavItem(AppPage.DeviceMapping, "Device Mapping", "🗺️"));
-        PrimaryNavItems.Add(new NavItem(AppPage.ControllerLed, "Controller LED", "💡"));
+        PrimaryNavItems.Add(new NavItem(AppPage.Home, "Home", "🏠", iconImage: homeIcon));
+        PrimaryNavItems.Add(new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", iconImage: devicesIcon));
+        PrimaryNavItems.Add(new NavItem(AppPage.ControllerMapping, "Controller Mapping", "🎯", iconImage: controllerIcon));
+        PrimaryNavItems.Add(new NavItem(AppPage.DeviceMapping, "Device Mapping", "🗺️", iconImage: wheelIcon));
+        PrimaryNavItems.Add(new NavItem(AppPage.ControllerLed, "Controller LED", "💡", iconImage: ledIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.Profiles, "Profiles", "📄"));
 
-        UtilityNavItems.Add(new NavItem(AppPage.HidHide, "HidHide", "🛡"));
+        UtilityNavItems.Add(new NavItem(AppPage.HidHide, "HidHide", "🛡", iconImage: hidHideIcon));
         UtilityNavItems.Add(new NavItem(AppPage.AutoBind, "Auto Bind", "⚡"));
         UtilityNavItems.Add(new NavItem(AppPage.About, "About", "ℹ️"));
         UtilityNavItems.Add(new NavItem(AppPage.Settings, "Settings", "⚙️"));
@@ -494,11 +512,14 @@ public partial class MainWindowViewModel : ViewModelBase
         foreach (var item in PrimaryNavItems) item.IsSelected = item.Page == AppPage.Home;
     }
 
-    private ObservableCollection<NavItem> BuildQuickActionCards() => new()
+    private static Bitmap LoadIcon(string fileName) =>
+        new(AssetLoader.Open(new Uri($"avares://ECCR/Assets/UILogos/{fileName}")));
+
+    private static ObservableCollection<NavItem> BuildQuickActionCards(Bitmap devicesIcon, Bitmap hidHideIcon) => new()
     {
-        new NavItem(AppPage.Controllers, "Controllers", "🎮", "View connected and offline controllers."),
+        new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", "View connected controllers, wheels, and pedals.", devicesIcon),
         new NavItem(AppPage.Profiles, "Profiles", "📄", "Manage and switch profiles."),
-        new NavItem(AppPage.HidHide, "HidHide", "🛡", "Hide physical devices from games."),
+        new NavItem(AppPage.HidHide, "HidHide", "🛡", "Hide physical devices from games.", hidHideIcon),
         new NavItem(AppPage.AutoBind, "Auto Bind", "⚡", "Generate a starting set of bindings."),
         new NavItem(AppPage.Settings, "Settings", "⚙️", "Manage app settings."),
         new NavItem(AppPage.About, "About", "ℹ️", "Changelog and links.")
@@ -523,6 +544,29 @@ public partial class MainWindowViewModel : ViewModelBase
         else if (page == AppPage.AutoBind)
         {
             AutoBind.PrepareForNavigation();
+        }
+    }
+
+    /// <summary>
+    /// Row-click handler for the Connected Devices page: routes to the mapping page that fits
+    /// the clicked device's category and pre-selects it there, without disturbing
+    /// <see cref="NavigateToCommand"/> (still page-only, still used everywhere else).
+    /// </summary>
+    [RelayCommand]
+    public void NavigateToDeviceMapping(string deviceName)
+    {
+        if (string.IsNullOrEmpty(deviceName)) return;
+
+        var category = DevicePresetService.DetectCategory(deviceName);
+        if (DevicePresetService.IsWheelOrPedalCategory(category))
+        {
+            if (_deviceMappingViewModel != null) _deviceMappingViewModel.SelectedDeviceName = deviceName;
+            NavigateTo(AppPage.DeviceMapping);
+        }
+        else
+        {
+            if (_controllerMappingViewModel != null) _controllerMappingViewModel.SelectedDeviceName = deviceName;
+            NavigateTo(AppPage.ControllerMapping);
         }
     }
 
@@ -629,6 +673,11 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch { }
     }
+
+    [ObservableProperty]
+    private string _controllerSkin = "White-Red-Faced";
+
+    partial void OnControllerSkinChanged(string value) => SaveAppSettings();
 
     partial void OnGyroAimEnabledChanged(bool value) => SaveAppSettings();
     partial void OnGyroAimSourceDeviceNameChanged(string? value) => SaveAppSettings();
@@ -833,6 +882,24 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (_listeningEntry == null)
         {
+            if (OnLiveDeviceStateUpdated != null)
+            {
+                var (lx, ly, rx, ry) = DevicePresetService.GetStickAxisIndices(state.DeviceName);
+                var live = new LiveDeviceInputState
+                {
+                    DeviceName = state.DeviceName,
+                    InstanceGuid = state.InstanceGuid,
+                    Buttons = (bool[])state.Buttons.Clone(),
+                    NormalizedAxes = state.Axes.Select(a => a / 65535.0).ToArray(),
+                    HasSticks = lx >= 0,
+                    LeftStickX = lx >= 0 ? state.Axes[lx] / 65535.0 : 0.5,
+                    LeftStickY = ly >= 0 ? state.Axes[ly] / 65535.0 : 0.5,
+                    RightStickX = rx >= 0 ? state.Axes[rx] / 65535.0 : 0.5,
+                    RightStickY = ry >= 0 ? state.Axes[ry] / 65535.0 : 0.5,
+                };
+                Dispatcher.UIThread.Post(() => OnLiveDeviceStateUpdated?.Invoke(live));
+            }
+
             if (!IsVirtualOutputActive) return;
 
             for (int i = 0; i < Mappings.Count; i++)
@@ -1622,6 +1689,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     _feeder.SetActive(IsVirtualOutputActive);
 
                     IsSidebarCollapsed = settings.IsSidebarCollapsed;
+                    ControllerSkin = settings.ControllerSkin;
 
                     GyroAimEnabled = settings.GyroAimEnabled;
                     GyroAimSourceDeviceName = settings.GyroAimSourceDeviceName;
@@ -1661,6 +1729,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.ShowChangelogOnUpdate = ShowChangelogOnUpdate;
             _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
             _currentSettings.IsSidebarCollapsed = IsSidebarCollapsed;
+            _currentSettings.ControllerSkin = ControllerSkin;
             _currentSettings.GyroAimEnabled = GyroAimEnabled;
             _currentSettings.GyroAimSourceDeviceName = GyroAimSourceDeviceName;
             _currentSettings.GyroAimTargetPlayer = GyroAimTargetPlayer;

@@ -62,6 +62,25 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private int _rawCenter = 32767;
 
+    /// <summary>
+    /// Set when this entry was created/captured via the Visual Binder's graphical hotspot
+    /// (see <see cref="ECCR.ViewModels.VisualBinderViewModel"/>), naming which
+    /// <see cref="ECCR.Models.SemanticButton"/> it belongs to so re-clicking that hotspot finds
+    /// this same entry again instead of creating a duplicate. Null for entries created via the
+    /// ordinary Button Mapping list or Auto-Bind - those code paths never set it.
+    /// </summary>
+    [ObservableProperty]
+    private string? _semanticHotspot = null;
+
+    /// <summary>
+    /// Total lock-to-lock rotation range in degrees for a steering wheel axis, driving the
+    /// Calibration dialog's dial visual (see <see cref="ECCR.Converters.SteeringAngleConverter"/>).
+    /// Consumer wheels are commonly 900°; direct-drive wheels routinely go well past 1080°
+    /// (up to 2160-3600°), so this is a free value rather than a fixed 900/1080 toggle.
+    /// </summary>
+    [ObservableProperty]
+    private int _wheelRotationDegrees = 900;
+
     [JsonIgnore]
     [ObservableProperty]
     private double _liveRawPercentage = 0.0;

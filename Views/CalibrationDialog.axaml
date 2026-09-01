@@ -61,19 +61,32 @@
                         <!-- Generic calibrated bar: used for gamepad/controller mappings and any wheel axis without a dedicated visual below -->
                         <ProgressBar x:Name="GenericOutputBar" Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="10" CornerRadius="5" Foreground="#00E599"/>
 
-                        <!-- Steering wheel dial: wheel/pedal-category devices only, steering axis only -->
-                        <Canvas x:Name="SteeringWheelPanel" IsVisible="False" Width="170" Height="170" Margin="0,4,0,4"
-                                HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                            <Canvas.RenderTransform>
-                                <RotateTransform Angle="{Binding LiveOutputPercentage, Converter={StaticResource SteeringAngleConverter}}"/>
-                            </Canvas.RenderTransform>
-                            <Ellipse Canvas.Left="5" Canvas.Top="5" Width="160" Height="160" Stroke="#3E7BFA" StrokeThickness="10" Fill="#10141E"/>
-                            <Line StartPoint="85,85" EndPoint="85,15" Stroke="#3E7BFA" StrokeThickness="9" StrokeLineCap="Round"/>
-                            <Line StartPoint="85,85" EndPoint="30,125" Stroke="#3E7BFA" StrokeThickness="9" StrokeLineCap="Round"/>
-                            <Line StartPoint="85,85" EndPoint="140,125" Stroke="#3E7BFA" StrokeThickness="9" StrokeLineCap="Round"/>
-                            <Ellipse Canvas.Left="68" Canvas.Top="68" Width="34" Height="34" Fill="#1F283C" Stroke="#3E7BFA" StrokeThickness="2"/>
-                            <Ellipse Canvas.Left="76" Canvas.Top="9" Width="18" Height="18" Fill="#00E599"/>
-                        </Canvas>
+                        <!-- Steering wheel dial: wheel/pedal-category devices only, steering axis only.
+                             Pivot is done as an explicit Translate(-85,-85) -> Rotate -> Translate(85,85)
+                             matrix (85 = half of the fixed 170x170 size below) rather than via
+                             RenderTransformOrigin, which pivots relative to the control's live-layout
+                             Bounds - and this Image starts life IsVisible="False" (toggled on later from
+                             code-behind), so a relative origin risks reading a stale/zero-size Bounds and
+                             pivoting from the top-left corner instead of the center. Literal pixel
+                             translates side-step that entirely. -->
+                        <Image x:Name="SteeringWheelPanel" IsVisible="True" Width="170" Height="170" Margin="0,4,0,4"
+                               HorizontalAlignment="Center" Stretch="Uniform"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                               RenderTransformOrigin="50%, 50.2%"
+                               Source="avares://ECCR/Assets/UILogos/Full-WheelLogo.png">
+                            <Image.RenderTransform>
+                                <TransformGroup>
+                                    <RotateTransform>
+                                        <RotateTransform.Angle>
+                                            <MultiBinding Converter="{StaticResource SteeringAngleConverter}">
+                                                <Binding Path="LiveOutputPercentage"/>
+                                                <Binding Path="WheelRotationDegrees"/>
+                                            </MultiBinding>
+                                        </RotateTransform.Angle>
+                                    </RotateTransform>
+                                </TransformGroup>
+                            </Image.RenderTransform>
+                        </Image>
 
                         <!-- Pedal / lever bar: wheel/pedal-category devices only, throttle/brake/clutch/handbrake axes -->
                         <Border x:Name="PedalBarPanel" IsVisible="False" Width="76" Height="150" Margin="0,4,0,4"
@@ -128,6 +141,18 @@
                 <!-- Deadzone & Invert -->
                 <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
                     <StackPanel Spacing="12">
+                        <!-- Wheel rotation range: steering axis only, wheel/pedal-category devices only -->
+                        <Grid x:Name="WheelRotationPanel" IsVisible="False" ColumnDefinitions="*, 90">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Wheel Rotation Range" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Total lock-to-lock degrees (900 for most wheels, up to 3600 for direct-drive)." FontSize="11" Foreground="#888899" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <NumericUpDown Grid.Column="1" Value="{Binding WheelRotationDegrees}" Minimum="180" Maximum="3600" Increment="90"
+                                           FormatString="0" ShowButtonSpinner="True" FontSize="12"/>
+                        </Grid>
+
+                        <Border x:Name="WheelRotationDivider" IsVisible="False" Height="1" Background="#1F283C" Margin="0,2"/>
+
                         <Grid ColumnDefinitions="*, 40">
                             <StackPanel Grid.Column="0" Spacing="2">
                                 <TextBlock Text="Dead Zone" FontWeight="SemiBold" FontSize="12" Foreground="White"/>

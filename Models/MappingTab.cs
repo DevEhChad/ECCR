@@ -4,6 +4,7 @@ namespace ECCR.Models;
 public enum MappingTab
 {
     ButtonMapping,
+    VisualBinder,
     Deadzones,
     Motion,
     Sticks,

@@ -35,7 +35,7 @@ public partial class HomeViewModel : ViewModelBase
 
     private static ObservableCollection<NavItem> BuildDesignTimeCards() => new()
     {
-        new NavItem(AppPage.Controllers, "Controllers", "🎮", "View connected gamepads."),
+        new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", "View connected devices."),
         new NavItem(AppPage.Profiles, "Profiles", "📄", "Manage and switch profiles."),
         new NavItem(AppPage.Settings, "Settings", "⚙️", "Configure app preferences.")
     };

@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace ECCR.Views;
 
-public partial class WheelsPageView : UserControl
+public partial class VisualBinderView : UserControl
 {
-    public WheelsPageView()
+    public VisualBinderView()
     {
         InitializeComponent();
     }

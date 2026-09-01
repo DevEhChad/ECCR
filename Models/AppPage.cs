@@ -7,8 +7,7 @@ namespace ECCR.Models;
 public enum AppPage
 {
     Home,
-    Controllers,
-    Wheels,
+    ConnectedDevices,
     ControllerMapping,
     DeviceMapping,
     ControllerLed,

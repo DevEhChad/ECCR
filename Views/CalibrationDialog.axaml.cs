@@ -58,6 +58,8 @@ public partial class CalibrationDialog : Window
             GenericOutputBar.IsVisible = false;
             SteeringWheelPanel.IsVisible = true;
             PedalBarPanel.IsVisible = false;
+            WheelRotationPanel.IsVisible = true;
+            WheelRotationDivider.IsVisible = true;
         }
         else if (isPedal)
         {
@@ -65,6 +67,8 @@ public partial class CalibrationDialog : Window
             SteeringWheelPanel.IsVisible = false;
             PedalBarPanel.IsVisible = true;
             PedalFill.Background = ResolvePedalBrush(target);
+            WheelRotationPanel.IsVisible = false;
+            WheelRotationDivider.IsVisible = false;
         }
         else
         {
@@ -77,6 +81,8 @@ public partial class CalibrationDialog : Window
         GenericOutputBar.IsVisible = true;
         SteeringWheelPanel.IsVisible = false;
         PedalBarPanel.IsVisible = false;
+        WheelRotationPanel.IsVisible = false;
+        WheelRotationDivider.IsVisible = false;
     }
 
     private static IBrush ResolvePedalBrush(string targetOutput)

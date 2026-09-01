@@ -51,15 +51,31 @@
         <Setter Property="CornerRadius" Value="6"/>
     </Style>
 
+    <!-- Connected Devices: a card-look row that's actually a clickable Button (Border.card's
+         style doesn't apply to Button, hence a dedicated selector) - navigates to the clicked
+         device's mapping page. -->
+    <Style Selector="Button.deviceRow">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="14"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Button.deviceRow:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+
     <!-- Sidebar nav row -->
     <Style Selector="Button.navItem">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
-        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="Padding" Value="14,13"/>
         <Setter Property="CornerRadius" Value="8"/>
-        <Setter Property="Margin" Value="8,2"/>
+        <Setter Property="Margin" Value="8,3"/>
     </Style>
     <Style Selector="Button.navItem:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
@@ -91,6 +107,33 @@
         <Setter Property="Background" Value="{DynamicResource SidebarSelectedBrush}"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderBrush" Value="{DynamicResource AccentGreenSolidBrush}"/>
+    </Style>
+
+    <!-- Visual Binder: clickable button region overlaid on the controller-skin image. Mostly
+         transparent at rest so the artwork shows through; hover/bound/pressed states layer on
+         top additively (a hotspot can be both bound and mid-press at once). -->
+    <Style Selector="Button.hotspot">
+        <Setter Property="Background" Value="#14FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+        <Setter Property="BorderThickness" Value="3"/>
+        <Setter Property="CornerRadius" Value="18"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="Button.hotspot:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#403E7BFA"/>
+    </Style>
+    <Style Selector="Button.hotspot.hotspotBound">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentGreenSolidBrush}"/>
+    </Style>
+    <Style Selector="Button.hotspot.hotspotPressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="#6000E599"/>
+    </Style>
+
+    <!-- Visual Binder: moving analog-stick graphic (position driven by a RenderTransform, not layout). -->
+    <Style Selector="Ellipse.stickKnob">
+        <Setter Property="Fill" Value="#332D374D"/>
+        <Setter Property="Stroke" Value="#3E7BFA"/>
+        <Setter Property="StrokeThickness" Value="6"/>
     </Style>
 
 </Styles>

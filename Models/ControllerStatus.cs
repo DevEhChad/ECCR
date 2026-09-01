@@ -14,7 +14,7 @@ public enum ControllerConnectionType
 /// <summary>
 /// Battery/connection info for one gamepad-class device, sourced from raw HID reports rather
 /// than DirectInput (which has no concept of battery level). One instance lives for as long as
-/// the device stays connected (see <c>DeviceStatusBarViewModel</c>/<c>ControllersPageViewModel</c>),
+/// the device stays connected (see <c>DeviceStatusBarViewModel</c>/<c>ConnectedDevicesPageViewModel</c>),
 /// with fields mutated in place on each ~2s poll tick from
 /// <see cref="ECCR.Services.ControllerHidService"/> so bound UI updates live rather than only
 /// on reconnect. Populated for Sony devices (DualSense/DualShock 4) only; every other device

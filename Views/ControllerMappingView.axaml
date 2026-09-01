@@ -16,6 +16,7 @@
              xmlns:vm="using:ECCR.ViewModels"
              xmlns:models="using:ECCR.Models"
              xmlns:shared="using:ECCR.Views.Shared"
+             xmlns:views="using:ECCR.Views"
              mc:Ignorable="d"
              d:DesignWidth="1100" d:DesignHeight="760"
              x:Class="ECCR.Views.ControllerMappingView"
@@ -105,6 +106,9 @@
             <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsButtonMappingTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:MappingTab.ButtonMapping}"
                     Content="Button Mapping"/>
+            <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsVisualBinderTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:MappingTab.VisualBinder}"
+                    Content="Visual Binder"/>
             <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsDeadzonesTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:MappingTab.Deadzones}"
                     Content="Deadzones"/>
@@ -145,6 +149,15 @@
                 </Grid>
                 <shared:DeviceMappingGroupsPanel Grid.Row="2" ItemsSource="{Binding GroupEntries}" DeviceIconGlyph="🎮"/>
             </Grid>
+
+            <!-- Visual Binder: graphical controller-skin binder, scoped to the same device
+                 picker above. See VisualBinderViewModel/VisualBinderView. IsVisible sits on this
+                 wrapping Border (still in ControllerMappingViewModel's DataContext) rather than
+                 on VisualBinderView itself, since that element's own DataContext is overridden
+                 to VisualBinder below and wouldn't resolve IsVisualBinderTabSelected. -->
+            <Border IsVisible="{Binding IsVisualBinderTabSelected}">
+                <views:VisualBinderView DataContext="{Binding VisualBinder}"/>
+            </Border>
 
             <!-- Deadzones: axis rows for the selected device only, same Deadzone/RawMin/RawMax
                  data as the Button Mapping tab, just with more room per row. -->

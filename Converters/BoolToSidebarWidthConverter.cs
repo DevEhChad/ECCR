@@ -10,8 +10,8 @@ namespace ECCR.Converters;
 /// </summary>
 public class BoolToSidebarWidthConverter : IValueConverter
 {
-    public const double CollapsedWidth = 64;
-    public const double ExpandedWidth = 220;
+    public const double CollapsedWidth = 72;
+    public const double ExpandedWidth = 256;
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {

@@ -32,8 +32,8 @@
         <Grid RowDefinitions="Auto, *, Auto">
 
             <!-- Logo / collapse toggle -->
-            <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="12,14,12,10">
-                <Viewbox Grid.Column="0" Width="24" Height="24" VerticalAlignment="Center">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="14,16,14,12">
+                <Viewbox Grid.Column="0" Width="30" Height="30" VerticalAlignment="Center">
                     <Canvas Width="48" Height="48">
                         <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
                         <Rectangle Canvas.Left="12" Canvas.Top="14" Width="24" Height="20" RadiusX="6" RadiusY="6" Fill="#1E2B45" Stroke="#00E599" StrokeThickness="1.5"/>
@@ -45,10 +45,10 @@
                         <Ellipse Canvas.Left="28" Canvas.Top="26" Width="3" Height="3" Fill="#FFB900"/>
                     </Canvas>
                 </Viewbox>
-                <TextBlock Grid.Column="1" Text="ECCR" FontWeight="Bold" FontSize="15" Foreground="White" VerticalAlignment="Center" Margin="10,0,0,0"
+                <TextBlock Grid.Column="1" Text="ECCR" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center" Margin="12,0,0,0"
                            IsVisible="{Binding !IsSidebarCollapsed}"/>
                 <Button Grid.Column="2" Content="☰" Command="{Binding ToggleSidebarCollapsedCommand}"
-                        Background="Transparent" Foreground="#8B95A5" Padding="6,4" FontSize="14"/>
+                        Background="Transparent" Foreground="#8B95A5" Padding="7,5" FontSize="16"/>
             </Grid>
 
             <!-- Primary nav -->
@@ -60,8 +60,12 @@
                                     Command="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).NavigateToCommand}"
                                     CommandParameter="{Binding Page}">
                                 <Grid ColumnDefinitions="Auto, *">
-                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="16" Width="24" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,0,0"
+                                    <Image Grid.Column="0" Source="{Binding IconImage}" Width="26" Height="26" Stretch="Uniform"
+                                           VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="19" Width="30" VerticalAlignment="Center"
+                                               IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14.5" VerticalAlignment="Center" Margin="10,0,0,0"
                                                IsVisible="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).IsSidebarCollapsed, Converter={x:Static avc:BoolConverters.Not}}"/>
                                 </Grid>
                             </Button>
@@ -80,8 +84,12 @@
                                     Command="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).NavigateToCommand}"
                                     CommandParameter="{Binding Page}">
                                 <Grid ColumnDefinitions="Auto, *">
-                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="16" Width="24" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,0,0"
+                                    <Image Grid.Column="0" Source="{Binding IconImage}" Width="26" Height="26" Stretch="Uniform"
+                                           VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="19" Width="30" VerticalAlignment="Center"
+                                               IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14.5" VerticalAlignment="Center" Margin="10,0,0,0"
                                                IsVisible="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).IsSidebarCollapsed, Converter={x:Static avc:BoolConverters.Not}}"/>
                                 </Grid>
                             </Button>

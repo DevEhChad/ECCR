@@ -1,23 +1,31 @@
-<!-- Controllers page: a richer device browser for gamepad-class devices (name, connection type, battery, category). -->
+<!-- Connected Devices page: every physically-connected gamepad-class or wheel/pedal-class
+     device in one browser (merges what used to be separate Controllers/Direct Input pages).
+     Each row is clickable - it jumps straight to that device's Controller Mapping or Device
+     Mapping page (whichever fits its category) with the device pre-selected there. -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ECCR.ViewModels"
              xmlns:models="using:ECCR.Models"
+             xmlns:converters="using:ECCR.Converters"
              mc:Ignorable="d"
              d:DesignWidth="900" d:DesignHeight="600"
-             x:Class="ECCR.Views.ControllersPageView"
-             x:DataType="vm:ControllersPageViewModel">
+             x:Class="ECCR.Views.ConnectedDevicesPageView"
+             x:DataType="vm:ConnectedDevicesPageViewModel">
+
+    <UserControl.Resources>
+        <converters:CategoryToGlyphConverter x:Key="CategoryToGlyphConverter"/>
+    </UserControl.Resources>
 
     <Design.DataContext>
-        <vm:ControllersPageViewModel/>
+        <vm:ConnectedDevicesPageViewModel/>
     </Design.DataContext>
 
     <Grid RowDefinitions="Auto, *" Margin="24">
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,16">
-            <TextBlock Text="🎮 Controllers" FontWeight="Bold" FontSize="18" Foreground="White"/>
-            <TextBlock Text="Every connected gamepad-class device, with live battery and connection info for DualSense/DualShock 4." FontSize="12" Foreground="#8B95A5"/>
+            <TextBlock Text="🕹️ Connected Devices" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <TextBlock Text="Every connected gamepad, wheel, pedal set, or shifter. Click a device to open its mapping page." FontSize="12" Foreground="#8B95A5"/>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1">
@@ -25,10 +33,15 @@
                 <ItemsControl ItemsSource="{Binding Devices}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:ControllerStatus">
-                            <Border Classes="card" Margin="0,0,0,10">
+                            <Button Classes="deviceRow" Margin="0,0,0,10"
+                                    Command="{Binding $parent[UserControl].((vm:ConnectedDevicesPageViewModel)DataContext).NavigateToDeviceMappingCommand}"
+                                    CommandParameter="{Binding DeviceInstanceName}">
                                 <Grid ColumnDefinitions="Auto, *, Auto">
                                     <Border Grid.Column="0" Background="#1E2B45" CornerRadius="24" Width="44" Height="44" Margin="0,0,14,0">
-                                        <TextBlock Text="🎮" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <Image Source="{Binding Category, Converter={StaticResource CategoryToGlyphConverter}}"
+                                               Width="26" Height="26" Stretch="Uniform"
+                                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                         <TextBlock Text="{Binding DeviceInstanceName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
@@ -43,12 +56,12 @@
                                     </StackPanel>
                                     <TextBlock Grid.Column="2" Text="No battery data" FontSize="11" Foreground="#4B5563" VerticalAlignment="Center" IsVisible="{Binding !IsBatterySupported}"/>
                                 </Grid>
-                            </Border>
+                            </Button>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Text="No gamepad-class controllers connected." Foreground="#4B5563" FontSize="13" IsVisible="{Binding !HasDevices}"/>
+                <TextBlock Text="No controllers, wheels, pedals, or shifters connected." Foreground="#4B5563" FontSize="13" IsVisible="{Binding !HasDevices}"/>
             </StackPanel>
         </ScrollViewer>
     </Grid>

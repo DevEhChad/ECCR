@@ -30,7 +30,7 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" Padding="0,0,8,0">
-            <StackPanel Spacing="14" MaxWidth="760" HorizontalAlignment="Left">
+            <StackPanel Spacing="14" MaxWidth="760" HorizontalAlignment="Center">
 
                 <!-- 1. System Integration -->
                 <Border Background="#161B26" CornerRadius="8" Padding="14" BorderBrush="#20283C" BorderThickness="1">
@@ -90,7 +90,7 @@
                                     IsEnabled="{Binding !IsBusyWithDriverAction}"
                                     Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
                             <Button Grid.Column="2"
-                                    Content="Uninstall"
+                                    Content="Delete"
                                     Command="{Binding UninstallDriverCommand}" CommandParameter="ViGEmBus"
                                     IsEnabled="{Binding IsViGEmInstalled}"
                                     Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
@@ -110,7 +110,7 @@
                                     IsEnabled="{Binding !IsBusyWithDriverAction}"
                                     Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
                             <Button Grid.Column="2"
-                                    Content="Uninstall"
+                                    Content="Delete"
                                     Command="{Binding UninstallDriverCommand}" CommandParameter="HidHide"
                                     IsEnabled="{Binding IsHidHideServiceInstalled}"
                                     Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
@@ -130,7 +130,7 @@
                                     IsEnabled="{Binding !IsBusyWithDriverAction}"
                                     Background="#1F283C" Foreground="White" FontSize="11" Margin="0,0,8,0" Padding="10,5" CornerRadius="5"/>
                             <Button Grid.Column="2"
-                                    Content="Uninstall"
+                                    Content="Delete"
                                     Command="{Binding UninstallDriverCommand}" CommandParameter="VJoy"
                                     IsEnabled="{Binding IsVJoyInstalled}"
                                     Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" FontSize="11" Padding="10,5" CornerRadius="5"/>
@@ -204,18 +204,9 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- FOOTER: version number lives here, not About -->
-        <Grid Grid.Row="2" ColumnDefinitions="*, Auto" Margin="0,14,0,0" MaxWidth="760" HorizontalAlignment="Stretch">
-            <TextBlock Grid.Column="0"
-                       Text="{Binding DisplayVersionText}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       Foreground="#70A0FF"
-                       VerticalAlignment="Center"
-                       HorizontalAlignment="Left"/>
-
-            <Button Grid.Column="1"
-                    Content="Save Preferences"
+        <!-- FOOTER -->
+        <Grid Grid.Row="2" Margin="0,14,0,0" MaxWidth="760" HorizontalAlignment="Center">
+            <Button Content="Save Preferences"
                     Command="{Binding CloseSettingsCommand}"
                     HorizontalAlignment="Right"
                     Background="#00B074"

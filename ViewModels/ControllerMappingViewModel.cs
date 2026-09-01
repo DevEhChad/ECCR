@@ -21,6 +21,8 @@ public partial class ControllerMappingViewModel : ViewModelBase
 
     public ObservableCollection<DeviceMappingGroup> GroupEntries { get; }
 
+    public VisualBinderViewModel VisualBinder { get; }
+
     [ObservableProperty]
     private MappingTab _selectedTab = MappingTab.ButtonMapping;
 
@@ -46,6 +48,8 @@ public partial class ControllerMappingViewModel : ViewModelBase
 
         GroupEntries.CollectionChanged += (_, _) => RaiseDeviceScopedPropertiesChanged();
         EnsureSelectedDeviceIsValid();
+
+        VisualBinder = new VisualBinderViewModel(host, this);
 
         _host.PropertyChanged += (_, e) =>
         {
@@ -109,6 +113,7 @@ public partial class ControllerMappingViewModel : ViewModelBase
     private void SelectTab(MappingTab tab) => SelectedTab = tab;
 
     public bool IsButtonMappingTabSelected => SelectedTab == MappingTab.ButtonMapping;
+    public bool IsVisualBinderTabSelected => SelectedTab == MappingTab.VisualBinder;
     public bool IsDeadzonesTabSelected => SelectedTab == MappingTab.Deadzones;
     public bool IsMotionTabSelected => SelectedTab == MappingTab.Motion;
     public bool IsSticksTabSelected => SelectedTab == MappingTab.Sticks;
@@ -118,6 +123,7 @@ public partial class ControllerMappingViewModel : ViewModelBase
     partial void OnSelectedTabChanged(MappingTab value)
     {
         OnPropertyChanged(nameof(IsButtonMappingTabSelected));
+        OnPropertyChanged(nameof(IsVisualBinderTabSelected));
         OnPropertyChanged(nameof(IsDeadzonesTabSelected));
         OnPropertyChanged(nameof(IsMotionTabSelected));
         OnPropertyChanged(nameof(IsSticksTabSelected));

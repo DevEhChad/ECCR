@@ -1,0 +1,151 @@
+<!--
+    Visual Binder tab: a clickable controller-skin image instead of a list row. Scoped to
+    whichever device ControllerMappingView's page-level "Device" picker already selects (see
+    VisualBinderViewModel.SelectedDeviceName) - no second device picker here. Clicking a hotspot
+    arms MainWindowViewModel's existing physical-press capture (StartListeningCommand), same as
+    every Button Mapping row; the bottom panel then lets the user confirm/edit the Xbox target,
+    deadzone, and invert, or remove the binding.
+
+    The Canvas below is sized to the skin image's native 2816x1536 pixels and wrapped in a
+    Stretch="Uniform" Viewbox, so every Canvas.Left/Top/Width/Height expressed in native pixel
+    units scales correctly at any window size with no coordinate-conversion converter needed.
+    The hotspot ItemsControl's ItemsPanel is explicitly a Canvas (not the default StackPanel) -
+    otherwise every hotspot Button's Canvas.Left/Top would be silently ignored.
+
+    The hotspot ItemsControl itself gets an explicit Width/Height matching the outer canvas plus
+    ClipToBounds="False" (on both the ItemsControl and its inner Canvas ItemsPanel): a Canvas
+    reports (0,0) as its own desired size regardless of children (they're absolutely positioned,
+    not layout-contributing), so with no explicit size the ItemsControl measured to 0x0 and
+    clipped every absolutely-positioned hotspot Button out of both rendering and hit-testing -
+    despite ItemsSource being correctly populated (verified: 18 items bound, zero pixels drawn).
+
+    Each hotspot Button binds its Canvas.Left/Top/Width/Height to HotspotViewModel.Left/Top/
+    BoundsWidth/BoundsHeight (flat double properties) rather than to the nested
+    Hotspot.PixelBounds.X/Y/Width/Height path, since a compiled binding through a value-type
+    (Rect) property is a needless additional risk once a working direct alternative exists.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="ECCR.Views.VisualBinderView"
+             x:DataType="vm:VisualBinderViewModel">
+
+    <Grid RowDefinitions="Auto, Auto, Auto">
+
+        <!-- Skin picker -->
+        <Border Grid.Row="0" Classes="card" Margin="0,0,0,10">
+            <Grid ColumnDefinitions="Auto, *">
+                <TextBlock Grid.Column="0" Text="Skin" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{x:Static vm:VisualBinderViewModel.AvailableSkins}"
+                          SelectedItem="{Binding SelectedSkin}"
+                          HorizontalAlignment="Stretch"
+                          CornerRadius="6"
+                          Background="#10141E"/>
+            </Grid>
+        </Border>
+
+        <!-- The graphic -->
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center">
+            <Viewbox Stretch="Uniform" MaxHeight="480">
+                <Canvas Width="2816" Height="1536">
+                    <Image Source="{Binding SkinImage}" Width="2816" Height="1536" Stretch="Uniform"
+                           RenderOptions.BitmapInterpolationMode="HighQuality" IsHitTestVisible="False"/>
+
+                    <ItemsControl ItemsSource="{Binding HotspotViewModels}"
+                                  Width="2816" Height="1536" ClipToBounds="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas ClipToBounds="False"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <!-- Canvas.Left/Top must be set on the ContentPresenter the Canvas
+                             actually parents (its direct child), not on the Button nested inside
+                             each DataTemplate - setting it on the Button itself is silently
+                             ignored (confirmed: even a hardcoded literal value on the Button was
+                             ignored, while the same Button's own Width/Height bind and size fine -
+                             positioning specifically has to go through the item container). -->
+                        <ItemsControl.Styles>
+                            <Style Selector="ContentPresenter" x:DataType="vm:HotspotViewModel">
+                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                            </Style>
+                        </ItemsControl.Styles>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:HotspotViewModel">
+                                <Button Classes="hotspot"
+                                        Classes.hotspotPressed="{Binding IsPressed}"
+                                        Classes.hotspotBound="{Binding IsBound}"
+                                        Width="{Binding BoundsWidth}"
+                                        Height="{Binding BoundsHeight}"
+                                        Command="{Binding ArmCommand}"
+                                        ToolTip.Tip="{Binding TooltipText}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Stick knobs: pre-positioned via Canvas.Left/Top at each well's rest
+                         center, moved only via RenderTransform/TranslateTransform (never
+                         IsVisible-toggled) - see the CalibrationDialog wheel-dial lesson this
+                         session about relative-origin pivoting being unreliable on hidden
+                         elements; a plain literal TranslateTransform has no such issue.
+                         IsHitTestVisible=False so clicks pass through to the L3/R3 hotspot
+                         buttons underneath. -->
+                    <Ellipse Classes="stickKnob" Width="170" Height="170" Canvas.Left="1032" Canvas.Top="1033" IsHitTestVisible="False">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform X="{Binding LeftStickOffsetX}" Y="{Binding LeftStickOffsetY}"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <Ellipse Classes="stickKnob" Width="170" Height="170" Canvas.Left="1615" Canvas.Top="1033" IsHitTestVisible="False">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform X="{Binding RightStickOffsetX}" Y="{Binding RightStickOffsetY}"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                </Canvas>
+            </Viewbox>
+        </Border>
+
+        <!-- Bottom edit panel: persistent (not a floating Popup/Flyout - translating a
+             Viewbox-scaled hotspot's position out to screen coordinates for flyout placement is
+             exactly the kind of fragile code the app should avoid), shown below the whole graphic. -->
+        <Border Grid.Row="2" Classes="card">
+            <Grid>
+                <TextBlock Text="Click a button on the controller above to bind it."
+                           FontSize="13" Foreground="#8B95A5"
+                           IsVisible="{Binding !HasSelectedHotspot}"/>
+
+                <StackPanel Spacing="10" IsVisible="{Binding HasSelectedHotspot}">
+                    <Grid ColumnDefinitions="*, Auto">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="{Binding SelectedHotspotEntry.SourceDisplayName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                            <TextBlock Text="{Binding SelectedHotspotEntry.SourceDeviceName}" FontSize="11" Foreground="#8B95A5"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Capture / Re-bind"
+                                Command="{Binding StartListeningCommand}" CommandParameter="{Binding SelectedHotspotEntry}"
+                                Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,7" CornerRadius="6"/>
+                    </Grid>
+
+                    <ComboBox ItemsSource="{x:Static vm:MainWindowViewModel.AvailableVirtualOutputs}"
+                              SelectedItem="{Binding SelectedHotspotEntry.TargetOutput}"
+                              HorizontalAlignment="Stretch" CornerRadius="6" Background="#10141E"/>
+
+                    <Grid ColumnDefinitions="*, 44" IsVisible="{Binding SelectedHotspotEntry.IsAxis}">
+                        <Slider Grid.Column="0" Minimum="0.0" Maximum="0.5" Value="{Binding SelectedHotspotEntry.Deadzone}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding SelectedHotspotEntry.Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto, *" IsVisible="{Binding SelectedHotspotEntry.IsAxis}">
+                        <TextBlock Grid.Column="0" Text="Invert" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding SelectedHotspotEntry.IsInverted}" OnContent="" OffContent="" HorizontalAlignment="Left"/>
+                    </Grid>
+
+                    <Button Content="Remove Binding" Command="{Binding RemoveMappingCommand}" CommandParameter="{Binding SelectedHotspotEntry}"
+                            Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" Padding="12,7" CornerRadius="6" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
