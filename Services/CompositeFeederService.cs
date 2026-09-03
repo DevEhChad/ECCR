@@ -64,8 +64,10 @@ public class CompositeFeederService : IVirtualFeeder
 
     public void Dispose()
     {
-        _xboxFeeder.Dispose();
-        _ds4Feeder.Dispose();
-        _wheelFeeder.Dispose();
+        // Isolated so one backend throwing during teardown can't skip releasing the other two
+        // virtual devices.
+        try { _xboxFeeder.Dispose(); } catch { }
+        try { _ds4Feeder.Dispose(); } catch { }
+        try { _wheelFeeder.Dispose(); } catch { }
     }
 }

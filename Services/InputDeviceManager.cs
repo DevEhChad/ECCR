@@ -202,7 +202,11 @@ public class InputDeviceManager : IDisposable
             try
             {
                 cts.Cancel();
-                _pollingTask?.Wait(100);
+                // Give the loop a real chance to observe cancellation and return before Dispose()
+                // tears down the same Joystick/DirectInput objects it may still be touching -
+                // 100ms was tight against a loop that can be mid-Poll()/GetCurrentState() and not
+                // just sitting in Task.Delay.
+                _pollingTask?.Wait(500);
             }
             catch { }
             finally

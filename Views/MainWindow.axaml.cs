@@ -56,16 +56,14 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (vm.CloseMinimizesToTray)
+            if (vm.RunInSystemTray && vm.CloseMinimizesToTray)
             {
                 e.Cancel = true;
                 Hide();
                 return;
             }
 
-            vm.IsShuttingDown = true;
-            vm.CleanupAndShutdown();
-            Environment.Exit(0);
+            App.PerformFullExitFor(vm);
             return;
         }
 
@@ -104,7 +102,7 @@ public partial class MainWindow : Window
 
         if (change.Property == WindowStateProperty)
         {
-            if (WindowState == WindowState.Minimized && DataContext is MainWindowViewModel vm && vm.MinimizeToTray)
+            if (WindowState == WindowState.Minimized && DataContext is MainWindowViewModel vm && vm.RunInSystemTray && vm.MinimizeToTray)
             {
                 Hide();
             }

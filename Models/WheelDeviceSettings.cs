@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ECCR.Models;
@@ -47,4 +48,37 @@ public partial class WheelDeviceSettings : ObservableObject
     /// <summary>Flips force direction - some wheel/game combinations need this to turn the "correct" way.</summary>
     [ObservableProperty]
     private bool _invertForce = false;
+
+    /// <summary>
+    /// User-editable display-name overrides for this device's physical buttons/axes, keyed as
+    /// "Button:{index}" / "Axis:{index}" (a plain string key rather than a compound key type,
+    /// for simple System.Text.Json round-tripping through a Dictionary). Missing/empty means
+    /// "use DevicePresetService's generated name" - see <see cref="ECCR.Services.DevicePresetService.GetEffectiveDisplayName"/>.
+    /// Exists mainly for wheel-class hardware whose physical button legend ECCR can't infer
+    /// (most brands besides Moza don't distinguish a PlayStation-legend vs. Xbox-legend SKU in
+    /// <see cref="ECCR.Services.DeviceHardwareCategory"/>), but works for any device.
+    /// </summary>
+    public Dictionary<string, string> InputNicknames { get; set; } = new();
+
+    private static string NicknameKey(InputType type, int index) => $"{type}:{index}";
+
+    public string? GetNickname(InputType type, int index) =>
+        InputNicknames.TryGetValue(NicknameKey(type, index), out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+
+    /// <summary>Sets or clears (via null/whitespace) one physical input's nickname, then raises <see cref="InputNicknames"/>'s PropertyChanged so the existing auto-save hook (<c>MainWindowViewModel.OnWheelSettingsPropertyChanged</c>) fires.</summary>
+    public void SetNickname(InputType type, int index, string? nickname)
+    {
+        string key = NicknameKey(type, index);
+        if (string.IsNullOrWhiteSpace(nickname))
+        {
+            InputNicknames.Remove(key);
+        }
+        else
+        {
+            InputNicknames[key] = nickname.Trim();
+        }
+        OnPropertyChanged(nameof(InputNicknames));
+    }
 }

@@ -51,11 +51,13 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="4" Spacing="6" VerticalAlignment="Center">
-                    <TextBlock Text="Assign to Player" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                    <TextBlock Text="Assign to Player" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding !WizardTargetIsWheel}"/>
+                    <TextBlock Text="Assign to Wheel Slot" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding WizardTargetIsWheel}"/>
                     <ComboBox ItemsSource="{Binding PlayerTargets}"
                               SelectedValue="{Binding WizardTargetPlayer}"
                               SelectedValueBinding="{Binding Id}"
-                              Width="190"
+                              IsVisible="{Binding !WizardTargetIsWheel}"
+                              MinWidth="190"
                               Background="#10141E"
                               CornerRadius="6">
                         <ComboBox.ItemTemplate>
@@ -64,7 +66,25 @@
                                     <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
                                         <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <ComboBox ItemsSource="{Binding WheelSlots}"
+                              SelectedValue="{Binding WizardTargetWheelSlot}"
+                              SelectedValueBinding="{Binding Id}"
+                              IsVisible="{Binding WizardTargetIsWheel}"
+                              MinWidth="190"
+                              Background="#10141E"
+                              CornerRadius="6">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:WheelDeviceSlotOption">
+                                <Grid ColumnDefinitions="Auto, *">
+                                    <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                 </Grid>
                             </DataTemplate>
                         </ComboBox.ItemTemplate>

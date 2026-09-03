@@ -53,6 +53,7 @@
       <Private>true</Private>
     </Reference>
     <None Include="Vendor\vJoy\vJoyInterface.dll">
+      <Link>vJoyInterface.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

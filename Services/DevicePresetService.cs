@@ -276,6 +276,21 @@ public static class DevicePresetService
         }
     }
 
+    /// <summary>
+    /// The name to actually show for one physical input: the user's own nickname if they've set
+    /// one for this device+index (see <see cref="WheelDeviceSettings.GetNickname"/>), else the
+    /// generated name from <see cref="GetButtonDisplayName"/>/<see cref="GetAxisDisplayName"/>.
+    /// This is the one call site everything displaying a physical input's name should use -
+    /// callers should stop calling <see cref="GetButtonDisplayName"/>/<see cref="GetAxisDisplayName"/>
+    /// directly wherever a nickname override should apply.
+    /// </summary>
+    public static string GetEffectiveDisplayName(string deviceName, InputType type, int index, WheelDeviceSettings? settings)
+    {
+        string? nickname = settings?.GetNickname(type, index);
+        if (!string.IsNullOrWhiteSpace(nickname)) return nickname;
+        return type == InputType.Axis ? GetAxisDisplayName(deviceName, index) : GetButtonDisplayName(deviceName, index);
+    }
+
     /// <summary>Same idea as <see cref="GetButtonDisplayName"/>, but for the 6-8 element raw axis array (see <see cref="RawDeviceInputState.Axes"/>).</summary>
     public static string GetAxisDisplayName(string deviceName, int index)
     {

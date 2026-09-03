@@ -64,11 +64,15 @@ public class ControllerHidService : IDisposable
     /// this is a WinExe with no visible console, so file logging is the only way to see what a
     /// write/enumeration actually did. Every call is wrapped so logging itself can never throw.
     /// </summary>
+    private const long MaxLogSizeBytes = 5 * 1024 * 1024;
+
     private static void LogDebug(string message)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
+            if (File.Exists(LogFilePath) && new FileInfo(LogFilePath).Length > MaxLogSizeBytes)
+                File.Delete(LogFilePath);
             File.AppendAllText(LogFilePath, $"[{DateTime.Now:HH:mm:ss.fff}] {message}\n");
         }
         catch { }
@@ -78,10 +82,13 @@ public class ControllerHidService : IDisposable
     public event Action<List<ControllerStatus>>? OnStatusUpdated;
 
     // Battery/lightbar only needed occasional polling, but gyro/touch (added alongside those)
-    // need to be read often enough to be usable for live aim/touch mapping - ~30Hz is a
-    // reasonable middle ground that stays cheap (a few hundred bytes per read) without the
-    // pileup risk of trying to hit a full 125Hz-class polling rate on a background Timer.
-    private const int PollIntervalMs = 33;
+    // need to be read often enough to be usable for live aim/touch mapping. Matches
+    // InputDeviceManager's 250Hz stick/button polling rate so gyro/touch-aim isn't laggier
+    // than the rest of the input pipeline - _pollInProgress below already skips (rather than
+    // queues) a tick if a prior read is still in flight, so a slow read (or a controller link
+    // that negotiated a lower report rate, e.g. some Bluetooth stacks) degrades gracefully
+    // instead of piling up.
+    private const int PollIntervalMs = 4;
     private int _pollInProgress;
 
     public void Start()
@@ -240,7 +247,16 @@ public class ControllerHidService : IDisposable
             }
         }
 
-        if (results.Count > 0) OnStatusUpdated?.Invoke(results);
+        if (results.Count > 0)
+        {
+            try { OnStatusUpdated?.Invoke(results); }
+            catch (Exception ex)
+            {
+                // A subscriber exception here would otherwise escape this Timer callback
+                // unhandled, which is fatal to the whole process by default in .NET.
+                LogDebug($"OnStatusUpdated subscriber threw: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
     }
 
     private static ControllerStatus ParseInputReport(HidDevice device, byte[] buffer, int length)

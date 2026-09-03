@@ -15,6 +15,28 @@
         <Setter Property="Padding" Value="14"/>
     </Style>
 
+    <!-- Baseline for every ComboBox in the app: consistent minimum width and corner radius, plus
+         best-effort text trimming on the selected-item display for combos that don't supply
+         their own ItemTemplate (e.g. the plain-string profile switcher) - combos with a custom
+         ItemTemplate (most of them, for the badge+label rows) still need TextTrimming set on
+         their own inline TextBlock, since a style here can't reach inside a DataTemplate. -->
+    <Style Selector="ComboBox">
+        <Setter Property="MinWidth" Value="120"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="ComboBox /template/ ContentPresenter">
+        <Setter Property="TextBlock.TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <!-- Dependent option row: a settings row that's only meaningful while a parent toggle above
+         it is on (e.g. tray sub-options while "Run in System Tray" is off) - the row's IsEnabled
+         is bound to the parent toggle in the view, and this just makes that disabled state
+         visible, since plain TextBlocks don't dim on their own the way real controls do. -->
+    <Style Selector="Grid.dependentOption:disabled">
+        <Setter Property="Opacity" Value="0.4"/>
+    </Style>
+
     <!-- Status pill: small rounded badge used by the device-status bar and Home's quick-action cards -->
     <Style Selector="Border.pill">
         <Setter Property="Background" Value="{DynamicResource PanelBackgroundAltBrush}"/>
@@ -64,6 +86,19 @@
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
     </Style>
     <Style Selector="Button.deviceRow:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+
+    <!-- Clickable pill: same look as Border.pill, for compact rows (top device-status bar) that need to be a Button rather than static content -->
+    <Style Selector="Button.pillButton">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+    <Style Selector="Button.pillButton:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
     </Style>
 

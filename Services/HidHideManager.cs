@@ -38,16 +38,22 @@ public partial class HidDeviceItem : ObservableObject
 public class HidHideManager
 {
     private readonly IHidHideControlService? _hidHide;
+    private System.Threading.Timer? _cycleDebounceTimer;
+    private readonly object _cycleDebounceLock = new();
 
     private static readonly string LogFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "hid-debug.log");
 
     /// <summary>Temporary diagnostic log (shared file/format with <see cref="ControllerHidService"/>) for troubleshooting which devices get included/excluded and why.</summary>
+    private const long MaxLogSizeBytes = 5 * 1024 * 1024;
+
     private static void LogDebug(string message)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
+            if (File.Exists(LogFilePath) && new FileInfo(LogFilePath).Length > MaxLogSizeBytes)
+                File.Delete(LogFilePath);
             File.AppendAllText(LogFilePath, $"[{DateTime.Now:HH:mm:ss.fff}] [HidHide] {message}\n");
         }
         catch { }
@@ -264,6 +270,51 @@ public class HidHideManager
         }
         catch { }
     }
+
+    /// <summary>
+    /// Forces the driver to re-evaluate its blocklist immediately by cycling <c>IsActive</c>
+    /// off then back on - a raw flag flip, not a call through <see cref="SetGlobalHidingState"/>,
+    /// so it doesn't redundantly re-run <see cref="UnblockVirtualDevices"/>/
+    /// <see cref="EnsureSelfWhitelisted"/> on every call. A per-device blocklist edit
+    /// (<see cref="AddBlockedInstanceId"/>/<see cref="RemoveBlockedInstanceId"/> via
+    /// <see cref="ToggleDeviceHiding"/>, <see cref="EnsureDeviceCloaked"/>, or
+    /// <see cref="SyncBlockedInstances"/>) doesn't make the driver re-evaluate already-open
+    /// device handles on its own - only a transition of the master <c>IsActive</c> flag does,
+    /// which is why toggling the app's own "Cloaking Active" switch off/on used to be the only
+    /// way to make a per-device change actually take effect live. This method automates that
+    /// same cycle so callers don't have to. No-op if cloaking isn't currently active (nothing
+    /// to re-apply) or the driver isn't installed.
+    /// </summary>
+    private void CycleGlobalHidingIfActive()
+    {
+        try
+        {
+            if (_hidHide != null && IsInstalled && _hidHide.IsActive)
+            {
+                _hidHide.IsActive = false;
+                _hidHide.IsActive = true;
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Debounced version of <see cref="CycleGlobalHidingIfActive"/> for <see cref="EnsureDeviceCloaked"/>,
+    /// which can fire many times in a tight burst (e.g. once per binding while Auto-Bind Apply
+    /// adds ~15-20 mapping entries for one device) - coalesces a burst into a single cycle
+    /// ~150ms after the last call, instead of visibly flickering cloaking once per binding.
+    /// </summary>
+    private void ScheduleCycleDebounced()
+    {
+        lock (_cycleDebounceLock)
+        {
+            _cycleDebounceTimer?.Dispose();
+            _cycleDebounceTimer = new System.Threading.Timer(_ => CycleGlobalHidingIfActive(), null, dueTime: 150, period: System.Threading.Timeout.Infinite);
+        }
+    }
+
+    /// <summary>Public entry point for a single, immediate live-sync cycle - used by <see cref="ECCR.ViewModels.HidHideViewModel"/> after a single-checkbox toggle or a bulk select/deselect-all pass.</summary>
+    public void SyncLiveNow() => CycleGlobalHidingIfActive();
 
     public List<string> GetBlockedInstanceIds()
     {
@@ -497,6 +548,7 @@ public class HidHideManager
             {
                 _hidHide.AddBlockedInstanceId(instanceId);
                 LogDebug($"EnsureDeviceCloaked: auto-cloaked '{deviceName}' ({instanceId}) - now a mapping source.");
+                ScheduleCycleDebounced();
             }
             return instanceId;
         }
@@ -653,6 +705,8 @@ public class HidHideManager
                     try { _hidHide.RemoveBlockedInstanceId(id); } catch { }
                 }
             }
+
+            CycleGlobalHidingIfActive();
         }
         catch { }
     }

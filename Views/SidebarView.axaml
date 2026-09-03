@@ -33,18 +33,8 @@
 
             <!-- Logo / collapse toggle -->
             <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="14,16,14,12">
-                <Viewbox Grid.Column="0" Width="30" Height="30" VerticalAlignment="Center">
-                    <Canvas Width="48" Height="48">
-                        <Ellipse Canvas.Left="2" Canvas.Top="2" Width="44" Height="44" Stroke="#3E7BFA" StrokeThickness="3.5" Fill="#121620"/>
-                        <Rectangle Canvas.Left="12" Canvas.Top="14" Width="24" Height="20" RadiusX="6" RadiusY="6" Fill="#1E2B45" Stroke="#00E599" StrokeThickness="1.5"/>
-                        <Rectangle Canvas.Left="16" Canvas.Top="21" Width="4" Height="6" Fill="#BAC2DE"/>
-                        <Rectangle Canvas.Left="15" Canvas.Top="22" Width="6" Height="4" Fill="#BAC2DE"/>
-                        <Ellipse Canvas.Left="28" Canvas.Top="20" Width="3" Height="3" Fill="#FF4D6D"/>
-                        <Ellipse Canvas.Left="26" Canvas.Top="23" Width="3" Height="3" Fill="#3E7BFA"/>
-                        <Ellipse Canvas.Left="30" Canvas.Top="23" Width="3" Height="3" Fill="#00E599"/>
-                        <Ellipse Canvas.Left="28" Canvas.Top="26" Width="3" Height="3" Fill="#FFB900"/>
-                    </Canvas>
-                </Viewbox>
+                <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-HomeLogo.png" Width="30" Height="30"
+                       Stretch="Uniform" VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality"/>
                 <TextBlock Grid.Column="1" Text="ECCR" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center" Margin="12,0,0,0"
                            IsVisible="{Binding !IsSidebarCollapsed}"/>
                 <Button Grid.Column="2" Content="☰" Command="{Binding ToggleSidebarCollapsedCommand}"

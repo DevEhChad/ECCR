@@ -41,6 +41,16 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     [ObservableProperty]
     private uint _wizardTargetPlayer = 1;
 
+    /// <summary>
+    /// Which Wheel Slot (vJoy device 1-8, see <see cref="MainWindowViewModel.WheelSlots"/>)
+    /// newly-applied "[Wheel] ..." bindings are assigned to when <see cref="WizardTargetIsWheel"/>
+    /// is true - the wheel-target counterpart of <see cref="WizardTargetPlayer"/>, kept as a
+    /// separate property since a wheel slot and a Player are different numeric namespaces (see
+    /// <see cref="MappingEntry.TargetDeviceId"/>'s doc comment).
+    /// </summary>
+    [ObservableProperty]
+    private uint _wizardTargetWheelSlot = 1;
+
     public ObservableCollection<PresetBindingItem> WizardBindings { get; } = new();
 
     /// <summary>Shared with the host view model; populated as devices are detected.</summary>
@@ -49,9 +59,12 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     /// <summary>Shared with the host view model; backs the "Assign to Player" combo.</summary>
     public ObservableCollection<PlayerTargetOption> PlayerTargets { get; }
 
+    /// <summary>Shared with the host view model; backs the "Assign to Wheel Slot" combo shown when <see cref="WizardTargetIsWheel"/> is true.</summary>
+    public ObservableCollection<WheelDeviceSlotOption> WheelSlots { get; }
+
     /// <summary>Design-time constructor.</summary>
     public AutoBindWizardViewModel()
-        : this(new ObservableCollection<string>(), () => new List<DeviceHardwareInfo>(), new ObservableCollection<MappingEntry>(), new ObservableCollection<PlayerTargetOption>(), () => { })
+        : this(new ObservableCollection<string>(), () => new List<DeviceHardwareInfo>(), new ObservableCollection<MappingEntry>(), new ObservableCollection<PlayerTargetOption>(), new ObservableCollection<WheelDeviceSlotOption>(), () => { })
     {
     }
 
@@ -60,12 +73,14 @@ public partial class AutoBindWizardViewModel : ViewModelBase
         Func<List<DeviceHardwareInfo>> connectedDeviceInfo,
         ObservableCollection<MappingEntry> mappings,
         ObservableCollection<PlayerTargetOption> playerTargets,
+        ObservableCollection<WheelDeviceSlotOption> wheelSlots,
         Action onBindingsApplied)
     {
         ConnectedDevices = connectedDevices;
         _connectedDeviceInfo = connectedDeviceInfo;
         _mappings = mappings;
         PlayerTargets = playerTargets;
+        WheelSlots = wheelSlots;
         _onBindingsApplied = onBindingsApplied;
     }
 
@@ -142,7 +157,7 @@ public partial class AutoBindWizardViewModel : ViewModelBase
                 SourceType = item.Type,
                 SourceIndex = item.PhysicalIndex,
                 SourceDisplayName = item.PhysicalName,
-                TargetDeviceId = WizardTargetPlayer,
+                TargetDeviceId = WizardTargetIsWheel ? WizardTargetWheelSlot : WizardTargetPlayer,
                 TargetOutput = item.DefaultTargetOutput,
                 Deadzone = item.Type == InputType.Axis ? 0.08 : 0.0,
                 RawMin = 0,

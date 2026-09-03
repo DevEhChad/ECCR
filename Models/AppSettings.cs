@@ -21,6 +21,9 @@ public class AppSettings
     public bool IsVirtualOutputActive { get; set; } = true;
     public bool IsHidHideActive { get; set; } = false;
     public bool IsAppListInverted { get; set; } = false;
+
+    /// <summary>When true (default), HidHideViewModel automatically turns cloaking off when Virtual Devices are turned off and restores whatever it was before when Virtual Devices come back on. When false, cloaking is fully manual and ignores the Virtual Devices toggle.</summary>
+    public bool LinkCloakingToVirtualDevices { get; set; } = true;
     public bool IsSidebarCollapsed { get; set; } = false;
 
     /// <summary>Filename stem (no extension) of the Visual Binder's controller skin, under Assets/ControllerSkins/.</summary>

@@ -16,7 +16,11 @@
 
     <Grid RowDefinitions="Auto, *" Margin="24">
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,16">
-            <TextBlock Text="💡 Controller LED" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <Grid ColumnDefinitions="Auto, *">
+                <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-LEDLogo.png" Width="22" Height="22"
+                       Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                <TextBlock Grid.Column="1" Text="Controller LED" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+            </Grid>
             <TextBlock Text="Set the lightbar color and animation for a connected PlayStation controller." FontSize="12" Foreground="#8B95A5"/>
         </StackPanel>
 

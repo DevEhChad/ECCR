@@ -29,10 +29,18 @@
         <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,14">
             <Grid ColumnDefinitions="*, Auto">
                 <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                    <TextBlock Text="🛡️ HidHide Device Cloaking &amp; Application Rules" FontWeight="Bold" FontSize="16" Foreground="White"/>
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-HidHide.png" Width="20" Height="20"
+                               Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        <TextBlock Grid.Column="1" Text="HidHide Device Cloaking &amp; Application Rules" FontWeight="Bold" FontSize="16" Foreground="White" VerticalAlignment="Center"/>
+                    </Grid>
                     <TextBlock Text="Hide physical hardware to eliminate double inputs. Whitelist games to bypass cloaking." Foreground="#8B95A5" FontSize="12"/>
                 </StackPanel>
-                <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsHidHideActive}" OnContent="Cloaking Active" OffContent="Disabled"/>
+                <StackPanel Grid.Column="1" Spacing="6" HorizontalAlignment="Right">
+                    <ToggleSwitch IsChecked="{Binding IsHidHideActive}" OnContent="Cloaking Active" OffContent="Disabled" HorizontalAlignment="Right"/>
+                    <ToggleSwitch IsChecked="{Binding LinkCloakingToVirtualDevices}" OnContent="Linked to Virtual Devices" OffContent="Manual Cloaking" HorizontalAlignment="Right"
+                                  ToolTip.Tip="When on (default): turning Virtual Devices off always uncloaks, and turning it back on restores cloaking to whatever it was before. When off: this Cloaking Active toggle is fully manual and ignores the Virtual Devices toggle."/>
+                </StackPanel>
             </Grid>
         </Border>
 

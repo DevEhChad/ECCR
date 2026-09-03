@@ -247,6 +247,26 @@ public partial class MainWindowViewModel : ViewModelBase
         new PlayerTargetOption { Id = 4, DisplayName = "Player 4", ShortBadge = "P4", Description = "Independent Virtual Controller #4", TextColorHex = "#FF7088", BgColorHex = "#2A141A", BorderColorHex = "#FA3E5E" }
     };
 
+    /// <summary>
+    /// "Assign to Wheel Slot" dropdown options for <c>[Wheel]</c>-prefixed mapping targets -
+    /// independent vJoy device numbers (1-8), decoupled from <see cref="PlayerTargets"/> so a
+    /// rig with multiple wheel-class peripherals (e.g. a wheel+pedals on one vJoy device and a
+    /// separate shifter on another) isn't limited to the 4 Xbox Player slots. 8 covers realistic
+    /// multi-peripheral setups; the user's vJoy driver install still needs to be configured for
+    /// however many of these 8 slots are actually used.
+    /// </summary>
+    public static ObservableCollection<WheelDeviceSlotOption> WheelSlots { get; } = new()
+    {
+        new WheelDeviceSlotOption { Id = 1, DisplayName = "Wheel Slot 1", ShortBadge = "W1", Description = "vJoy Device 1", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 2, DisplayName = "Wheel Slot 2", ShortBadge = "W2", Description = "vJoy Device 2", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 3, DisplayName = "Wheel Slot 3", ShortBadge = "W3", Description = "vJoy Device 3", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 4, DisplayName = "Wheel Slot 4", ShortBadge = "W4", Description = "vJoy Device 4", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 5, DisplayName = "Wheel Slot 5", ShortBadge = "W5", Description = "vJoy Device 5", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 6, DisplayName = "Wheel Slot 6", ShortBadge = "W6", Description = "vJoy Device 6", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 7, DisplayName = "Wheel Slot 7", ShortBadge = "W7", Description = "vJoy Device 7", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" },
+        new WheelDeviceSlotOption { Id = 8, DisplayName = "Wheel Slot 8", ShortBadge = "W8", Description = "vJoy Device 8", TextColorHex = "#5CD8FF", BgColorHex = "#122730", BorderColorHex = "#00B8E5" }
+    };
+
     /// <summary>All HidHide device-cloaking state, commands and UI logic.</summary>
     public HidHideViewModel HidHide { get; }
 
@@ -316,15 +336,15 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Resolves, for each Player slot (vJoy device ID 1-4), whichever physical wheel currently
-    /// feeds that slot's "[Wheel] Steering" target - the one axis mapping that unambiguously
-    /// identifies "the" wheel for FFB purposes - and pushes it into
-    /// <see cref="_wheelForceFeedback"/>. Called whenever a mapping or a wheel's
+    /// Resolves, for each Wheel Slot (vJoy device ID 1-8, see <see cref="WheelSlots"/>),
+    /// whichever physical wheel currently feeds that slot's "[Wheel] Steering" target - the one
+    /// axis mapping that unambiguously identifies "the" wheel for FFB purposes - and pushes it
+    /// into <see cref="_wheelForceFeedback"/>. Called whenever a mapping or a wheel's
     /// <see cref="WheelDeviceSettings"/> changes; idempotent.
     /// </summary>
     private void SyncWheelForceFeedbackMappings()
     {
-        for (uint targetDeviceId = 1; targetDeviceId <= 4; targetDeviceId++)
+        for (uint targetDeviceId = 1; targetDeviceId <= 8; targetDeviceId++)
         {
             var steeringEntry = Mappings.FirstOrDefault(m =>
                 m.TargetDeviceId == targetDeviceId &&
@@ -380,6 +400,7 @@ public partial class MainWindowViewModel : ViewModelBase
             () => _deviceManager?.GetConnectedDevices() ?? new List<DeviceHardwareInfo>(),
             Mappings,
             PlayerTargets,
+            WheelSlots,
             () =>
             {
                 RebuildGroupedMappings();
@@ -430,8 +451,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
         _controllerHidService.OnStatusUpdated += statuses =>
         {
-            Dispatcher.UIThread.Post(() => StatusBar.ApplyHidStatuses(statuses));
+            // Fires on ControllerHidService's poll Timer thread. ApplyMotionAndTouchAim runs
+            // right here rather than being marshaled onto the UI thread - queuing behind
+            // whatever else is on the Dispatcher (layout, rendering, other posts) was adding
+            // visible extra latency to the live gyro-aim/touch-aim output on top of the poll
+            // period itself. It's safe to call from any thread (see its own doc comment).
+            // StatusBar.ApplyHidStatuses still needs the UI thread, since it mutates the same
+            // ObservableCollection-backed ControllerStatus instances the UI thread reads/binds.
             ApplyMotionAndTouchAim(statuses);
+            Dispatcher.UIThread.Post(() => StatusBar.ApplyHidStatuses(statuses));
         };
         _controllerHidService.Start();
 
@@ -690,6 +718,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _feeder.SetActive(value);
         _wheelForceFeedback.SetActive(value);
+        HidHide.OnVirtualDevicesToggled(value);
         UpdateVirtualDeviceSummary();
         MappingStatus = value ? "Active" : "Standby (Disabled)";
         SaveAppSettings();
@@ -815,16 +844,19 @@ public partial class MainWindowViewModel : ViewModelBase
     /// the Right Stick of the chosen Player's virtual Xbox 360 controller, bypassing the
     /// MappingEntry/profile system entirely - this is a lightweight, always-Xbox-360, always-
     /// Right-Stick feature rather than a fully generalized bindable channel, deliberately kept
-    /// simple. Runs on <see cref="ControllerHidService"/>'s own background poll thread (called
-    /// from the same handler that also dispatches <see cref="StatusBar"/>'s UI update), not the
-    /// UI thread - <see cref="_feeder"/> is safe to call from any thread.
+    /// simple. Runs on <see cref="ControllerHidService"/>'s own background poll thread, not the
+    /// UI thread - <see cref="_feeder"/> is safe to call from any thread, and the source-device
+    /// lookup below goes through <see cref="DeviceStatusBarViewModel.TryGetGamepadVidPid"/>
+    /// rather than enumerating <see cref="StatusBar"/>'s <c>GamepadStatuses</c> directly, since
+    /// that collection is only safe to enumerate on the UI thread.
     /// </summary>
     private void ApplyMotionAndTouchAim(List<ControllerStatus> statuses)
     {
         if (GyroAimEnabled && !string.IsNullOrEmpty(GyroAimSourceDeviceName))
         {
-            var src = StatusBar.GamepadStatuses.FirstOrDefault(s => s.DeviceInstanceName == GyroAimSourceDeviceName);
-            var hid = src != null ? statuses.FirstOrDefault(s => s.VendorId == src.VendorId && s.ProductId == src.ProductId) : null;
+            var hid = StatusBar.TryGetGamepadVidPid(GyroAimSourceDeviceName, out var vendorId, out var productId)
+                ? statuses.FirstOrDefault(s => s.VendorId == vendorId && s.ProductId == productId)
+                : null;
             if (hid != null && hid.IsMotionSupported)
             {
                 _feeder.UpdateAxis(GyroAimTargetPlayer, "[Xbox] Right Stick X (Camera / Look Horizontal)", (hid.GyroYaw + 1.0) / 2.0);
@@ -834,8 +866,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (TouchAimEnabled && !string.IsNullOrEmpty(TouchAimSourceDeviceName))
         {
-            var src = StatusBar.GamepadStatuses.FirstOrDefault(s => s.DeviceInstanceName == TouchAimSourceDeviceName);
-            var hid = src != null ? statuses.FirstOrDefault(s => s.VendorId == src.VendorId && s.ProductId == src.ProductId) : null;
+            var hid = StatusBar.TryGetGamepadVidPid(TouchAimSourceDeviceName, out var vendorId, out var productId)
+                ? statuses.FirstOrDefault(s => s.VendorId == vendorId && s.ProductId == productId)
+                : null;
             if (hid is { IsMotionSupported: true, TouchActive: true })
             {
                 _feeder.UpdateAxis(TouchAimTargetPlayer, "[Xbox] Right Stick X (Camera / Look Horizontal)", hid.TouchX);
@@ -900,8 +933,6 @@ public partial class MainWindowViewModel : ViewModelBase
                 Dispatcher.UIThread.Post(() => OnLiveDeviceStateUpdated?.Invoke(live));
             }
 
-            if (!IsVirtualOutputActive) return;
-
             for (int i = 0; i < Mappings.Count; i++)
             {
                 var mapping = Mappings[i];
@@ -926,13 +957,18 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     if (mapping.SourceIndex >= 0 && mapping.SourceIndex < state.Axes.Length)
                     {
+                        // Always recompute the calibrated value - it also drives the Calibration
+                        // dialog's live raw/output readouts and wheel dial, which must keep
+                        // moving even while Virtual Output is toggled off. Only the actual feed
+                        // to the virtual device is gated on IsVirtualOutputActive below.
                         double calibratedVal = mapping.CalculateCalibratedValue(state.Axes[mapping.SourceIndex]);
-                        _feeder.UpdateAxis(mapping.TargetDeviceId, mapping.TargetOutput, calibratedVal);
+                        if (IsVirtualOutputActive)
+                            _feeder.UpdateAxis(mapping.TargetDeviceId, mapping.TargetOutput, calibratedVal);
                     }
                 }
                 else if (mapping.SourceType == InputType.Button)
                 {
-                    if (mapping.SourceIndex >= 0 && mapping.SourceIndex < state.Buttons.Length)
+                    if (IsVirtualOutputActive && mapping.SourceIndex >= 0 && mapping.SourceIndex < state.Buttons.Length)
                     {
                         _feeder.UpdateButton(mapping.TargetDeviceId, mapping.TargetOutput, state.Buttons[mapping.SourceIndex]);
                     }
@@ -959,7 +995,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (state.Buttons[i])
             {
-                string btnLabel = DevicePresetService.GetButtonDisplayName(state.DeviceName, i);
+                string btnLabel = DevicePresetService.GetEffectiveDisplayName(state.DeviceName, InputType.Button, i, GetOrCreateWheelSettings(state.DeviceName));
                 AssignDetectedInput(_listeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i, btnLabel);
                 return;
             }
@@ -971,7 +1007,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (Math.Abs(state.Axes[i] - baselines[i]) > 10000)
             {
-                string axisLabel = DevicePresetService.GetAxisDisplayName(state.DeviceName, i);
+                string axisLabel = DevicePresetService.GetEffectiveDisplayName(state.DeviceName, InputType.Axis, i, GetOrCreateWheelSettings(state.DeviceName));
                 AssignDetectedInput(_listeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i, axisLabel);
                 return;
             }
@@ -997,6 +1033,29 @@ public partial class MainWindowViewModel : ViewModelBase
             StopListening();
             AutoSaveCurrentProfile();
         });
+    }
+
+    /// <summary>
+    /// Sets (or, if <paramref name="nickname"/> is null/whitespace, clears) the user-editable
+    /// nickname for one physical input, then refreshes <see cref="MappingEntry.SourceDisplayName"/>
+    /// on every mapping entry bound to that same physical device+index - not just the one the
+    /// user renamed from - so the new name shows up immediately everywhere that input appears
+    /// (e.g. the same wheel button mapped to two different targets in two different mapping
+    /// rows). Called from the rename Flyout in <see cref="ECCR.Views.Shared.DeviceMappingGroupsPanel"/>.
+    /// </summary>
+    public void RenameBoundInput(MappingEntry entry, string? nickname)
+    {
+        var settings = GetOrCreateWheelSettings(entry.SourceDeviceName);
+        settings.SetNickname(entry.SourceType, entry.SourceIndex, nickname);
+
+        string effectiveName = DevicePresetService.GetEffectiveDisplayName(entry.SourceDeviceName, entry.SourceType, entry.SourceIndex, settings);
+        foreach (var m in Mappings.Where(m =>
+                     string.Equals(m.SourceDeviceName, entry.SourceDeviceName, StringComparison.OrdinalIgnoreCase) &&
+                     m.SourceType == entry.SourceType &&
+                     m.SourceIndex == entry.SourceIndex))
+        {
+            m.SourceDisplayName = effectiveName;
+        }
     }
 
     /// <summary>
@@ -1227,7 +1286,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public async Task OpenCalibration(MappingEntry entry)
     {
-        var dialog = new CalibrationDialog { DataContext = entry };
+        var dialog = new CalibrationDialog { DataContext = entry, WheelSettings = GetOrCreateWheelSettings(entry.SourceDeviceName) };
         if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
         {
             await dialog.ShowDialog(desktop.MainWindow);
@@ -1678,12 +1737,28 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     _currentSettings = settings;
 
-                    StartWithWindows = settings.StartWithWindows;
+                    // Source from the actual registry Run key, not the cached JSON flag - if the
+                    // key write ever silently failed, or the user removed it via Task Manager's
+                    // Startup tab, the toggle would otherwise keep lying about the real state.
+                    StartWithWindows = StartupManager.IsStartupEnabled();
+                    if (StartWithWindows)
+                    {
+                        // Re-register so the stored command line always points at this process's
+                        // current exe path, in case a Velopack update moved it since the entry
+                        // was last written.
+                        StartupManager.SetStartup(true);
+                    }
                     RunInSystemTray = settings.RunInSystemTray;
                     MinimizeToTray = settings.MinimizeToTray;
                     CloseMinimizesToTray = settings.CloseMinimizesToTray;
                     AutoCheckForUpdates = settings.AutoCheckForUpdates;
                     ShowChangelogOnUpdate = settings.ShowChangelogOnUpdate;
+
+                    // Must run before IsVirtualOutputActive is assigned below: that assignment
+                    // fires OnIsVirtualOutputActiveChanged -> HidHide.OnVirtualDevicesToggled,
+                    // which needs HidHide's own settings (IsHidHideActive, LinkCloakingToVirtualDevices)
+                    // already loaded rather than still at their default-constructed values.
+                    HidHide.ApplySettings(settings);
 
                     IsVirtualOutputActive = settings.IsVirtualOutputActive;
                     _feeder.SetActive(IsVirtualOutputActive);
@@ -1697,8 +1772,6 @@ public partial class MainWindowViewModel : ViewModelBase
                     TouchAimEnabled = settings.TouchAimEnabled;
                     TouchAimSourceDeviceName = settings.TouchAimSourceDeviceName;
                     TouchAimTargetPlayer = settings.TouchAimTargetPlayer;
-
-                    HidHide.ApplySettings(settings);
 
                     if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
                     {
@@ -1847,6 +1920,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     UpdateVirtualDeviceSummary();
                     ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
                     LoadWheelSettings(profile.WheelSettings);
+                    MigrateLegacyWheelRotationDegrees();
                     SyncHidHideCloakingForAllMappings();
                     return;
                 }
@@ -1879,6 +1953,33 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var entry = Mappings.First(m => m.SourceDeviceGuid == guid);
             HidHide.EnsureDeviceCloaked(guid, entry.SourceDeviceName);
+        }
+    }
+
+    /// <summary>
+    /// One-shot migration for profiles saved before wheel rotation became a device-level
+    /// setting (<see cref="WheelDeviceSettings.RotationDegrees"/>): the old per-mapping
+    /// <c>MappingEntry.WheelRotationDegrees</c> field is now display-only, superseded by the
+    /// per-device value. If a steering mapping's legacy value was actually customized (not the
+    /// 900 default) and the device's new setting is still at its own default, seed the device
+    /// setting from the mapping's old value - first steering entry found for a device wins,
+    /// since rotation is a whole-wheel property and a profile only ever has one meaningful
+    /// steering mapping per wheel (same assumption <see cref="SyncWheelForceFeedbackMappings"/>
+    /// already makes). No-op on every subsequent load once the device setting has been touched.
+    /// </summary>
+    private void MigrateLegacyWheelRotationDegrees()
+    {
+        foreach (var entry in Mappings)
+        {
+            if (!entry.TargetOutput.Contains("Steering", StringComparison.OrdinalIgnoreCase)) continue;
+#pragma warning disable CS0618 // Type or member is obsolete - this is the one-shot migration reading it
+            if (entry.WheelRotationDegrees == 900) continue;
+            var settings = GetOrCreateWheelSettings(entry.SourceDeviceName);
+            if (settings.RotationDegrees == 900)
+            {
+                settings.RotationDegrees = entry.WheelRotationDegrees;
+            }
+#pragma warning restore CS0618
         }
     }
 
@@ -1927,22 +2028,46 @@ public partial class MainWindowViewModel : ViewModelBase
     /// are saved first so this live-disable step never gets persisted as the user's actual
     /// preference - both re-apply automatically via <see cref="LoadAppSettings"/> on next launch.
     /// </summary>
-    public void CleanupAndShutdown()
+    private static readonly string ShutdownLogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "shutdown-debug.log");
+
+    /// <summary>
+    /// Each <see cref="CleanupAndShutdown"/> step is independently guarded so a failure in one
+    /// (e.g. settings serialization) can never skip the driver-teardown steps that follow it.
+    /// </summary>
+    private static void RunShutdownStep(string name, Action step)
     {
         try
         {
-            SaveAppSettings();
-            AutoSaveCurrentProfile();
+            step();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(ShutdownLogPath)!);
+                File.AppendAllText(ShutdownLogPath,
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {name} threw: {ex.GetType().Name}: {ex.Message}\n");
+            }
+            catch { }
+        }
+    }
 
-            HidHide.DisableCloakingForShutdown();
+    public void CleanupAndShutdown()
+    {
+        RunShutdownStep(nameof(SaveAppSettings), SaveAppSettings);
+        RunShutdownStep(nameof(AutoSaveCurrentProfile), AutoSaveCurrentProfile);
 
+        RunShutdownStep("HidHide.DisableCloakingForShutdown", () => HidHide.DisableCloakingForShutdown());
+
+        RunShutdownStep("DeviceManager teardown", () =>
+        {
             _deviceManager?.StopPolling();
             _deviceManager?.Dispose();
-            _controllerHidService.Dispose();
-            _controllerLedViewModel?.Dispose();
-            _feeder.Dispose();
-            _wheelForceFeedback.Dispose();
-        }
-        catch { }
+        });
+        RunShutdownStep("ControllerHidService.Dispose", () => _controllerHidService.Dispose());
+        RunShutdownStep("ControllerLedViewModel.Dispose", () => _controllerLedViewModel?.Dispose());
+        RunShutdownStep("Feeder.Dispose", () => _feeder.Dispose());
+        RunShutdownStep("WheelForceFeedback.Dispose", () => _wheelForceFeedback.Dispose());
     }
 }

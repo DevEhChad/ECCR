@@ -41,6 +41,17 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private string _sourceDisplayName = "Click to Bind";
 
+    /// <summary>
+    /// Numeric virtual-device slot this entry's output routes to - a ViGEm Xbox360/DS4
+    /// controller number ("Player", see <see cref="ECCR.ViewModels.MainWindowViewModel.PlayerTargets"/>)
+    /// for an "[Xbox]"/"[DS4]" <see cref="TargetOutput"/>, or a vJoy device rID ("Wheel Slot",
+    /// see <see cref="ECCR.ViewModels.MainWindowViewModel.WheelSlots"/>) for a "[Wheel]" one.
+    /// One field serves both purposes rather than two, since <see cref="TargetOutput"/>'s prefix
+    /// already unambiguously says which namespace a given value lives in at every consumer
+    /// (<see cref="ECCR.Services.CompositeFeederService"/> and friends) - a second field would
+    /// just be a second place for the two to drift out of sync, the same duplication bug
+    /// <see cref="WheelRotationDegrees"/> above already illustrates.
+    /// </summary>
     [ObservableProperty]
     private uint _targetDeviceId = 1;
 
@@ -73,11 +84,13 @@ public partial class MappingEntry : ObservableObject
     private string? _semanticHotspot = null;
 
     /// <summary>
-    /// Total lock-to-lock rotation range in degrees for a steering wheel axis, driving the
-    /// Calibration dialog's dial visual (see <see cref="ECCR.Converters.SteeringAngleConverter"/>).
-    /// Consumer wheels are commonly 900°; direct-drive wheels routinely go well past 1080°
-    /// (up to 2160-3600°), so this is a free value rather than a fixed 900/1080 toggle.
+    /// Superseded by the device-level <see cref="ECCR.Models.WheelDeviceSettings.RotationDegrees"/>
+    /// (rotation is a whole-wheel property, not a per-axis-mapping one - having both was the
+    /// bug: the Calibration dialog's dial and the Wheel Settings tab could disagree). Kept only
+    /// so old profile JSON still deserializes and <c>MainWindowViewModel.MigrateLegacyWheelRotationDegrees</c>
+    /// can seed the new device-level value from it once on load; nothing else reads this anymore.
     /// </summary>
+    [Obsolete("Superseded by WheelDeviceSettings.RotationDegrees; kept only for one-time profile migration.")]
     [ObservableProperty]
     private int _wheelRotationDegrees = 900;
 
@@ -99,6 +112,22 @@ public partial class MappingEntry : ObservableObject
     partial void OnSourceTypeChanged(InputType value)
     {
         OnPropertyChanged(nameof(IsAxis));
+    }
+
+    /// <summary>
+    /// True when <see cref="TargetOutput"/> is a "[Wheel] ..." target (routed to the vJoy
+    /// backend, see <see cref="ECCR.Services.CompositeFeederService"/>), false for "[Xbox]"/
+    /// "[DS4]" targets (ViGEm). Drives which dropdown a mapping row shows for
+    /// <see cref="TargetDeviceId"/> - Wheel Slot options for wheel targets, Player options for
+    /// everything else - since the two share the same underlying field but are different
+    /// numeric namespaces (vJoy device rID vs. ViGEm/DS4 controller number).
+    /// </summary>
+    [JsonIgnore]
+    public bool IsWheelTarget => TargetOutput.StartsWith("[Wheel]", StringComparison.OrdinalIgnoreCase);
+
+    partial void OnTargetOutputChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsWheelTarget));
     }
 
     /// <summary>

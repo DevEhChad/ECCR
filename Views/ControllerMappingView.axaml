@@ -28,7 +28,11 @@
 
     <Grid RowDefinitions="Auto, Auto, Auto, Auto, *" Margin="16,10">
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
-            <TextBlock Text="🎮 Controller Mapping" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <Grid ColumnDefinitions="Auto, *">
+                <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-ControllerLogo.png" Width="22" Height="22"
+                       Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                <TextBlock Grid.Column="1" Text="Controller Mapping" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+            </Grid>
             <TextBlock Text="Bind buttons and axes for gamepad-class controllers (PlayStation, Xbox, Nintendo, generic pads)." FontSize="12" Foreground="#8B95A5"/>
             <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,6,0,0">
                 <TextBlock FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap">
@@ -94,7 +98,7 @@
                           Background="#10141E">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="models:DeviceMappingGroup">
-                            <TextBlock Text="{Binding DeviceName}"/>
+                            <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
@@ -132,7 +136,8 @@
             <!-- Button Mapping: today's full grouped list across all devices, unaffected by
                  the device picker above - this is the "controller mappings drop down" that
                  must stay available for all keybinds regardless of which device is selected. -->
-            <Grid RowDefinitions="Auto, Auto, *" IsVisible="{Binding IsButtonMappingTabSelected}">
+            <ScrollViewer IsVisible="{Binding IsButtonMappingTabSelected}">
+            <Grid RowDefinitions="Auto, Auto, Auto">
                 <Button Grid.Row="0" Content="+ New Binding" HorizontalAlignment="Right" Margin="0,0,0,8"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddGamepadMappingCommand}"
                         Background="#1A4A38" BorderBrush="#266D53" Foreground="White" FontWeight="SemiBold" Padding="12,7" CornerRadius="6"
@@ -149,6 +154,7 @@
                 </Grid>
                 <shared:DeviceMappingGroupsPanel Grid.Row="2" ItemsSource="{Binding GroupEntries}" DeviceIconGlyph="🎮"/>
             </Grid>
+            </ScrollViewer>
 
             <!-- Visual Binder: graphical controller-skin binder, scoped to the same device
                  picker above. See VisualBinderViewModel/VisualBinderView. IsVisible sits on this
@@ -259,7 +265,8 @@
             <!-- Motion: live gyro readout + Gyro-Aim toggle (feeds Right Stick of a chosen
                  Player's virtual Xbox 360 pad - see ControllerMappingViewModel /
                  MainWindowViewModel.ApplyMotionAndTouchAim). PlayStation devices only. -->
-            <StackPanel IsVisible="{Binding IsMotionTabSelected}" Spacing="10" VerticalAlignment="Top">
+            <ScrollViewer IsVisible="{Binding IsMotionTabSelected}">
+            <StackPanel Spacing="10" VerticalAlignment="Top">
                 <Border Classes="card" IsVisible="{Binding !IsMotionSupportedForSelectedDevice}">
                     <TextBlock Text="Motion is not supported for this device (PlayStation controllers only)." Foreground="#FFAAAA" FontSize="13"/>
                 </Border>
@@ -293,10 +300,10 @@
                                       ItemsSource="{x:Static vm:MainWindowViewModel.PlayerTargets}"
                                       SelectedValue="{Binding GyroAimTargetPlayer}"
                                       SelectedValueBinding="{Binding Id}"
-                                      Width="170" CornerRadius="6" Background="#10141E">
+                                      MinWidth="220" CornerRadius="6" Background="#10141E">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="models:PlayerTargetOption">
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="11"/>
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
@@ -304,11 +311,13 @@
                     </StackPanel>
                 </Border>
             </StackPanel>
+            </ScrollViewer>
 
             <!-- Touchpad: live touch X/Y readout + Touch-Aim toggle (same Right Stick target
                  pattern as Gyro Aim above). PlayStation devices only; digital "Touchpad Click"
                  remains bindable as an ordinary button on the Button Mapping tab. -->
-            <StackPanel IsVisible="{Binding IsTouchpadTabSelected}" Spacing="10" VerticalAlignment="Top">
+            <ScrollViewer IsVisible="{Binding IsTouchpadTabSelected}">
+            <StackPanel Spacing="10" VerticalAlignment="Top">
                 <Border Classes="card" IsVisible="{Binding !IsMotionSupportedForSelectedDevice}">
                     <TextBlock Text="Touchpad is not supported for this device (PlayStation controllers only)." Foreground="#FFAAAA" FontSize="13"/>
                 </Border>
@@ -342,10 +351,10 @@
                                       ItemsSource="{x:Static vm:MainWindowViewModel.PlayerTargets}"
                                       SelectedValue="{Binding TouchAimTargetPlayer}"
                                       SelectedValueBinding="{Binding Id}"
-                                      Width="170" CornerRadius="6" Background="#10141E">
+                                      MinWidth="220" CornerRadius="6" Background="#10141E">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="models:PlayerTargetOption">
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="11"/>
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
@@ -353,9 +362,11 @@
                     </StackPanel>
                 </Border>
             </StackPanel>
+            </ScrollViewer>
 
             <!-- More Options -->
-            <StackPanel IsVisible="{Binding IsMoreOptionsTabSelected}" Spacing="10" VerticalAlignment="Top">
+            <ScrollViewer IsVisible="{Binding IsMoreOptionsTabSelected}">
+            <StackPanel Spacing="10" VerticalAlignment="Top">
                 <Border Classes="card">
                     <StackPanel Spacing="10">
                         <TextBlock Text="Lighting" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
@@ -376,6 +387,7 @@
                     </StackPanel>
                 </Border>
             </StackPanel>
+            </ScrollViewer>
         </Panel>
     </Grid>
 </UserControl>

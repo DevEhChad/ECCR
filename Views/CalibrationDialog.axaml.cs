@@ -18,6 +18,16 @@ namespace ECCR.Views;
 /// </summary>
 public partial class CalibrationDialog : Window
 {
+    /// <summary>
+    /// The calibrated entry's device-level wheel settings, supplied by
+    /// <see cref="ECCR.ViewModels.MainWindowViewModel.OpenCalibration"/> before <c>ShowDialog</c>
+    /// is called - source of truth for the steering dial's rotation range (see
+    /// <see cref="Models.WheelDeviceSettings.RotationDegrees"/>), bound via ElementName rather
+    /// than DataContext since the DataContext is the plain <see cref="MappingEntry"/> being
+    /// calibrated. Null for non-wheel entries (the rotation UI stays hidden in that case anyway).
+    /// </summary>
+    public WheelDeviceSettings? WheelSettings { get; set; }
+
     public CalibrationDialog()
     {
         InitializeComponent();

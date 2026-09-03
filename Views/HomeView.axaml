@@ -6,11 +6,16 @@
              xmlns:vm="using:ECCR.ViewModels"
              xmlns:models="using:ECCR.Models"
              xmlns:avc="using:Avalonia.Data.Converters"
+             xmlns:converters="using:ECCR.Converters"
              mc:Ignorable="d"
              d:DesignWidth="1000" d:DesignHeight="700"
              x:Class="ECCR.Views.HomeView"
              x:DataType="vm:HomeViewModel"
              x:Name="HomeRoot">
+
+    <UserControl.Resources>
+        <converters:CategoryToGlyphConverter x:Key="CategoryToGlyphConverter"/>
+    </UserControl.Resources>
 
     <Design.DataContext>
         <vm:HomeViewModel/>
@@ -44,24 +49,32 @@
             <Border Classes="card" Padding="20">
                 <StackPanel Spacing="14">
                     <TextBlock Text="Connected Devices" FontWeight="Bold" FontSize="16" Foreground="#BAC2DE"/>
-                    <ItemsControl ItemsSource="{Binding StatusBar.GamepadStatuses}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" Spacing="12"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="models:ControllerStatus">
-                                <Border Classes="pill" Padding="14,8">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="🎮" FontSize="15"/>
-                                        <TextBlock Text="{Binding DeviceInstanceName}" FontSize="14" Foreground="White"/>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock Text="No gamepad connected." FontSize="14" Foreground="#4B5563" IsVisible="{Binding !StatusBar.HasGamepads}"/>
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding StatusBar.AllDeviceStatuses}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="12"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:ControllerStatus">
+                                    <Button Classes="pillButton" Padding="14,8"
+                                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).NavigateToDeviceMappingCommand}"
+                                            CommandParameter="{Binding DeviceInstanceName}"
+                                            ToolTip.Tip="Open mapping for this device">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Image Source="{Binding Category, Converter={StaticResource CategoryToGlyphConverter}}"
+                                                   Width="18" Height="18" Stretch="Uniform"
+                                                   RenderOptions.BitmapInterpolationMode="HighQuality"
+                                                   VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding DeviceInstanceName}" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Text="No devices connected." FontSize="14" Foreground="#4B5563" IsVisible="{Binding !StatusBar.HasDevices}"/>
                 </StackPanel>
             </Border>
 

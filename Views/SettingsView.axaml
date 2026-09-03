@@ -52,7 +52,7 @@
                             <ToggleSwitch Grid.Column="1" IsChecked="{Binding RunInSystemTray}" OnContent="Enabled" OffContent="Disabled"/>
                         </Grid>
                         <Border Height="1" Background="#1F283C" Margin="0,2"/>
-                        <Grid ColumnDefinitions="*, Auto">
+                        <Grid Classes="dependentOption" ColumnDefinitions="*, Auto" IsEnabled="{Binding RunInSystemTray}">
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="Minimize to System Tray" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
                                 <TextBlock Text="Hides the main window to the notification area when minimized." FontSize="11" Foreground="#888899"/>
@@ -60,7 +60,7 @@
                             <ToggleSwitch Grid.Column="1" IsChecked="{Binding MinimizeToTray}" OnContent="Enabled" OffContent="Disabled"/>
                         </Grid>
                         <Border Height="1" Background="#1F283C" Margin="0,2"/>
-                        <Grid ColumnDefinitions="*, Auto">
+                        <Grid Classes="dependentOption" ColumnDefinitions="*, Auto" IsEnabled="{Binding RunInSystemTray}">
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="Closing Window Minimizes to Tray" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
                                 <TextBlock Text="Clicking the 'X' button hides ECCR to tray instead of quitting." FontSize="11" Foreground="#888899"/>

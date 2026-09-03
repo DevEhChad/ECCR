@@ -24,7 +24,11 @@
 
     <Grid RowDefinitions="Auto, Auto, Auto, *" Margin="16,10">
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
-            <TextBlock Text="🛞 Device Mapping" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <Grid ColumnDefinitions="Auto, *">
+                <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-WheelLogo.png" Width="22" Height="22"
+                       Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                <TextBlock Grid.Column="1" Text="Device Mapping" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+            </Grid>
             <TextBlock Text="Bind axes and buttons for Direct Input wheels, pedals, and shifters." FontSize="12" Foreground="#8B95A5"/>
             <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,6,0,0">
                 <TextBlock FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap">
@@ -51,7 +55,7 @@
                           Background="#10141E">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="models:DeviceMappingGroup">
-                            <TextBlock Text="{Binding DeviceName}"/>
+                            <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
@@ -73,7 +77,8 @@
 
             <!-- Button Mapping: today's full grouped list across all devices, unaffected by the
                  device picker above. -->
-            <Grid RowDefinitions="Auto, Auto, *" IsVisible="{Binding IsButtonMappingTabSelected}">
+            <ScrollViewer IsVisible="{Binding IsButtonMappingTabSelected}">
+            <Grid RowDefinitions="Auto, Auto, Auto">
                 <Button Grid.Row="0" Content="+ New Binding" HorizontalAlignment="Right" Margin="0,0,0,8"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddWheelMappingCommand}"
                         Background="#1A4A38" BorderBrush="#266D53" Foreground="White" FontWeight="SemiBold" Padding="12,7" CornerRadius="6"
@@ -88,8 +93,9 @@
                     <TextBlock Grid.Column="5" Text="Dead Zone" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     <TextBlock Grid.Column="6" Text="Calibration" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </Grid>
-                <shared:DeviceMappingGroupsPanel Grid.Row="2" ItemsSource="{Binding GroupEntries}" DeviceIconGlyph="🛞"/>
+                <shared:DeviceMappingGroupsPanel Grid.Row="2" ItemsSource="{Binding GroupEntries}" DeviceIconGlyph="🛞" IsWheelPage="True"/>
             </Grid>
+            </ScrollViewer>
 
             <!-- Wheel Settings: rotation + force feedback tuning for the device picked above. -->
             <ScrollViewer IsVisible="{Binding IsWheelSettingsTabSelected}">

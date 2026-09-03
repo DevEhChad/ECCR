@@ -8,12 +8,15 @@ namespace ECCR.ViewModels;
 
 /// <summary>
 /// Backs the persistent top device-status bar (visible on every page, not just Home - see
-/// shell layout in <c>MainWindow.axaml</c>). Holds one <see cref="ControllerStatus"/> per
-/// connected gamepad-class device (wheels are deliberately excluded, per product decision).
-/// Also holds <see cref="AllDeviceStatuses"/> - every physical device, gamepad or wheel/pedal -
-/// for the Connected Devices page; gamepad-class entries there are the exact same instances
-/// held in <see cref="GamepadStatuses"/> (not copies), so <see cref="ApplyHidStatuses"/>'
-/// in-place field mutations are automatically visible in both collections.
+/// shell layout in <c>MainWindow.axaml</c>), which renders <see cref="AllDeviceStatuses"/> -
+/// every connected physical device, gamepad or wheel/pedal (ECCR's own virtual ViGEm/vJoy
+/// outputs are excluded upstream by <c>InputDeviceManager.GetConnectedDevices</c>, never
+/// enumerated here at all). <see cref="GamepadStatuses"/> is the narrower gamepad-only subset
+/// used by features that only make sense for gamepads (LED control, gyro/touch-aim source
+/// pickers, the Home page's quick glance) - gamepad-class entries in <see cref="AllDeviceStatuses"/>
+/// are the exact same instances held in <see cref="GamepadStatuses"/> (not copies), so
+/// <see cref="ApplyHidStatuses"/>' in-place field mutations are automatically visible in both
+/// collections.
 /// Fed two ways by <see cref="MainWindowViewModel"/>: <see cref="SyncConnectedDevices"/> on
 /// every DirectInput device-list refresh (name/connect-disconnect), and
 /// <see cref="ApplyHidStatuses"/> on every <see cref="ControllerHidService"/> poll tick
@@ -26,6 +29,32 @@ public partial class DeviceStatusBarViewModel : ViewModelBase
 
     public bool HasGamepads => GamepadStatuses.Count > 0;
     public bool HasDevices => AllDeviceStatuses.Count > 0;
+
+    // GamepadStatuses is only ever added to/removed from on the UI thread (SyncConnectedDevices),
+    // so MainWindowViewModel.ApplyMotionAndTouchAim - which needs to resolve a device name to its
+    // VendorId/ProductId from ControllerHidService's own background poll thread - can't safely
+    // enumerate it directly (ObservableCollection isn't thread-safe against concurrent Add/Remove).
+    // This lock-guarded lookup is rebuilt alongside GamepadStatuses and is safe to query from any
+    // thread; VendorId/ProductId never change after a ControllerStatus is created, only its
+    // battery/gyro/touch fields do, so this snapshot never goes stale for the purpose it serves.
+    private readonly object _vidPidLookupLock = new();
+    private readonly Dictionary<string, (int VendorId, int ProductId)> _vidPidByDeviceName = new();
+
+    public bool TryGetGamepadVidPid(string deviceInstanceName, out int vendorId, out int productId)
+    {
+        lock (_vidPidLookupLock)
+        {
+            if (_vidPidByDeviceName.TryGetValue(deviceInstanceName, out var vidPid))
+            {
+                (vendorId, productId) = vidPid;
+                return true;
+            }
+        }
+
+        vendorId = 0;
+        productId = 0;
+        return false;
+    }
 
     public DeviceStatusBarViewModel()
     {
@@ -59,6 +88,15 @@ public partial class DeviceStatusBarViewModel : ViewModelBase
                 ProductId = productId,
                 Category = DevicePresetService.DetectCategory(d.InstanceName)
             });
+        }
+
+        lock (_vidPidLookupLock)
+        {
+            _vidPidByDeviceName.Clear();
+            foreach (var s in GamepadStatuses)
+            {
+                _vidPidByDeviceName[s.DeviceInstanceName] = (s.VendorId, s.ProductId);
+            }
         }
 
         // AllDeviceStatuses: every physical device (gamepad + wheel/pedal), diffed the same

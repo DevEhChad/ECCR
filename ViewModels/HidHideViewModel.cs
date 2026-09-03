@@ -37,6 +37,18 @@ public partial class HidHideViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isHidHideActive = false;
 
+    /// <summary>
+    /// When true (the default), <see cref="OnVirtualDevicesToggled"/> drives <see cref="IsHidHideActive"/>
+    /// automatically: virtual devices off always forces cloaking off, and virtual devices back on
+    /// restores whatever cloaking was set to right before that. When false, cloaking is fully
+    /// manual and this hook does nothing.
+    /// </summary>
+    [ObservableProperty]
+    private bool _linkCloakingToVirtualDevices = true;
+
+    /// <summary>Cloaking state captured by <see cref="OnVirtualDevicesToggled"/> the moment virtual devices turn off, so turning them back on can restore it exactly.</summary>
+    private bool _savedCloakingBeforeVirtualOff;
+
     [ObservableProperty]
     private bool _isAppListInverted = false;
 
@@ -82,6 +94,7 @@ public partial class HidHideViewModel : ViewModelBase
         {
             IsHidHideActive = settings.IsHidHideActive;
             _hidHideManager?.SetGlobalHidingState(IsHidHideActive);
+            LinkCloakingToVirtualDevices = settings.LinkCloakingToVirtualDevices;
 
             IsAppListInverted = settings.IsAppListInverted;
             if (_hidHideManager != null) _hidHideManager.IsAppListInverted = IsAppListInverted;
@@ -109,6 +122,7 @@ public partial class HidHideViewModel : ViewModelBase
     public void WriteSettings(AppSettings settings)
     {
         settings.IsHidHideActive = IsHidHideActive;
+        settings.LinkCloakingToVirtualDevices = LinkCloakingToVirtualDevices;
         settings.IsAppListInverted = IsAppListInverted;
         settings.BlockedInstanceIds = _hidHideManager?.GetBlockedInstanceIds() ?? new List<string>();
         settings.WhitelistedApplications = _hidHideManager?.GetApplicationExemptions() ?? new List<string>();
@@ -150,6 +164,7 @@ public partial class HidHideViewModel : ViewModelBase
         settings.BlockedInstanceIds = blockedIds;
         settings.WhitelistedApplications = _hidHideManager.GetApplicationExemptions();
         settings.IsHidHideActive = IsHidHideActive;
+        settings.LinkCloakingToVirtualDevices = LinkCloakingToVirtualDevices;
         settings.IsAppListInverted = IsAppListInverted;
 
         _saveSettings();
@@ -194,6 +209,7 @@ public partial class HidHideViewModel : ViewModelBase
     {
         if (_hidHideManager == null) return;
         _hidHideManager.ToggleDeviceHiding(item, item.IsHidden);
+        _hidHideManager.SyncLiveNow();
         _settingsAccessor().BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         _saveSettings();
     }
@@ -210,6 +226,7 @@ public partial class HidHideViewModel : ViewModelBase
                 _hidHideManager.ToggleDeviceHiding(device, true);
             }
         }
+        _hidHideManager.SyncLiveNow();
         _settingsAccessor().BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         _saveSettings();
     }
@@ -233,6 +250,37 @@ public partial class HidHideViewModel : ViewModelBase
         if (_isApplyingSettings || _hidHideManager == null) return;
         _hidHideManager.SetGlobalHidingState(value);
         _saveSettings();
+    }
+
+    partial void OnLinkCloakingToVirtualDevicesChanged(bool value)
+    {
+        if (_isApplyingSettings) return;
+        _saveSettings();
+    }
+
+    /// <summary>
+    /// Called from <c>MainWindowViewModel.OnIsVirtualOutputActiveChanged</c> whenever Virtual
+    /// Devices is toggled. When <see cref="LinkCloakingToVirtualDevices"/> is off, this is a
+    /// no-op - cloaking stays exactly as the user last set it regardless of Virtual Devices
+    /// state. When on: turning Virtual Devices off remembers the current cloaking state and
+    /// forces cloaking off (nothing to cloak for while there's no virtual output to avoid
+    /// double-input on); turning Virtual Devices back on restores cloaking to whatever it was
+    /// remembered as - so a device that was never cloaked stays uncloaked, and one that was
+    /// cloaked comes back cloaked, without the user having to re-toggle it themselves.
+    /// </summary>
+    public void OnVirtualDevicesToggled(bool virtualActive)
+    {
+        if (!LinkCloakingToVirtualDevices) return;
+
+        if (!virtualActive)
+        {
+            _savedCloakingBeforeVirtualOff = IsHidHideActive;
+            IsHidHideActive = false;
+        }
+        else
+        {
+            IsHidHideActive = _savedCloakingBeforeVirtualOff;
+        }
     }
 
     /// <summary>

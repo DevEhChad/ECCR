@@ -81,11 +81,15 @@ public class WheelForceFeedbackService : IDisposable
     private static readonly string LogFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "ffb-debug.log");
 
+    private const long MaxLogSizeBytes = 5 * 1024 * 1024;
+
     private static void LogDebug(string message)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
+            if (File.Exists(LogFilePath) && new FileInfo(LogFilePath).Length > MaxLogSizeBytes)
+                File.Delete(LogFilePath);
             File.AppendAllText(LogFilePath, $"[{DateTime.Now:HH:mm:ss.fff}] {message}\n");
         }
         catch { }
