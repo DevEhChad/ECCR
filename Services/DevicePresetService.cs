@@ -1,5 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using ECCR.Models;
 
 namespace ECCR.Services;
@@ -21,6 +23,20 @@ public enum DeviceHardwareCategory
 }
 
 /// <summary>
+/// Which virtual output backend a preset/Output-As switch targets - the same three backends
+/// <see cref="CompositeFeederService"/> fans mapping output out to. Kept as its own small enum
+/// (rather than reusing <see cref="ECCR.Models.VirtualEmulationMode"/>, which only distinguishes
+/// two) so <see cref="DevicePresetService.GeneratePreset"/> and
+/// <see cref="ECCR.ViewModels.AutoBindWizardViewModel"/> can express all three real backends.
+/// </summary>
+public enum OutputCategory
+{
+    Xbox,
+    DualShock4,
+    Wheel
+}
+
+/// <summary>
 /// Everything about mapping a *specific* piece of hardware, keyed off nothing more than its
 /// DirectInput instance name string (there's no vendor/product ID lookup - device names are
 /// matched by substring in <see cref="DetectCategory"/>). Three things live here that all
@@ -28,11 +44,12 @@ public enum DeviceHardwareCategory
 /// indices (<see cref="GetButtonDisplayName"/>/<see cref="GetAxisDisplayName"/>, used by the
 /// "Click to Bind" listener and the Calibration dialog), best-guess default target channel
 /// per index (used by <c>MainWindowViewModel.GuessBestTargetChannel</c> when a new binding is
-/// captured), and the full one-click preset used by the Auto-Bind Wizard
-/// (<see cref="GeneratePreset"/>). Physical index numbering follows SharpDX/DirectInput
-/// convention: buttons 0-31 are the device's ordinary buttons, and 128-131 are a synthetic
-/// range <see cref="InputDeviceManager"/> assigns to a POV hat's Up/Right/Down/Left when one
-/// is present (there's no such thing as "button 128" on real hardware).
+/// captured), and the full one-click preset used by the Auto-Bind Wizard and the per-device
+/// "Output As" switch (<see cref="GeneratePreset"/>/<see cref="ApplyPreset"/>). Physical index
+/// numbering follows SharpDX/DirectInput convention: buttons 0-31 are the device's ordinary
+/// buttons, and 128-131 are a synthetic range <see cref="InputDeviceManager"/> assigns to a
+/// POV hat's Up/Right/Down/Left when one is present (there's no such thing as "button 128" on
+/// real hardware).
 /// </summary>
 public static class DevicePresetService
 {
@@ -68,26 +85,26 @@ public static class DevicePresetService
         if (dev.Contains("esx") || (dev.Contains("moza") && dev.Contains("xbox")))
             return DeviceHardwareCategory.MozaEsxWheel;
 
-        if (dev.Contains("moza") || dev.Contains("gudsen") || dev.Contains("r3") || dev.Contains("r5") || 
-            dev.Contains("r9") || dev.Contains("r12") || dev.Contains("r16") || dev.Contains("r21") || 
+        if (dev.Contains("moza") || dev.Contains("gudsen") || dev.Contains("r3") || dev.Contains("r5") ||
+            dev.Contains("r9") || dev.Contains("r12") || dev.Contains("r16") || dev.Contains("r21") ||
             dev.Contains("es steering") || dev.Contains("ks steering") || dev.Contains("fsr") || dev.Contains("cs steering") || dev.Contains("gs steering"))
             return DeviceHardwareCategory.MozaWheel;
 
-        if (dev.Contains("g29") || dev.Contains("g920") || dev.Contains("g923") || dev.Contains("g27") || 
+        if (dev.Contains("g29") || dev.Contains("g920") || dev.Contains("g923") || dev.Contains("g27") ||
             dev.Contains("g25") || dev.Contains("logitech") || dev.Contains("driving force") || dev.Contains("pro racing wheel"))
             return DeviceHardwareCategory.LogitechRig;
 
         if (dev.Contains("fanatec") || dev.Contains("csl") || dev.Contains("podium") || dev.Contains("clubsport") || dev.Contains("gran turismo dd"))
             return DeviceHardwareCategory.FanatecRig;
 
-        if (dev.Contains("thrustmaster") || dev.Contains("t300") || dev.Contains("t248") || dev.Contains("t150") || 
+        if (dev.Contains("thrustmaster") || dev.Contains("t300") || dev.Contains("t248") || dev.Contains("t150") ||
             dev.Contains("t500") || dev.Contains("tx") || dev.Contains("t-gt") || dev.Contains("ts-pc") || dev.Contains("t818") || dev.Contains("t128"))
             return DeviceHardwareCategory.ThrustmasterRig;
 
         if (dev.Contains("simagic") || dev.Contains("alpha") || dev.Contains("p1000") || dev.Contains("p2000") || dev.Contains("gt neo"))
             return DeviceHardwareCategory.SimagicRig;
 
-        if (dev.Contains("wheel") || dev.Contains("pedal") || dev.Contains("shifter") || dev.Contains("handbrake") || 
+        if (dev.Contains("wheel") || dev.Contains("pedal") || dev.Contains("shifter") || dev.Contains("handbrake") ||
             dev.Contains("simucube") || dev.Contains("cammus") || dev.Contains("asetek") || dev.Contains("heusinkveld") || dev.Contains("vrs"))
             return DeviceHardwareCategory.GenericWheelOrPedals;
 
@@ -291,6 +308,14 @@ public static class DevicePresetService
         return type == InputType.Axis ? GetAxisDisplayName(deviceName, index) : GetButtonDisplayName(deviceName, index);
     }
 
+    /// <summary>
+    /// The name to actually show for a whole device: the user's device nickname
+    /// (<see cref="WheelDeviceSettings.DeviceNickname"/>) if set, else the raw device name.
+    /// Counterpart to <see cref="GetEffectiveDisplayName"/> for one physical input.
+    /// </summary>
+    public static string GetEffectiveDeviceName(string deviceName, WheelDeviceSettings? settings) =>
+        !string.IsNullOrWhiteSpace(settings?.DeviceNickname) ? settings.DeviceNickname! : deviceName;
+
     /// <summary>Same idea as <see cref="GetButtonDisplayName"/>, but for the 6-8 element raw axis array (see <see cref="RawDeviceInputState.Axes"/>).</summary>
     public static string GetAxisDisplayName(string deviceName, int index)
     {
@@ -347,15 +372,109 @@ public static class DevicePresetService
     }
 
     /// <summary>
-    /// Builds the Auto-Bind Wizard's full preset list for one device: every axis/button this
-    /// category is known to have, each pre-wired to a sensible default target. Passing
-    /// <paramref name="targetIsWheel"/> true routes every default to a "[Wheel] ..." target
-    /// (vJoy) instead of "[Xbox] ...", following the wizard's DirectInput Wheel vs. Xbox
-    /// Gamepad radio choice. Note <paramref name="buttonCount"/>/<paramref name="axisCount"/>
-    /// are accepted but currently unused - the list length is fixed per category below
-    /// rather than trimmed to what the connected device actually reports.
+    /// Maps every "[Xbox] ..." target string this file's presets can emit to its "[DS4] ..."
+    /// functional equivalent (see the parallel <c>xboxBinds</c>/<c>ds4Binds</c> arrays in
+    /// <c>MainWindowViewModel.BuildAvailableVirtualOutputs</c>, which this table's values must
+    /// stay in sync with). Used by <see cref="ForCategory"/> so every preset branch below only
+    /// has to spell out its Xbox and Wheel strings - the DS4 string is derived, not duplicated.
     /// </summary>
-    public static List<PresetBindingItem> GeneratePreset(string deviceName, int buttonCount, int axisCount, bool targetIsWheel)
+    private static readonly Dictionary<string, string> XboxToDs4Target = new()
+    {
+        ["[Xbox] Left Stick X (Steer / Horizontal)"] = "[DS4] Left Stick X (Steer / Horizontal)",
+        ["[Xbox] Left Stick Y (Steer / Vertical)"] = "[DS4] Left Stick Y (Steer / Vertical)",
+        ["[Xbox] Right Stick X (Camera / Look Horizontal)"] = "[DS4] Right Stick X (Camera / Look Horizontal)",
+        ["[Xbox] Right Stick Y (Camera / Look Vertical)"] = "[DS4] Right Stick Y (Camera / Look Vertical)",
+        ["[Xbox] Left Trigger (LT / Brake Axis)"] = "[DS4] L2 Trigger (Brake Axis)",
+        ["[Xbox] Right Trigger (RT / Gas Axis)"] = "[DS4] R2 Trigger (Gas Axis)",
+        ["[Xbox] Xbox A (Cross / South / Handbrake)"] = "[DS4] Cross (X / South)",
+        ["[Xbox] Xbox B (Circle / East)"] = "[DS4] Circle (O / East)",
+        ["[Xbox] Xbox X (Square / West / Shift Down)"] = "[DS4] Square (Sq / West)",
+        ["[Xbox] Xbox Y (Triangle / North / Shift Up)"] = "[DS4] Triangle (Tri / North)",
+        ["[Xbox] Xbox LB (Left Bumper / L1 / Clutch)"] = "[DS4] L1 (Left Bumper / Clutch)",
+        ["[Xbox] Xbox RB (Right Bumper / R1)"] = "[DS4] R1 (Right Bumper)",
+        ["[Xbox] Xbox LSB (Left Stick Click / L3)"] = "[DS4] L3 (Left Stick Click)",
+        ["[Xbox] Xbox RSB (Right Stick Click / R3)"] = "[DS4] R3 (Right Stick Click)",
+        ["[Xbox] D-Pad Up"] = "[DS4] D-Pad Up",
+        ["[Xbox] D-Pad Down"] = "[DS4] D-Pad Down",
+        ["[Xbox] D-Pad Left"] = "[DS4] D-Pad Left",
+        ["[Xbox] D-Pad Right"] = "[DS4] D-Pad Right",
+        ["[Xbox] Xbox Menu (Start / Options)"] = "[DS4] Options (Start)",
+        ["[Xbox] Xbox View (Back / Map / Share)"] = "[DS4] Share (Back)",
+        ["[Xbox] Xbox Guide (Home / Guide)"] = "[DS4] PS (Guide)",
+    };
+
+    /// <summary>
+    /// Picks the right target string for <paramref name="category"/> given a branch's Xbox and
+    /// Wheel strings - Wheel returns as-is, Xbox returns as-is, DualShock4 looks up the Xbox
+    /// string's equivalent in <see cref="XboxToDs4Target"/> (falling back to the Xbox string
+    /// itself if a new Xbox target is ever added here without a matching DS4 entry, so a preset
+    /// still produces a *some* target rather than an empty one).
+    /// </summary>
+    private static string ForCategory(OutputCategory category, string xboxTarget, string wheelTarget) => category switch
+    {
+        OutputCategory.Wheel => wheelTarget,
+        OutputCategory.DualShock4 => XboxToDs4Target.TryGetValue(xboxTarget, out var ds4) ? ds4 : xboxTarget,
+        _ => xboxTarget
+    };
+
+    /// <summary>
+    /// Drops preset entries whose physical index the connected device doesn't actually report -
+    /// <see cref="GeneratePreset"/>'s per-category tables are fixed-length and were previously
+    /// applied unconditionally regardless of what the device's real <c>ButtonCount</c>/<c>AxisCount</c>
+    /// (see <see cref="InputDeviceManager.GetConnectedDevices"/>) said, producing bindings for
+    /// buttons/axes that don't exist. POV-hat synthetic indices (128-131) are kept only when
+    /// <paramref name="hasPov"/> is true.
+    /// </summary>
+    private static List<PresetBindingItem> FilterToCapabilities(List<PresetBindingItem> list, int buttonCount, int axisCount, bool hasPov) =>
+        list.Where(i => i.Type == InputType.Axis
+            ? i.PhysicalIndex < axisCount
+            : (i.PhysicalIndex < buttonCount || (i.PhysicalIndex is >= 128 and <= 131 && hasPov))
+        ).ToList();
+
+    /// <summary>
+    /// Common tail for every <see cref="GeneratePreset"/> branch: filters to what the device
+    /// actually reports (<see cref="FilterToCapabilities"/>), then for Wheel output only, adds a
+    /// generic fallback binding for any real button beyond the hardcoded per-category table
+    /// (e.g. a 20-button wheel whose brand table above only names buttons 0-18) so extra buttons
+    /// aren't silently dropped - targeted at the already-provisioned "[Wheel] Button N" (1-32)
+    /// vocabulary in <c>MainWindowViewModel.BuildAvailableVirtualOutputs</c>, keyed by the
+    /// button's own 1-based index. Xbox/DS4 output intentionally leaves extra buttons unmapped -
+    /// a 14-17-button virtual pad has no sensible destination for a 20th physical button.
+    /// </summary>
+    private static List<PresetBindingItem> FinalizePreset(List<PresetBindingItem> list, string deviceName, int buttonCount, int axisCount, bool hasPov, OutputCategory outputCategory)
+    {
+        var filtered = FilterToCapabilities(list, buttonCount, axisCount, hasPov);
+
+        if (outputCategory == OutputCategory.Wheel)
+        {
+            var covered = filtered.Where(i => i.Type == InputType.Button && i.PhysicalIndex is >= 0 and < 128)
+                                   .Select(i => i.PhysicalIndex).ToHashSet();
+
+            for (int i = 0; i < buttonCount; i++)
+            {
+                if (covered.Contains(i)) continue;
+                if (i + 1 > 32) break; // only 32 "[Wheel] Button N" slots exist
+
+                filtered.Add(new PresetBindingItem
+                {
+                    PhysicalName = GetButtonDisplayName(deviceName, i),
+                    Type = InputType.Button,
+                    PhysicalIndex = i,
+                    DefaultTargetOutput = $"[Wheel] Button {i + 1}"
+                });
+            }
+        }
+
+        return filtered;
+    }
+
+    /// <summary>
+    /// Builds the Auto-Bind Wizard's (and the per-device "Output As" switch's) full preset list
+    /// for one device: every axis/button this category is known to have that the device actually
+    /// reports (see <see cref="FinalizePreset"/>), each pre-wired to a sensible default target in
+    /// the chosen <paramref name="outputCategory"/>.
+    /// </summary>
+    public static List<PresetBindingItem> GeneratePreset(string deviceName, int buttonCount, int axisCount, OutputCategory outputCategory, bool hasPov = true)
     {
         var list = new List<PresetBindingItem>();
         var category = DetectCategory(deviceName);
@@ -363,78 +482,78 @@ public static class DevicePresetService
         if (category == DeviceHardwareCategory.PlayStationController)
         {
             // DirectInput Axes for DualSense (PS5) & DualShock 4 (PS4)
-            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Horizontal", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Steering (Axis X)" : "[Xbox] Left Stick X (Steer / Horizontal)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Vertical", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Left Stick Y (Steer / Vertical)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Horizontal", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Handbrake (Axis Ry)" : "[Xbox] Right Stick X (Camera / Look Horizontal)" });
-            list.Add(new PresetBindingItem { PhysicalName = "L2 Trigger Axis", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Brake (Axis Z)" : "[Xbox] Left Trigger (LT / Brake Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "R2 Trigger Axis", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Right Trigger (RT / Gas Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Vertical", Type = InputType.Axis, PhysicalIndex = 5, DefaultTargetOutput = targetIsWheel ? "[Wheel] Combined Slider 0" : "[Xbox] Right Stick Y (Camera / Look Vertical)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Horizontal", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Stick X (Steer / Horizontal)", "[Wheel] Steering (Axis X)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Vertical", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Stick Y (Steer / Vertical)", "[Wheel] Gas / Throttle (Axis Y)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Horizontal", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Stick X (Camera / Look Horizontal)", "[Wheel] Handbrake (Axis Ry)") });
+            list.Add(new PresetBindingItem { PhysicalName = "L2 Trigger Axis", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Trigger (LT / Brake Axis)", "[Wheel] Brake (Axis Z)") });
+            list.Add(new PresetBindingItem { PhysicalName = "R2 Trigger Axis", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Trigger (RT / Gas Axis)", "[Wheel] Gas / Throttle (Axis Y)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Vertical", Type = InputType.Axis, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Stick Y (Camera / Look Vertical)", "[Wheel] Combined Slider 0") });
 
             // DirectInput Face Buttons & Controls
-            list.Add(new PresetBindingItem { PhysicalName = "Cross (✕)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 1" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Circle (○)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 2" : "[Xbox] Xbox B (Circle / East)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Square (□)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 3" : "[Xbox] Xbox X (Square / West / Shift Down)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Triangle (△)", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 4" : "[Xbox] Xbox Y (Triangle / North / Shift Up)" });
-            list.Add(new PresetBindingItem { PhysicalName = "L1 Bumper", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Down (Left Shift)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
-            list.Add(new PresetBindingItem { PhysicalName = "R1 Bumper", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Up (Right Shift)" : "[Xbox] Xbox RB (Right Bumper / R1)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Create / Share", Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 11" : "[Xbox] Xbox View (Back / Map / Share)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Options / Menu", Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 12" : "[Xbox] Xbox Menu (Start / Options)" });
-            list.Add(new PresetBindingItem { PhysicalName = "L3 Stick Click", Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 9" : "[Xbox] Xbox LSB (Left Stick Click / L3)" });
-            list.Add(new PresetBindingItem { PhysicalName = "R3 Stick Click", Type = InputType.Button, PhysicalIndex = 11, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 10" : "[Xbox] Xbox RSB (Right Stick Click / R3)" });
-            list.Add(new PresetBindingItem { PhysicalName = "PS Guide Button", Type = InputType.Button, PhysicalIndex = 12, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 13" : "[Xbox] Xbox Guide (Home / Guide)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Cross (✕)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Button 1") });
+            list.Add(new PresetBindingItem { PhysicalName = "Circle (○)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox B (Circle / East)", "[Wheel] Button 2") });
+            list.Add(new PresetBindingItem { PhysicalName = "Square (□)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox X (Square / West / Shift Down)", "[Wheel] Button 3") });
+            list.Add(new PresetBindingItem { PhysicalName = "Triangle (△)", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Y (Triangle / North / Shift Up)", "[Wheel] Button 4") });
+            list.Add(new PresetBindingItem { PhysicalName = "L1 Bumper", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Paddle Down (Left Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = "R1 Bumper", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RB (Right Bumper / R1)", "[Wheel] Paddle Up (Right Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Create / Share", Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox View (Back / Map / Share)", "[Wheel] Button 11") });
+            list.Add(new PresetBindingItem { PhysicalName = "Options / Menu", Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Menu (Start / Options)", "[Wheel] Button 12") });
+            list.Add(new PresetBindingItem { PhysicalName = "L3 Stick Click", Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LSB (Left Stick Click / L3)", "[Wheel] Button 9") });
+            list.Add(new PresetBindingItem { PhysicalName = "R3 Stick Click", Type = InputType.Button, PhysicalIndex = 11, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RSB (Right Stick Click / R3)", "[Wheel] Button 10") });
+            list.Add(new PresetBindingItem { PhysicalName = "PS Guide Button", Type = InputType.Button, PhysicalIndex = 12, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Guide (Home / Guide)", "[Wheel] Button 13") });
 
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Up", Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 14" : "[Xbox] D-Pad Up" });
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Down", Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 15" : "[Xbox] D-Pad Down" });
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Left", Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 16" : "[Xbox] D-Pad Left" });
-            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Right", Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 17" : "[Xbox] D-Pad Right" });
-            return list;
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Up", Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Up", "[Wheel] Button 14") });
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Down", Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Down", "[Wheel] Button 15") });
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Left", Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Left", "[Wheel] Button 16") });
+            list.Add(new PresetBindingItem { PhysicalName = "D-Pad Right", Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Right", "[Wheel] Button 17") });
+            return FinalizePreset(list, deviceName, buttonCount, axisCount, hasPov, outputCategory);
         }
 
         bool isMoza = category == DeviceHardwareCategory.MozaEsxWheel || category == DeviceHardwareCategory.MozaWheel;
 
         if (isMoza)
         {
-            list.Add(new PresetBindingItem { PhysicalName = "Steering Wheel (Axis X)", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Steering (Axis X)" : "[Xbox] Left Stick X (Steer / Horizontal)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Throttle Pedal (Axis Y)", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Right Trigger (RT / Gas Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Brake Pedal (Axis Z)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Brake (Axis Z)" : "[Xbox] Left Trigger (LT / Brake Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Clutch Pedal (Axis Rx)", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Clutch (Axis Rx)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Handbrake (Axis Ry)", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Handbrake (Axis Ry)" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza A Button (Xbox Ⓐ)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 1" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza B Button (Xbox Ⓑ)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 2" : "[Xbox] Xbox B (Circle / East)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza X Button (Xbox Ⓧ)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 3" : "[Xbox] Xbox X (Square / West / Shift Down)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza Y Button (Xbox Ⓨ)", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 4" : "[Xbox] Xbox Y (Triangle / North / Shift Up)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza View Button (⧉ Back)", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 11" : "[Xbox] Xbox View (Back / Map / Share)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza Menu Button (☰ Start)", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 12" : "[Xbox] Xbox Menu (Start / Options)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Paddle (Paddle Down / Shift Down)", Type = InputType.Button, PhysicalIndex = 6, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Down (Left Shift)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Paddle (Paddle Up / Shift Up)", Type = InputType.Button, PhysicalIndex = 7, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Up (Right Shift)" : "[Xbox] Xbox RB (Right Bumper / R1)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Click (LSB)", Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 9" : "[Xbox] Xbox LSB (Left Stick Click / L3)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Click (RSB)", Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 10" : "[Xbox] Xbox RSB (Right Stick Click / R3)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza Xbox Guide Button (⨂ Home)", Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 13" : "[Xbox] Xbox Guide (Home / Guide)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Steering Wheel (Axis X)", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Stick X (Steer / Horizontal)", "[Wheel] Steering (Axis X)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Throttle Pedal (Axis Y)", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Trigger (RT / Gas Axis)", "[Wheel] Gas / Throttle (Axis Y)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Brake Pedal (Axis Z)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Trigger (LT / Brake Axis)", "[Wheel] Brake (Axis Z)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Clutch Pedal (Axis Rx)", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Clutch (Axis Rx)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Handbrake (Axis Ry)", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Handbrake (Axis Ry)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza A Button (Xbox Ⓐ)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Button 1") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza B Button (Xbox Ⓑ)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox B (Circle / East)", "[Wheel] Button 2") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza X Button (Xbox Ⓧ)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox X (Square / West / Shift Down)", "[Wheel] Button 3") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza Y Button (Xbox Ⓨ)", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Y (Triangle / North / Shift Up)", "[Wheel] Button 4") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza View Button (⧉ Back)", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox View (Back / Map / Share)", "[Wheel] Button 11") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza Menu Button (☰ Start)", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Menu (Start / Options)", "[Wheel] Button 12") });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Paddle (Paddle Down / Shift Down)", Type = InputType.Button, PhysicalIndex = 6, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Paddle Down (Left Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Paddle (Paddle Up / Shift Up)", Type = InputType.Button, PhysicalIndex = 7, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RB (Right Bumper / R1)", "[Wheel] Paddle Up (Right Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Click (LSB)", Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LSB (Left Stick Click / L3)", "[Wheel] Button 9") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Click (RSB)", Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RSB (Right Stick Click / R3)", "[Wheel] Button 10") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza Xbox Guide Button (⨂ Home)", Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Guide (Home / Guide)", "[Wheel] Button 13") });
 
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Up", Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 14" : "[Xbox] D-Pad Up" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Down", Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 15" : "[Xbox] D-Pad Down" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Left", Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 16" : "[Xbox] D-Pad Left" });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Right", Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 17" : "[Xbox] D-Pad Right" });
-            return list;
+            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Up", Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Up", "[Wheel] Button 14") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Down", Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Down", "[Wheel] Button 15") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Left", Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Left", "[Wheel] Button 16") });
+            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Right", Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Right", "[Wheel] Button 17") });
+            return FinalizePreset(list, deviceName, buttonCount, axisCount, hasPov, outputCategory);
         }
 
         bool isSimHardware = IsWheelOrPedalCategory(category);
 
         if (isSimHardware)
         {
-            list.Add(new PresetBindingItem { PhysicalName = "Steering Wheel (Axis X)", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Steering (Axis X)" : "[Xbox] Left Stick X (Steer / Horizontal)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Throttle Pedal (Axis Y)", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Right Trigger (RT / Gas Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Brake Pedal (Axis Z)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Brake (Axis Z)" : "[Xbox] Left Trigger (LT / Brake Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Clutch Pedal (Axis Rx)", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Clutch (Axis Rx)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Handbrake (Axis Ry)", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Handbrake (Axis Ry)" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Steering Wheel (Axis X)", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Stick X (Steer / Horizontal)", "[Wheel] Steering (Axis X)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Throttle Pedal (Axis Y)", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Trigger (RT / Gas Axis)", "[Wheel] Gas / Throttle (Axis Y)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Brake Pedal (Axis Z)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Trigger (LT / Brake Axis)", "[Wheel] Brake (Axis Z)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Clutch Pedal (Axis Rx)", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Clutch (Axis Rx)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Handbrake (Axis Ry)", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Handbrake (Axis Ry)") });
 
-            list.Add(new PresetBindingItem { PhysicalName = "Right Paddle (Paddle Up)", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Up (Right Shift)" : "[Xbox] Xbox RB (Right Bumper / R1)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Paddle (Paddle Down)", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Down (Left Shift)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Paddle (Paddle Up)", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RB (Right Bumper / R1)", "[Wheel] Paddle Up (Right Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Paddle (Paddle Down)", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Paddle Down (Left Shift)") });
 
-            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 0), Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 1" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
-            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 1), Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 2" : "[Xbox] Xbox B (Circle / East)" });
-            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 2), Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 3" : "[Xbox] Xbox X (Square / West / Shift Down)" });
-            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 3), Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 4" : "[Xbox] Xbox Y (Triangle / North / Shift Up)" });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 0), Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Button 1") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 1), Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox B (Circle / East)", "[Wheel] Button 2") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 2), Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox X (Square / West / Shift Down)", "[Wheel] Button 3") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 3), Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Y (Triangle / North / Shift Up)", "[Wheel] Button 4") });
 
             for (int i = 12; i <= 18; i++)
             {
@@ -449,7 +568,7 @@ public static class DevicePresetService
                     18 => "[Wheel] Reverse Gear",
                     _ => $"[Wheel] Button {i + 1}"
                 };
-                // In Xbox mode these 7 shifter buttons must land on distinct channels rather
+                // In Xbox/DS4 mode these 7 shifter buttons must land on distinct channels rather
                 // than all collapsing onto one - D-Pad and Menu/View/Guide are otherwise unused
                 // by this preset branch, so they're free to repurpose as gear indicators.
                 string xboxTarget = i switch
@@ -463,26 +582,62 @@ public static class DevicePresetService
                     18 => "[Xbox] Xbox Guide (Home / Guide)",
                     _ => "[Xbox] Xbox A (Cross / South / Handbrake)"
                 };
-                list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, i), Type = InputType.Button, PhysicalIndex = i, DefaultTargetOutput = targetIsWheel ? gearTarget : xboxTarget });
+                list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, i), Type = InputType.Button, PhysicalIndex = i, DefaultTargetOutput = ForCategory(outputCategory, xboxTarget, gearTarget) });
             }
         }
         else
         {
-            list.Add(new PresetBindingItem { PhysicalName = "Left Stick X", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Steering (Axis X)" : "[Xbox] Left Stick X (Steer / Horizontal)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Y", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Left Stick Y (Steer / Vertical)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Trigger (LT)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Brake (Axis Z)" : "[Xbox] Left Trigger (LT / Brake Axis)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Stick X", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Handbrake (Axis Ry)" : "[Xbox] Right Stick X (Camera / Look Horizontal)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Y", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Combined Slider 0" : "[Xbox] Right Stick Y (Camera / Look Vertical)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Trigger (RT)", Type = InputType.Axis, PhysicalIndex = 5, DefaultTargetOutput = targetIsWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Right Trigger (RT / Gas Axis)" });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick X", Type = InputType.Axis, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Stick X (Steer / Horizontal)", "[Wheel] Steering (Axis X)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Y", Type = InputType.Axis, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Stick Y (Steer / Vertical)", "[Wheel] Gas / Throttle (Axis Y)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Left Trigger (LT)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Trigger (LT / Brake Axis)", "[Wheel] Brake (Axis Z)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick X", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Stick X (Camera / Look Horizontal)", "[Wheel] Handbrake (Axis Ry)") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Y", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Stick Y (Camera / Look Vertical)", "[Wheel] Combined Slider 0") });
+            list.Add(new PresetBindingItem { PhysicalName = "Right Trigger (RT)", Type = InputType.Axis, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Right Trigger (RT / Gas Axis)", "[Wheel] Gas / Throttle (Axis Y)") });
 
-            list.Add(new PresetBindingItem { PhysicalName = "A Button", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 1" : "[Xbox] Xbox A (Cross / South / Handbrake)" });
-            list.Add(new PresetBindingItem { PhysicalName = "B Button", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 2" : "[Xbox] Xbox B (Circle / East)" });
-            list.Add(new PresetBindingItem { PhysicalName = "X Button", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 3" : "[Xbox] Xbox X (Square / West / Shift Down)" });
-            list.Add(new PresetBindingItem { PhysicalName = "Y Button", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = targetIsWheel ? "[Wheel] Button 4" : "[Xbox] Xbox Y (Triangle / North / Shift Up)" });
-            list.Add(new PresetBindingItem { PhysicalName = "LB Bumper", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Down (Left Shift)" : "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)" });
-            list.Add(new PresetBindingItem { PhysicalName = "RB Bumper", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = targetIsWheel ? "[Wheel] Paddle Up (Right Shift)" : "[Xbox] Xbox RB (Right Bumper / R1)" });
+            list.Add(new PresetBindingItem { PhysicalName = "A Button", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Button 1") });
+            list.Add(new PresetBindingItem { PhysicalName = "B Button", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox B (Circle / East)", "[Wheel] Button 2") });
+            list.Add(new PresetBindingItem { PhysicalName = "X Button", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox X (Square / West / Shift Down)", "[Wheel] Button 3") });
+            list.Add(new PresetBindingItem { PhysicalName = "Y Button", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Y (Triangle / North / Shift Up)", "[Wheel] Button 4") });
+            list.Add(new PresetBindingItem { PhysicalName = "LB Bumper", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Paddle Down (Left Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = "RB Bumper", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RB (Right Bumper / R1)", "[Wheel] Paddle Up (Right Shift)") });
         }
 
-        return list;
+        return FinalizePreset(list, deviceName, buttonCount, axisCount, hasPov, outputCategory);
+    }
+
+    /// <summary>
+    /// Applies a generated preset to the shared mapping list for one device: removes every
+    /// existing <see cref="MappingEntry"/> for <paramref name="deviceName"/> and adds one fresh
+    /// entry per <paramref name="presetItems"/>. Pure collection mutation with no ViewModel
+    /// coupling, shared by <c>AutoBindWizardViewModel.ApplyWizardBindings</c> (wizard page) and
+    /// <c>MainWindowViewModel.ApplyOutputModeToDevice</c> (the main grid's per-device "Output As"
+    /// switch) so both entry points stay in sync instead of maintaining two copies of this logic.
+    /// </summary>
+    public static void ApplyPreset(ObservableCollection<MappingEntry> mappings, string deviceName, Guid deviceGuid, List<PresetBindingItem> presetItems, uint targetDeviceId)
+    {
+        var toRemove = mappings.Where(m => m.SourceDeviceName == deviceName).ToList();
+        foreach (var r in toRemove) mappings.Remove(r);
+
+        foreach (var item in presetItems)
+        {
+            bool shouldInvert = item.Type == InputType.Axis &&
+                (item.PhysicalName.Contains("Vertical") || item.PhysicalName.Contains("Stick Y") ||
+                 item.PhysicalName.Contains("Throttle") || item.PhysicalName.Contains("Brake"));
+
+            mappings.Add(new MappingEntry
+            {
+                SourceDeviceName = deviceName,
+                SourceDeviceGuid = deviceGuid,
+                SourceType = item.Type,
+                SourceIndex = item.PhysicalIndex,
+                SourceDisplayName = item.PhysicalName,
+                TargetDeviceId = targetDeviceId,
+                TargetOutput = item.DefaultTargetOutput,
+                Deadzone = item.Type == InputType.Axis ? 0.08 : 0.0,
+                RawMin = 0,
+                RawMax = 65535,
+                IsInverted = shouldInvert
+            });
+        }
     }
 }

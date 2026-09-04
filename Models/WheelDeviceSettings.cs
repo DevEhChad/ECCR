@@ -58,6 +58,16 @@ public partial class WheelDeviceSettings : ObservableObject
     /// (most brands besides Moza don't distinguish a PlayStation-legend vs. Xbox-legend SKU in
     /// <see cref="ECCR.Services.DeviceHardwareCategory"/>), but works for any device.
     /// </summary>
+    /// <summary>
+    /// User-editable override for the whole device's display name (e.g. "My Wheel" instead of
+    /// the raw DirectInput instance name "MOZA Racing MOZA R9"). Null/empty means show the raw
+    /// name. Keyed the same way as this whole settings object (by <c>MappingEntry.SourceDeviceName</c>),
+    /// so two identical physical devices sharing the same DirectInput instance name also share
+    /// this nickname - a known limitation, same as <see cref="InputNicknames"/> below.
+    /// </summary>
+    [ObservableProperty]
+    private string? _deviceNickname = null;
+
     public Dictionary<string, string> InputNicknames { get; set; } = new();
 
     private static string NicknameKey(InputType type, int index) => $"{type}:{index}";

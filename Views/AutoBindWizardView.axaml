@@ -45,8 +45,9 @@
                 <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
                     <TextBlock Text="Emulation Profile Target" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <RadioButton Content="DirectInput Wheel" IsChecked="{Binding WizardTargetIsWheel}" GroupName="TargetType" Foreground="White"/>
-                        <RadioButton Content="Xbox Gamepad" IsChecked="{Binding !WizardTargetIsWheel}" GroupName="TargetType" Foreground="White"/>
+                        <RadioButton Content="Xbox Gamepad" IsChecked="{Binding IsXboxOutputSelected}" GroupName="TargetType" Foreground="White"/>
+                        <RadioButton Content="DualShock 4" IsChecked="{Binding IsDualShock4OutputSelected}" GroupName="TargetType" Foreground="White"/>
+                        <RadioButton Content="DirectInput Wheel" IsChecked="{Binding IsWheelOutputSelected}" GroupName="TargetType" Foreground="White"/>
                     </StackPanel>
                 </StackPanel>
 

@@ -15,6 +15,9 @@ public class DeviceHardwareInfo
     public string ProductName { get; set; } = string.Empty;
     public int ButtonCount { get; set; }
     public int AxisCount { get; set; }
+
+    /// <summary>Whether the device reports a POV hat (D-Pad) - gates whether <see cref="DevicePresetService.GeneratePreset"/> emits the synthetic 128-131 D-Pad button indices for it.</summary>
+    public bool HasPov { get; set; }
 }
 
 /// <summary>
@@ -53,14 +56,34 @@ public class InputDeviceManager : IDisposable
                 string name = d.InstanceName.ToLowerInvariant();
                 if (name.Contains("vjoy") || name.Contains("vigem") || name.Contains("virtual")) continue;
 
+                // Real per-device capabilities rather than a one-size-fits-all guess, so
+                // DevicePresetService.GeneratePreset can trim its presets to what this specific
+                // device actually has instead of assuming every device is a 32-button/8-axis
+                // superset. Queried via a short-lived Joystick that's never Acquire()'d - reading
+                // Capabilities doesn't require acquisition, and RefreshDevices (below) owns the
+                // long-lived acquired instance for actual polling.
+                int buttonCount = 32;
+                int axisCount = 8;
+                bool hasPov = true;
+                try
+                {
+                    using var probe = new Joystick(_directInput, d.InstanceGuid);
+                    var caps = probe.Capabilities;
+                    buttonCount = caps.ButtonCount;
+                    axisCount = Math.Min(caps.AxeCount, 8); // RawDeviceInputState.Axes is a fixed 8-wide array
+                    hasPov = caps.PovCount > 0;
+                }
+                catch { /* keep the 32/8/true fallback */ }
+
                 list.Add(new DeviceHardwareInfo
                 {
                     InstanceGuid = d.InstanceGuid,
                     ProductGuid = d.ProductGuid,
                     InstanceName = d.InstanceName,
                     ProductName = d.ProductName,
-                    ButtonCount = 32,
-                    AxisCount = 8
+                    ButtonCount = buttonCount,
+                    AxisCount = axisCount,
+                    HasPov = hasPov
                 });
             }
         }

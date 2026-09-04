@@ -115,6 +115,38 @@ public partial class MappingEntry : ObservableObject
     }
 
     /// <summary>
+    /// False for a fresh "Click to Bind" placeholder row (or one still mid-capture) - used to
+    /// hide the rename pencil on unbound rows, since every unbound row shares the same
+    /// placeholder <see cref="SourceDeviceName"/>/<see cref="SourceType"/>/<see cref="SourceIndex"/>
+    /// (see <c>MainWindowViewModel.UncategorizedGamepadDeviceName</c>/<c>UncategorizedWheelDeviceName</c>),
+    /// so renaming one before it's bound would silently rename every other unbound row too.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsBound => SourceDisplayName != "Click to Bind" && !SourceDisplayName.StartsWith("Listening...", StringComparison.Ordinal);
+
+    /// <summary>
+    /// True when <see cref="TargetOutput"/> is a "[Keyboard] ..." target (routed to
+    /// <see cref="ECCR.Services.KeyboardFeederService"/>). Like <see cref="IsWheelTarget"/>,
+    /// drives row UI - a keyboard target has no Player/Wheel Slot concept, so both of those
+    /// dropdowns hide for it.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsKeyboardTarget => TargetOutput.StartsWith("[Keyboard]", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Row UI convenience: whether the Player-slot combo should show for this row's target (Xbox/DS4, not Wheel or Keyboard).</summary>
+    [JsonIgnore]
+    public bool ShowPlayerCombo => !IsWheelTarget && !IsKeyboardTarget;
+
+    /// <summary>Row UI convenience: whether the Wheel-Slot combo should show for this row's target.</summary>
+    [JsonIgnore]
+    public bool ShowWheelSlotCombo => IsWheelTarget && !IsKeyboardTarget;
+
+    partial void OnSourceDisplayNameChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsBound));
+    }
+
+    /// <summary>
     /// True when <see cref="TargetOutput"/> is a "[Wheel] ..." target (routed to the vJoy
     /// backend, see <see cref="ECCR.Services.CompositeFeederService"/>), false for "[Xbox]"/
     /// "[DS4]" targets (ViGEm). Drives which dropdown a mapping row shows for
@@ -128,6 +160,9 @@ public partial class MappingEntry : ObservableObject
     partial void OnTargetOutputChanged(string value)
     {
         OnPropertyChanged(nameof(IsWheelTarget));
+        OnPropertyChanged(nameof(IsKeyboardTarget));
+        OnPropertyChanged(nameof(ShowPlayerCombo));
+        OnPropertyChanged(nameof(ShowWheelSlotCombo));
     }
 
     /// <summary>

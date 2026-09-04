@@ -78,16 +78,31 @@ public partial class MainWindow : Window
     /// </summary>
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm && vm.IsListening)
+        if (DataContext is MainWindowViewModel vm)
         {
-            if (e.Key == Key.Escape)
+            if (vm.IsListening)
             {
-                vm.CancelListening();
-                e.Handled = true;
+                if (e.Key == Key.Escape)
+                {
+                    vm.CancelListening();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Back)
+                {
+                    vm.ClearListeningBinding();
+                    e.Handled = true;
+                }
             }
-            else if (e.Key == Key.Back)
+            else if (vm.IsPickingKeyboardKey)
             {
-                vm.ClearListeningBinding();
+                if (e.Key == Key.Escape)
+                {
+                    vm.CancelKeyPick();
+                }
+                else
+                {
+                    vm.AssignPickedKey(e.Key);
+                }
                 e.Handled = true;
             }
         }

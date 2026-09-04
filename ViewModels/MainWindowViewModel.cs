@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -835,8 +836,26 @@ public partial class MainWindowViewModel : ViewModelBase
         ];
         foreach (var bind in ds4Binds) outputs.Add(bind);
 
+        // Sentinel: selecting it from the row's Target combo reveals the Key Picker Flyout
+        // button (see MappingEntry.IsKeyboardTarget / DeviceMappingGroupsPanel's Target column)
+        // for actually choosing a key. Never persisted as a final TargetOutput itself.
+        outputs.Add(KeyboardTargetSentinel);
+
+        // Every real "[Keyboard] <Key>" value a row's TargetOutput can hold must also be listed
+        // here, even though nobody picks one directly off this ~190-item combo (the Key Picker
+        // Flyout's searchable list is how that's actually done) - a ComboBox's two-way
+        // SelectedItem binding stays live even while the control is IsVisible=false, and if the
+        // bound value isn't present in ItemsSource, Avalonia can't resolve a SelectedItem for it
+        // and pushes null back into the source property, silently corrupting the entry the
+        // instant a keyboard target is assigned. Omitting these was the actual cause of the
+        // "binding keyboard keys crashes the app" bug - not the native SendInput/keybd_event call.
+        foreach (var keyName in KeyboardKeyCatalog.AllKeyNames) outputs.Add($"[Keyboard] {keyName}");
+
         return outputs;
     }
+
+    /// <summary>Placeholder entry in <see cref="AvailableVirtualOutputs"/> that opens the Key Picker Flyout rather than ever being persisted as a real <c>TargetOutput</c>.</summary>
+    public const string KeyboardTargetSentinel = "[Keyboard] (Click to choose a key…)";
 
     /// <summary>
     /// Drives Gyro-Aim/Touch-Aim (see the matching properties and <c>AppSettings</c> fields):
@@ -887,6 +906,32 @@ public partial class MainWindowViewModel : ViewModelBase
             entry.TargetDeviceId = targetDeviceId;
         }
 
+        UpdateVirtualDeviceSummary();
+        AutoSaveCurrentProfile();
+    }
+
+    /// <summary>
+    /// The "Output As: Xbox / DS4 / Wheel" header switch's apply action - regenerates this
+    /// device's entire binding set as a fresh <see cref="DevicePresetService.GeneratePreset"/>
+    /// targeting <paramref name="category"/>, replacing whatever it had before. Destructive by
+    /// design (the UI gates the call behind a confirmation Flyout); shares
+    /// <see cref="DevicePresetService.ApplyPreset"/> with <see cref="AutoBindWizardViewModel.ApplyWizardBindings"/>
+    /// so the wizard page and this quick switch never drift into two different "apply" behaviors.
+    /// </summary>
+    public void ApplyOutputModeToDevice(string deviceName, OutputCategory category, uint targetDeviceId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName)) return;
+
+        var info = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
+        int buttonCount = info?.ButtonCount ?? 32;
+        int axisCount = info?.AxisCount ?? 8;
+        bool hasPov = info?.HasPov ?? true;
+        Guid deviceGuid = info?.InstanceGuid ?? Guid.Empty;
+
+        var preset = DevicePresetService.GeneratePreset(deviceName, buttonCount, axisCount, category, hasPov);
+        DevicePresetService.ApplyPreset(Mappings, deviceName, deviceGuid, preset, targetDeviceId);
+
+        RebuildGroupedMappings();
         UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
     }
@@ -1045,6 +1090,12 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public void RenameBoundInput(MappingEntry entry, string? nickname)
     {
+        // An unbound "Click to Bind" row shares its placeholder SourceDeviceName/Type/Index with
+        // every other unbound row in the same section - renaming it would silently rename all of
+        // them. The rename pencil is hidden for these (see MappingEntry.IsBound), but guard here
+        // too since this is also reachable if that visibility binding is ever bypassed.
+        if (!entry.IsBound || string.IsNullOrWhiteSpace(entry.SourceDeviceName)) return;
+
         var settings = GetOrCreateWheelSettings(entry.SourceDeviceName);
         settings.SetNickname(entry.SourceType, entry.SourceIndex, nickname);
 
@@ -1056,6 +1107,23 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             m.SourceDisplayName = effectiveName;
         }
+    }
+
+    /// <summary>
+    /// Sets (or clears) the whole-device nickname shown in the group header/device pickers -
+    /// counterpart to <see cref="RenameBoundInput"/> for a single physical input. Persisted the
+    /// same way, via <see cref="WheelDeviceSettings.DeviceNickname"/> in the per-device settings
+    /// this same device name already keys into.
+    /// </summary>
+    public void RenameDevice(string deviceName, string? nickname)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName)) return;
+
+        var settings = GetOrCreateWheelSettings(deviceName);
+        settings.DeviceNickname = string.IsNullOrWhiteSpace(nickname) ? null : nickname.Trim();
+
+        RebuildGroupedMappings();
+        AutoSaveCurrentProfile();
     }
 
     /// <summary>
@@ -1283,6 +1351,45 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsListening));
     }
 
+    private MappingEntry? _keyPickEntry;
+
+    /// <summary>
+    /// True while the Key Picker Flyout's "Press a Key" capture is armed - routed from
+    /// <c>MainWindow.OnKeyDown</c> the same way <see cref="IsListening"/> routes Esc/Backspace,
+    /// but capturing any key (mutually exclusive with device-input listening: a keyboard key
+    /// press is meaningful input to both, so only one can be armed at a time).
+    /// </summary>
+    public bool IsPickingKeyboardKey => _keyPickEntry != null;
+
+    /// <summary>Arms in-window keyboard capture for the given row's Key Picker Flyout "Press a Key" toggle.</summary>
+    public void StartKeyPick(MappingEntry entry)
+    {
+        if (_listeningEntry != null) CancelListening();
+        _keyPickEntry = entry;
+        OnPropertyChanged(nameof(IsPickingKeyboardKey));
+    }
+
+    public void CancelKeyPick()
+    {
+        _keyPickEntry = null;
+        OnPropertyChanged(nameof(IsPickingKeyboardKey));
+    }
+
+    /// <summary>Assigns a captured keyboard key as the currently-armed row's target output, then disarms capture.</summary>
+    public void AssignPickedKey(Key key)
+    {
+        var entry = _keyPickEntry;
+        if (entry == null) return;
+
+        string? friendlyName = KeyboardKeyCatalog.GetFriendlyName(key);
+        CancelKeyPick();
+        if (friendlyName == null) return; // unrecognized/modifier-only key - ignore, stay armed-off, user can retry
+
+        entry.TargetOutput = $"[Keyboard] {friendlyName}";
+        UpdateVirtualDeviceSummary();
+        AutoSaveCurrentProfile();
+    }
+
     [RelayCommand]
     public async Task OpenCalibration(MappingEntry entry)
     {
@@ -1490,6 +1597,8 @@ public partial class MainWindowViewModel : ViewModelBase
             var deviceGroup = new DeviceMappingGroup(group.Key);
             if (expandedStates.TryGetValue(group.Key, out bool wasExpanded))
                 deviceGroup.IsExpanded = wasExpanded;
+
+            deviceGroup.DisplayName = DevicePresetService.GetEffectiveDeviceName(group.Key, WheelSettings.GetValueOrDefault(group.Key));
 
             foreach (var mapping in group) deviceGroup.Entries.Add(mapping);
             GroupedMappings.Add(deviceGroup);
@@ -1915,7 +2024,16 @@ public partial class MainWindowViewModel : ViewModelBase
                 if (profile != null)
                 {
                     Mappings.Clear();
-                    foreach (var m in profile.Mappings) Mappings.Add(m);
+                    foreach (var m in profile.Mappings)
+                    {
+                        // Defends against a corrupt/hand-edited profile file (or a past bug) -
+                        // a null list entry or a null/blank TargetOutput would otherwise crash
+                        // the app the moment anything dereferences it (MigrateLegacyWheelRotationDegrees,
+                        // IsWheelTarget/IsKeyboardTarget, the feed-through poll loop, ...).
+                        if (m == null) continue;
+                        if (string.IsNullOrWhiteSpace(m.TargetOutput)) m.TargetOutput = "[Xbox] Xbox A (Cross / South / Handbrake)";
+                        Mappings.Add(m);
+                    }
                     RebuildGroupedMappings();
                     UpdateVirtualDeviceSummary();
                     ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);

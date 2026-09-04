@@ -30,8 +30,43 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     [ObservableProperty]
     private string _wizardSelectedDevice = string.Empty;
 
+    /// <summary>Which virtual backend newly-applied bindings target - Xbox/DS4 (ViGEm) or Wheel (vJoy). See <see cref="ECCR.Services.OutputCategory"/>.</summary>
     [ObservableProperty]
-    private bool _wizardTargetIsWheel = false;
+    private OutputCategory _wizardOutputCategory = OutputCategory.Xbox;
+
+    /// <summary>True when <see cref="WizardOutputCategory"/> is <see cref="OutputCategory.Wheel"/> - convenience for XAML bindings that only care about the Wheel-vs-everything-else split (e.g. which of <see cref="WizardTargetPlayer"/>/<see cref="WizardTargetWheelSlot"/> to show).</summary>
+    public bool WizardTargetIsWheel => WizardOutputCategory == OutputCategory.Wheel;
+
+    // Three RadioButton-friendly two-way booleans backing the wizard's Xbox/DS4/Wheel choice -
+    // RadioButton.IsChecked has no built-in enum-equality binding, so each of these reads as
+    // "is WizardOutputCategory this value" and, on set, only reacts to becoming true (a
+    // RadioButton also fires false on the button being deselected, which must not stomp
+    // whichever other option the group is switching to).
+    public bool IsXboxOutputSelected
+    {
+        get => WizardOutputCategory == OutputCategory.Xbox;
+        set { if (value) WizardOutputCategory = OutputCategory.Xbox; }
+    }
+
+    public bool IsDualShock4OutputSelected
+    {
+        get => WizardOutputCategory == OutputCategory.DualShock4;
+        set { if (value) WizardOutputCategory = OutputCategory.DualShock4; }
+    }
+
+    public bool IsWheelOutputSelected
+    {
+        get => WizardOutputCategory == OutputCategory.Wheel;
+        set { if (value) WizardOutputCategory = OutputCategory.Wheel; }
+    }
+
+    partial void OnWizardOutputCategoryChanged(OutputCategory value)
+    {
+        OnPropertyChanged(nameof(WizardTargetIsWheel));
+        OnPropertyChanged(nameof(IsXboxOutputSelected));
+        OnPropertyChanged(nameof(IsDualShock4OutputSelected));
+        OnPropertyChanged(nameof(IsWheelOutputSelected));
+    }
 
     /// <summary>
     /// Which virtual player slot newly-applied bindings are assigned to. Defaults to Player 1
@@ -99,18 +134,11 @@ public partial class AutoBindWizardViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(WizardSelectedDevice))
         {
-            // Pre-selects the wizard's DirectInput Wheel vs. Xbox Gamepad radio to match the
-            // device's detected hardware family, so the common case needs no manual toggle.
-            // Note: this repeats the same category list as
-            // DevicePresetService.IsWheelOrPedalCategory inline instead of calling it.
+            // Pre-selects the wizard's Wheel vs. Xbox Gamepad output to match the device's
+            // detected hardware family, so the common case needs no manual toggle. DS4 is never
+            // auto-selected - it's an explicit user choice only.
             var cat = DevicePresetService.DetectCategory(WizardSelectedDevice);
-            WizardTargetIsWheel = (cat == DeviceHardwareCategory.MozaEsxWheel ||
-                                   cat == DeviceHardwareCategory.MozaWheel ||
-                                   cat == DeviceHardwareCategory.LogitechRig ||
-                                   cat == DeviceHardwareCategory.FanatecRig ||
-                                   cat == DeviceHardwareCategory.ThrustmasterRig ||
-                                   cat == DeviceHardwareCategory.SimagicRig ||
-                                   cat == DeviceHardwareCategory.GenericWheelOrPedals);
+            WizardOutputCategory = DevicePresetService.IsWheelOrPedalCategory(cat) ? OutputCategory.Wheel : OutputCategory.Xbox;
         }
 
         PopulateWizardPreset();
@@ -125,8 +153,9 @@ public partial class AutoBindWizardViewModel : ViewModelBase
         var connectedInfo = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
         int buttonCount = connectedInfo?.ButtonCount ?? 32;
         int axisCount = connectedInfo?.AxisCount ?? 8;
+        bool hasPov = connectedInfo?.HasPov ?? true;
 
-        var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardTargetIsWheel);
+        var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardOutputCategory, hasPov);
         foreach (var item in presets)
         {
             WizardBindings.Add(item);
@@ -140,31 +169,9 @@ public partial class AutoBindWizardViewModel : ViewModelBase
 
         var targetDevice = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
         Guid devGuid = targetDevice?.InstanceGuid ?? Guid.Empty;
+        uint targetDeviceId = WizardTargetIsWheel ? WizardTargetWheelSlot : WizardTargetPlayer;
 
-        var toRemove = _mappings.Where(m => m.SourceDeviceName == WizardSelectedDevice).ToList();
-        foreach (var r in toRemove) _mappings.Remove(r);
-
-        foreach (var item in WizardBindings)
-        {
-            bool shouldInvert = item.Type == InputType.Axis && 
-                (item.PhysicalName.Contains("Vertical") || item.PhysicalName.Contains("Stick Y") || 
-                 item.PhysicalName.Contains("Throttle") || item.PhysicalName.Contains("Brake"));
-
-            _mappings.Add(new MappingEntry
-            {
-                SourceDeviceName = WizardSelectedDevice,
-                SourceDeviceGuid = devGuid,
-                SourceType = item.Type,
-                SourceIndex = item.PhysicalIndex,
-                SourceDisplayName = item.PhysicalName,
-                TargetDeviceId = WizardTargetIsWheel ? WizardTargetWheelSlot : WizardTargetPlayer,
-                TargetOutput = item.DefaultTargetOutput,
-                Deadzone = item.Type == InputType.Axis ? 0.08 : 0.0,
-                RawMin = 0,
-                RawMax = 65535,
-                IsInverted = shouldInvert
-            });
-        }
+        DevicePresetService.ApplyPreset(_mappings, WizardSelectedDevice, devGuid, WizardBindings.ToList(), targetDeviceId);
 
         _onBindingsApplied();
     }

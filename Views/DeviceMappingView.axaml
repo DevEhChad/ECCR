@@ -55,7 +55,7 @@
                           Background="#10141E">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="models:DeviceMappingGroup">
-                            <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
