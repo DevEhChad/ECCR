@@ -8,9 +8,7 @@ public enum AppPage
 {
     Home,
     ConnectedDevices,
-    ControllerMapping,
-    DeviceMapping,
-    ControllerLed,
+    Binder,
     Profiles,
     HidHide,
     AutoBind,

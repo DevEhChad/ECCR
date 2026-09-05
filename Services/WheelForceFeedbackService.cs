@@ -403,10 +403,36 @@ public class WheelForceFeedbackService : IDisposable
     private static bool IsEffectTypeEnabled(FFBEType type, WheelDeviceSettings s) => type switch
     {
         FFBEType.ET_SPRNG => s.SpringEffectEnabled,
-        FFBEType.ET_DMPR or FFBEType.ET_INRT => s.DamperEffectEnabled,
+        FFBEType.ET_DMPR => s.DamperEffectEnabled,
+        FFBEType.ET_INRT => s.InertiaEffectEnabled,
         FFBEType.ET_FRCTN => s.FrictionEffectEnabled,
         _ => true
     };
+
+    /// <summary>Per-effect-type gain (0-200%, see <see cref="WheelDeviceSettings.SpringGainPercent"/> and its siblings) layered on top of the device's overall <see cref="WheelDeviceSettings.ForceFeedbackStrengthPercent"/>.</summary>
+    private static double GetEffectGain(FFBEType type, WheelDeviceSettings s) => (type switch
+    {
+        FFBEType.ET_SPRNG => s.SpringGainPercent,
+        FFBEType.ET_DMPR => s.DamperGainPercent,
+        FFBEType.ET_INRT => s.InertiaGainPercent,
+        FFBEType.ET_FRCTN => s.FrictionGainPercent,
+        _ => 100
+    }) / 100.0;
+
+    /// <summary>
+    /// Boosts a nonzero force magnitude (DirectInput's -10000..10000 range) up to
+    /// <see cref="WheelDeviceSettings.MinimumForcePercent"/>'s floor while preserving sign, so
+    /// weak commanded forces (e.g. light road texture) aren't lost to the wheel's own static
+    /// friction. Exact zero (no force at all) is left untouched - this only raises the floor
+    /// under an already-nonzero force, it never invents one.
+    /// </summary>
+    private static double ApplyMinForceFloor(double magnitude, WheelDeviceSettings s)
+    {
+        if (s.MinimumForcePercent <= 0 || magnitude == 0) return magnitude;
+        double floor = s.MinimumForcePercent / 100.0 * 10000;
+        double abs = Math.Abs(magnitude);
+        return abs >= floor ? magnitude : floor * Math.Sign(magnitude);
+    }
 
     private static Guid? ResolveEffectGuid(FFBEType type) => type switch
     {
@@ -429,10 +455,16 @@ public class WheelForceFeedbackService : IDisposable
     /// <summary>
     /// (Re)creates or updates the real SharpDX effect for one vJoy effect block from whatever
     /// pieces of it have been decoded so far, applying <see cref="WheelDeviceSettings"/>
-    /// (strength scaling, per-type enable, invert) and the device's own reported gain. Called
-    /// after every packet that touches this block's parameters - PID effects are configured
-    /// across several separate reports (general params, type-specific magnitude, envelope), so
-    /// this may run several times before a game actually starts the effect.
+    /// (strength/per-effect gain scaling, per-type enable, invert, minimum-force floor) and the
+    /// device's own reported gain. Called after every packet that touches this block's
+    /// parameters - PID effects are configured across several separate reports (general params,
+    /// type-specific magnitude, envelope), so this may run several times before a game actually
+    /// starts the effect. Also updates <see cref="WheelDeviceSettings.LiveOutputForcePercent"/>/
+    /// <see cref="WheelDeviceSettings.IsClipping"/> as an approximate clipping meter: whether any
+    /// of this effect's own force values needed clamping to DirectInput's -10000..10000 range at
+    /// the current Strength/gain settings. This is not a real hardware torque reading (SharpDX/
+    /// DirectInput exposes none) - it only signals "your gain is high enough that some commanded
+    /// forces are being clipped."
     /// </summary>
     private void RebuildEffect(WheelTarget target, byte blockIndex)
     {
@@ -450,8 +482,17 @@ public class WheelForceFeedbackService : IDisposable
         var effectGuid = ResolveEffectGuid(state.Type);
         if (effectGuid == null) return;
 
-        double scale = Math.Clamp(settings.ForceFeedbackStrengthPercent / 100.0, 0.0, 2.0) * (target.DeviceGainByte / 255.0);
+        double scale = Math.Clamp(settings.ForceFeedbackStrengthPercent / 100.0, 0.0, 2.0) * (target.DeviceGainByte / 255.0) * GetEffectGain(state.Type, settings);
         int sign = settings.InvertForce ? -1 : 1;
+
+        double peakMagnitude = 0;
+        bool clipped = false;
+        void Track(double raw)
+        {
+            double abs = Math.Abs(raw);
+            if (abs > peakMagnitude) peakMagnitude = abs;
+            if (abs > 10000) clipped = true;
+        }
 
         var parameters = new EffectParameters
         {
@@ -468,14 +509,20 @@ public class WheelForceFeedbackService : IDisposable
         switch (state.Type)
         {
             case FFBEType.ET_CONST:
-                parameters.Parameters = new ConstantForce { Magnitude = Clamp(state.ConstantMagnitude.GetValueOrDefault() * scale * sign, -10000, 10000) };
+                double constMag = ApplyMinForceFloor(state.ConstantMagnitude.GetValueOrDefault() * scale * sign, settings);
+                Track(constMag);
+                parameters.Parameters = new ConstantForce { Magnitude = Clamp(constMag, -10000, 10000) };
                 break;
 
             case FFBEType.ET_RAMP:
+                double rampStart = state.RampStart.GetValueOrDefault() * scale * sign;
+                double rampEnd = state.RampEnd.GetValueOrDefault() * scale * sign;
+                Track(rampStart);
+                Track(rampEnd);
                 parameters.Parameters = new RampForce
                 {
-                    Start = Clamp(state.RampStart.GetValueOrDefault() * scale * sign, -10000, 10000),
-                    End = Clamp(state.RampEnd.GetValueOrDefault() * scale * sign, -10000, 10000)
+                    Start = Clamp(rampStart, -10000, 10000),
+                    End = Clamp(rampEnd, -10000, 10000)
                 };
                 break;
 
@@ -484,9 +531,11 @@ public class WheelForceFeedbackService : IDisposable
             case FFBEType.ET_TRNGL:
             case FFBEType.ET_STUP:
             case FFBEType.ET_STDN:
+                double periodMag = ApplyMinForceFloor(state.PeriodMagnitude.GetValueOrDefault() * scale, settings);
+                Track(periodMag);
                 parameters.Parameters = new PeriodicForce
                 {
-                    Magnitude = Clamp(state.PeriodMagnitude.GetValueOrDefault() * scale, 0, 10000),
+                    Magnitude = Clamp(periodMag, 0, 10000),
                     Offset = Clamp(state.PeriodOffset.GetValueOrDefault() * scale * sign, -10000, 10000),
                     Phase = state.PeriodPhase.GetValueOrDefault(),
                     Period = (int)state.PeriodPeriod.GetValueOrDefault()
@@ -499,6 +548,10 @@ public class WheelForceFeedbackService : IDisposable
             case FFBEType.ET_FRCTN:
                 if (state.Condition == null) return;
                 var cond = state.Condition.Value;
+                double posCoeff = ApplyMinForceFloor(cond.PosCoeff * scale, settings);
+                double negCoeff = ApplyMinForceFloor(cond.NegCoeff * scale, settings);
+                Track(posCoeff);
+                Track(negCoeff);
                 parameters.Parameters = new ConditionSet
                 {
                     Conditions =
@@ -506,8 +559,8 @@ public class WheelForceFeedbackService : IDisposable
                         new Condition
                         {
                             Offset = Clamp(cond.CenterPointOffset * sign, -10000, 10000),
-                            PositiveCoefficient = Clamp(cond.PosCoeff * scale, -10000, 10000),
-                            NegativeCoefficient = Clamp(cond.NegCoeff * scale, -10000, 10000),
+                            PositiveCoefficient = Clamp(posCoeff, -10000, 10000),
+                            NegativeCoefficient = Clamp(negCoeff, -10000, 10000),
                             PositiveSaturation = Clamp(cond.PosSatur * scale, 0, 10000),
                             NegativeSaturation = Clamp(cond.NegSatur * scale, 0, 10000),
                             DeadBand = Clamp(cond.DeadBand, 0, 10000)
@@ -531,6 +584,9 @@ public class WheelForceFeedbackService : IDisposable
                 FadeTime = (int)env.FadeTime
             };
         }
+
+        settings.LiveOutputForcePercent = Math.Min(peakMagnitude / 10000.0, 1.5);
+        settings.IsClipping = clipped;
 
         try
         {

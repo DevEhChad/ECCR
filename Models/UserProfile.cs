@@ -27,4 +27,7 @@ public class UserProfile
 
     /// <summary>Rotation/force-feedback tuning per wheel device name - see <see cref="WheelDeviceSettings"/>.</summary>
     public Dictionary<string, WheelDeviceSettings> WheelSettings { get; set; } = new();
+
+    /// <summary>Rumble/LED tuning per gamepad device name - see <see cref="GamepadDeviceSettings"/>. Empty on profiles saved before this existed; <c>MainWindowViewModel</c> seeds it once from the legacy <see cref="LedRed"/>/<see cref="LedGreen"/>/<see cref="LedBlue"/>/<see cref="LedMode"/>/<see cref="LedSpeed"/> fields above on first load.</summary>
+    public Dictionary<string, GamepadDeviceSettings> GamepadSettings { get; set; } = new();
 }

@@ -1,0 +1,215 @@
+<!--
+    Binder page "Bindings" tab visual diagram: a clickable device image instead of a list row.
+    Scoped to whichever device BinderPageView's device list already selects (see
+    BinderDiagramViewModel.SelectedDeviceName) - no second device picker here. Clicking a
+    hotspot arms MainWindowViewModel's existing physical-press capture (StartListeningCommand),
+    same as every Rebinding Table row; the bottom panel then lets the user confirm/edit the
+    target, deadzone, and invert, or remove the binding.
+
+    Two mutually-exclusive diagrams share this view: the gamepad skin+hotspot Canvas (ported
+    unchanged from the old Visual Binder tab, native 2816x1536) and a new hand-drawn generic
+    wheel+pedal Canvas (native 1400x900, see WheelHotspotService) - which one is visible is
+    driven by IsGamepadDevice/IsWheelDevice. Both Canvases are wrapped in a Stretch="Uniform"
+    Viewbox, so every Canvas.Left/Top/Width/Height expressed in native pixel units scales
+    correctly at any window size with no coordinate-conversion converter needed.
+
+    The hotspot ItemsControl's ItemsPanel is explicitly a Canvas (not the default StackPanel) -
+    otherwise every hotspot Button's Canvas.Left/Top would be silently ignored. The
+    ItemsControl itself gets an explicit Width/Height matching the outer canvas plus
+    ClipToBounds="False" (on both the ItemsControl and its inner Canvas ItemsPanel): a Canvas
+    reports (0,0) as its own desired size regardless of children (they're absolutely
+    positioned, not layout-contributing), so with no explicit size the ItemsControl measured to
+    0x0 and clipped every absolutely-positioned hotspot Button out of both rendering and
+    hit-testing.
+
+    Each hotspot Button binds its Canvas.Left/Top/Width/Height to Left/Top/BoundsWidth/
+    BoundsHeight (flat double properties) rather than the nested Hotspot.PixelBounds.X/Y/Width/
+    Height path, since a compiled binding through a value-type (Rect) property is a needless
+    additional risk once a working direct alternative exists.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="ECCR.Views.BinderDiagramView"
+             x:DataType="vm:BinderDiagramViewModel">
+
+    <ScrollViewer>
+    <Grid RowDefinitions="Auto, Auto, Auto">
+
+        <!-- Skin picker: gamepad only, the wheel diagram has no swappable skins. -->
+        <Border Grid.Row="0" Classes="card" Margin="0,0,0,10" IsVisible="{Binding IsGamepadDevice}">
+            <Grid ColumnDefinitions="Auto, *">
+                <TextBlock Grid.Column="0" Text="Skin" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{x:Static vm:BinderDiagramViewModel.AvailableSkins}"
+                          SelectedItem="{Binding SelectedSkin}"
+                          HorizontalAlignment="Stretch"
+                          CornerRadius="6"
+                          Background="#10141E"/>
+            </Grid>
+        </Border>
+
+        <!-- Gamepad skin diagram -->
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsGamepadDevice}">
+            <Viewbox Stretch="Uniform" MaxHeight="480">
+                <Canvas Width="2816" Height="1536">
+                    <Image Source="{Binding SkinImage}" Width="2816" Height="1536" Stretch="Uniform"
+                           RenderOptions.BitmapInterpolationMode="HighQuality" IsHitTestVisible="False"/>
+
+                    <ItemsControl ItemsSource="{Binding HotspotViewModels}"
+                                  Width="2816" Height="1536" ClipToBounds="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas ClipToBounds="False"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.Styles>
+                            <Style Selector="ContentPresenter" x:DataType="vm:HotspotViewModel">
+                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                            </Style>
+                        </ItemsControl.Styles>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:HotspotViewModel">
+                                <Button Classes="hotspot"
+                                        Classes.hotspotPressed="{Binding IsPressed}"
+                                        Classes.hotspotBound="{Binding IsBound}"
+                                        Width="{Binding BoundsWidth}"
+                                        Height="{Binding BoundsHeight}"
+                                        Command="{Binding ArmCommand}"
+                                        ToolTip.Tip="{Binding TooltipText}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Stick knobs: pre-positioned via Canvas.Left/Top at each well's rest
+                         center, moved only via RenderTransform/TranslateTransform (never
+                         IsVisible-toggled). IsHitTestVisible=False so clicks pass through to
+                         the L3/R3 hotspot buttons underneath. -->
+                    <Ellipse Classes="stickKnob" Width="170" Height="170" Canvas.Left="1032" Canvas.Top="1033" IsHitTestVisible="False">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform X="{Binding LeftStickOffsetX}" Y="{Binding LeftStickOffsetY}"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <Ellipse Classes="stickKnob" Width="170" Height="170" Canvas.Left="1615" Canvas.Top="1033" IsHitTestVisible="False">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform X="{Binding RightStickOffsetX}" Y="{Binding RightStickOffsetY}"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                </Canvas>
+            </Viewbox>
+        </Border>
+
+        <!-- Generic wheel+pedal diagram: hand-drawn vector shapes (no product photo exists per
+             brand), authored on the same 1400x900 canvas WheelHotspotService's hotspot bounds
+             use. The rim group rotates live with SteeringAngleDegrees; the pedal cluster shows
+             a semi-transparent "fill" overlay whose Height scales with each pedal's live
+             travel (ThrottleFill01/BrakeFill01/ClutchFill01, 0..1). -->
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsWheelDevice}">
+            <Viewbox Stretch="Uniform" MaxHeight="480">
+                <Canvas Width="1400" Height="900" Background="#0A0D14">
+
+                    <!-- Rim + hub + spokes: rotates as one group around the hub center (500,420). -->
+                    <Canvas.RenderTransform>
+                        <RotateTransform Angle="{Binding SteeringAngleDegrees}" CenterX="500" CenterY="420"/>
+                    </Canvas.RenderTransform>
+                    <Ellipse Canvas.Left="240" Canvas.Top="160" Width="520" Height="520"
+                             Stroke="#3D4B6E" StrokeThickness="40" Fill="Transparent" IsHitTestVisible="False"/>
+                    <Line StartPoint="500,420" EndPoint="500,180" Stroke="#3D4B6E" StrokeThickness="18" IsHitTestVisible="False"/>
+                    <Line StartPoint="500,420" EndPoint="290,560" Stroke="#3D4B6E" StrokeThickness="18" IsHitTestVisible="False"/>
+                    <Line StartPoint="500,420" EndPoint="710,560" Stroke="#3D4B6E" StrokeThickness="18" IsHitTestVisible="False"/>
+                    <Ellipse Canvas.Left="430" Canvas.Top="350" Width="140" Height="140"
+                             Fill="#1F283C" Stroke="#3D4B6E" StrokeThickness="3" IsHitTestVisible="False"/>
+                </Canvas>
+            </Viewbox>
+        </Border>
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsWheelDevice}">
+            <Viewbox Stretch="Uniform" MaxHeight="480">
+                <Canvas Width="1400" Height="900">
+                    <!-- Pedal fill overlays (behind the hotspots below) -->
+                    <Border Canvas.Left="1050" Canvas.Top="550" Width="80" Height="300" CornerRadius="8" Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="2"/>
+                    <Border Canvas.Left="1150" Canvas.Top="550" Width="80" Height="300" CornerRadius="8" Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="2"/>
+                    <Border Canvas.Left="1250" Canvas.Top="550" Width="80" Height="300" CornerRadius="8" Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="2"/>
+                    <Border Canvas.Left="1340" Canvas.Top="590" Width="60" Height="220" CornerRadius="8" Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="2"/>
+
+                    <!-- Live pedal-travel indicator: a full-height tinted overlay whose Opacity
+                         tracks the pedal's 0..1 travel, rather than an animated Height/Top
+                         (simpler than pixel-accurate resizing and reads just as clearly). -->
+                    <Border Canvas.Left="1050" Canvas.Top="550" Width="80" Height="300" CornerRadius="8" Background="#00E599" Opacity="{Binding ClutchFill01}"/>
+                    <Border Canvas.Left="1150" Canvas.Top="550" Width="80" Height="300" CornerRadius="8" Background="#FA3E5E" Opacity="{Binding BrakeFill01}"/>
+                    <Border Canvas.Left="1250" Canvas.Top="550" Width="80" Height="300" CornerRadius="8" Background="#00E599" Opacity="{Binding ThrottleFill01}"/>
+
+                    <ItemsControl ItemsSource="{Binding WheelHotspotViewModels}"
+                                  Width="1400" Height="900" ClipToBounds="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas ClipToBounds="False"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.Styles>
+                            <Style Selector="ContentPresenter" x:DataType="vm:WheelHotspotViewModel">
+                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                            </Style>
+                        </ItemsControl.Styles>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WheelHotspotViewModel">
+                                <Button Classes="hotspot"
+                                        Classes.hotspotPressed="{Binding IsPressed}"
+                                        Classes.hotspotBound="{Binding IsBound}"
+                                        Width="{Binding BoundsWidth}"
+                                        Height="{Binding BoundsHeight}"
+                                        Command="{Binding ArmCommand}"
+                                        ToolTip.Tip="{Binding TooltipText}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Canvas>
+            </Viewbox>
+        </Border>
+
+        <!-- Bottom edit panel: persistent (not a floating Popup/Flyout), shown below whichever
+             diagram is visible. Works for either hotspot kind, since SelectedHotspotEntry is
+             always just a MappingEntry. -->
+        <Border Grid.Row="2" Classes="card">
+            <Grid>
+                <TextBlock Text="Click a control on the diagram above to bind it."
+                           FontSize="13" Foreground="#8B95A5"
+                           IsVisible="{Binding !HasSelectedHotspot}"/>
+
+                <StackPanel Spacing="10" IsVisible="{Binding HasSelectedHotspot}">
+                    <Grid ColumnDefinitions="*, Auto">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="{Binding SelectedHotspotEntry.SourceDisplayName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                            <TextBlock Text="{Binding SelectedHotspotEntry.SourceDeviceName}" FontSize="11" Foreground="#8B95A5"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Capture / Re-bind"
+                                Command="{Binding StartListeningCommand}" CommandParameter="{Binding SelectedHotspotEntry}"
+                                Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,7" CornerRadius="6"/>
+                    </Grid>
+
+                    <ComboBox ItemsSource="{x:Static vm:MainWindowViewModel.AvailableVirtualOutputs}"
+                              SelectedItem="{Binding SelectedHotspotEntry.TargetOutput}"
+                              HorizontalAlignment="Stretch" CornerRadius="6" Background="#10141E"/>
+
+                    <Grid ColumnDefinitions="*, 44" IsVisible="{Binding SelectedHotspotEntry.IsAxis}">
+                        <Slider Grid.Column="0" Minimum="0.0" Maximum="0.5" Value="{Binding SelectedHotspotEntry.Deadzone}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding SelectedHotspotEntry.Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto, *" IsVisible="{Binding SelectedHotspotEntry.IsAxis}">
+                        <TextBlock Grid.Column="0" Text="Invert" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding SelectedHotspotEntry.IsInverted}" OnContent="" OffContent="" HorizontalAlignment="Left"/>
+                    </Grid>
+
+                    <Button Content="Remove Binding" Command="{Binding RemoveMappingCommand}" CommandParameter="{Binding SelectedHotspotEntry}"
+                            Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" Padding="12,7" CornerRadius="6" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+    </ScrollViewer>
+</UserControl>

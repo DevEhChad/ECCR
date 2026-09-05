@@ -46,6 +46,7 @@
     <SolidColorBrush x:Key="AccentYellowTextBrush">#FFD254</SolidColorBrush>
     <SolidColorBrush x:Key="AccentPurpleBrush">#C33EFA</SolidColorBrush>
     <SolidColorBrush x:Key="AccentPurpleTextBrush">#DB70FF</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentPurpleBackgroundBrush">#361D38</SolidColorBrush>
 
     <!-- Sidebar-specific -->
     <SolidColorBrush x:Key="SidebarBackgroundBrush">#0B0E15</SolidColorBrush>

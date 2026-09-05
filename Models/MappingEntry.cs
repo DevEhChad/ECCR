@@ -58,8 +58,17 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private string _targetOutput = "[Xbox] Xbox A (Cross / South / Handbrake)";
 
+    /// <summary>Inner deadzone: normalized travel near the axis's rest point (center for a stick/steering axis, zero for a pedal) that's clamped flat. See <see cref="CalculateCalibratedValue"/>.</summary>
     [ObservableProperty]
     private double _deadzone = 0.0;
+
+    /// <summary>Outer deadzone: normalized travel near the axis's physical extreme that's clamped to that extreme (1.0, or 0.0 for a centered axis's low end) - lets a wheel/pedal that reaches slightly past its "real" useful range still report a clean 0/1 there. 0 = no outer clamp (the default, matching every profile saved before this field existed).</summary>
+    [ObservableProperty]
+    private double _deadzoneOuter = 0.0;
+
+    /// <summary>Response curve exponent applied after deadzones: 1.0 (default) is linear passthrough, &gt;1.0 gives more precision near center/rest at the cost of the extremes, &lt;1.0 the reverse. See <see cref="CalculateCalibratedValue"/>.</summary>
+    [ObservableProperty]
+    private double _linearityExponent = 1.0;
 
     [ObservableProperty]
     private bool _isInverted = false;
@@ -74,11 +83,12 @@ public partial class MappingEntry : ObservableObject
     private int _rawCenter = 32767;
 
     /// <summary>
-    /// Set when this entry was created/captured via the Visual Binder's graphical hotspot
-    /// (see <see cref="ECCR.ViewModels.VisualBinderViewModel"/>), naming which
-    /// <see cref="ECCR.Models.SemanticButton"/> it belongs to so re-clicking that hotspot finds
-    /// this same entry again instead of creating a duplicate. Null for entries created via the
-    /// ordinary Button Mapping list or Auto-Bind - those code paths never set it.
+    /// Set when this entry was created/captured via the Binder page's graphical diagram
+    /// (see <see cref="ECCR.ViewModels.BinderDiagramViewModel"/>), naming which
+    /// <see cref="ECCR.Models.SemanticButton"/>/<see cref="ECCR.Models.WheelSemanticInput"/> it
+    /// belongs to so re-clicking that hotspot finds this same entry again instead of creating a
+    /// duplicate. Null for entries created via the Rebinding Table's "+ Add Input" or Auto-Bind
+    /// - those code paths never set it.
     /// </summary>
     [ObservableProperty]
     private string? _semanticHotspot = null;
@@ -106,6 +116,24 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private int _latestRawReading = 0;
 
+    /// <summary>
+    /// True only for a row synthesized fresh by <c>BinderPageViewModel.RebuildDisplayRows</c> to
+    /// represent a physical input the selected device reports that has no <see cref="MappingEntry"/>
+    /// yet - never added to <c>MainWindowViewModel.Mappings</c> and never persisted, unlike the
+    /// generic "Click to Bind" placeholders (see <see cref="IsBound"/>'s doc comment), since a
+    /// placeholder row already knows its real <see cref="SourceType"/>/<see cref="SourceIndex"/>/
+    /// <see cref="SourceDisplayName"/> - it only lacks a <see cref="TargetOutput"/>. Promoted into
+    /// a real, registered entry the moment the user interacts with it (see
+    /// <c>MainWindowViewModel.EnsureMappingRegistered</c>).
+    /// </summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    private bool _isPlaceholder = false;
+
+    /// <summary><see cref="TargetOutput"/>, or a friendlier placeholder string while <see cref="IsPlaceholder"/> is true and nothing's been assigned yet.</summary>
+    [JsonIgnore]
+    public string TargetOutputDisplay => IsPlaceholder && string.IsNullOrEmpty(TargetOutput) ? "Not yet assigned" : TargetOutput;
+
     [JsonIgnore]
     public bool IsAxis => SourceType == InputType.Axis;
 
@@ -115,14 +143,18 @@ public partial class MappingEntry : ObservableObject
     }
 
     /// <summary>
-    /// False for a fresh "Click to Bind" placeholder row (or one still mid-capture) - used to
-    /// hide the rename pencil on unbound rows, since every unbound row shares the same
-    /// placeholder <see cref="SourceDeviceName"/>/<see cref="SourceType"/>/<see cref="SourceIndex"/>
-    /// (see <c>MainWindowViewModel.UncategorizedGamepadDeviceName</c>/<c>UncategorizedWheelDeviceName</c>),
-    /// so renaming one before it's bound would silently rename every other unbound row too.
+    /// False for a fresh "Click to Bind" placeholder row (or one still mid-capture) - drives the
+    /// "Clear Binding" flyout item's visibility in <c>RebindingTableView</c>, since there's
+    /// nothing to unbind on a row that isn't bound yet.
     /// </summary>
     [JsonIgnore]
-    public bool IsBound => SourceDisplayName != "Click to Bind" && !SourceDisplayName.StartsWith("Listening...", StringComparison.Ordinal);
+    public bool IsBound => !IsPlaceholder && SourceDisplayName != "Click to Bind" && !SourceDisplayName.StartsWith("Listening...", StringComparison.Ordinal);
+
+    partial void OnIsPlaceholderChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsBound));
+        OnPropertyChanged(nameof(TargetOutputDisplay));
+    }
 
     /// <summary>
     /// True when <see cref="TargetOutput"/> is a "[Keyboard] ..." target (routed to
@@ -163,6 +195,7 @@ public partial class MappingEntry : ObservableObject
         OnPropertyChanged(nameof(IsKeyboardTarget));
         OnPropertyChanged(nameof(ShowPlayerCombo));
         OnPropertyChanged(nameof(ShowWheelSlotCombo));
+        OnPropertyChanged(nameof(TargetOutputDisplay));
     }
 
     /// <summary>
@@ -209,6 +242,18 @@ public partial class MappingEntry : ObservableObject
                 offset = Math.Sign(offset) * ((Math.Abs(offset) - halfDz) / (0.5 - halfDz)) * 0.5;
             }
 
+            // Outer deadzone: travel within DeadzoneOuter of either extreme snaps flat to that
+            // extreme, same idea as the inner cutoff but at the other end of travel.
+            if (DeadzoneOuter > 0.0 && Math.Abs(offset) > 0.5 - DeadzoneOuter * 0.5)
+            {
+                offset = Math.Sign(offset) * 0.5;
+            }
+
+            if (LinearityExponent != 1.0 && offset != 0.0)
+            {
+                offset = Math.Sign(offset) * Math.Pow(Math.Abs(offset) / 0.5, LinearityExponent) * 0.5;
+            }
+
             normalized = 0.5 + offset;
         }
         else
@@ -220,6 +265,17 @@ public partial class MappingEntry : ObservableObject
                     normalized = 0.0;
                 else
                     normalized = (normalized - Deadzone) / (1.0 - Deadzone);
+            }
+
+            // Outer deadzone: travel within DeadzoneOuter of full trigger/pedal travel snaps to 1.0.
+            if (DeadzoneOuter > 0.0 && normalized > 1.0 - DeadzoneOuter)
+            {
+                normalized = 1.0;
+            }
+
+            if (LinearityExponent != 1.0 && normalized > 0.0)
+            {
+                normalized = Math.Pow(normalized, LinearityExponent);
             }
         }
 

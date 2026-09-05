@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ECCR.Models;
@@ -49,46 +50,80 @@ public partial class WheelDeviceSettings : ObservableObject
     [ObservableProperty]
     private bool _invertForce = false;
 
+    /// <summary>Independent inertia (resistance-to-acceleration) toggle - previously folded into <see cref="DamperEffectEnabled"/>.</summary>
+    [ObservableProperty]
+    private bool _inertiaEffectEnabled = true;
+
+    /// <summary>0-200: per-effect-type gain layered on top of <see cref="ForceFeedbackStrengthPercent"/> (100 = no extra scaling).</summary>
+    [ObservableProperty]
+    private int _springGainPercent = 100;
+
+    [ObservableProperty]
+    private int _damperGainPercent = 100;
+
+    [ObservableProperty]
+    private int _inertiaGainPercent = 100;
+
+    [ObservableProperty]
+    private int _frictionGainPercent = 100;
+
+    /// <summary>0-100: floor a nonzero commanded force magnitude is boosted up to, so weak forces (e.g. light road texture) aren't lost to the wheel's own static friction - 0 (default) disables boosting.</summary>
+    [ObservableProperty]
+    private int _minimumForcePercent = 0;
+
     /// <summary>
-    /// User-editable display-name overrides for this device's physical buttons/axes, keyed as
-    /// "Button:{index}" / "Axis:{index}" (a plain string key rather than a compound key type,
-    /// for simple System.Text.Json round-tripping through a Dictionary). Missing/empty means
-    /// "use DevicePresetService's generated name" - see <see cref="ECCR.Services.DevicePresetService.GetEffectiveDisplayName"/>.
-    /// Exists mainly for wheel-class hardware whose physical button legend ECCR can't infer
-    /// (most brands besides Moza don't distinguish a PlayStation-legend vs. Xbox-legend SKU in
-    /// <see cref="ECCR.Services.DeviceHardwareCategory"/>), but works for any device.
+    /// Live clipping-meter telemetry for the Wheel Settings tab, written by
+    /// <see cref="ECCR.Services.WheelForceFeedbackService"/> on every effect rebuild - not
+    /// persisted. Approximates "would the configured Strength/gain have clamped one of this
+    /// effect's own parameters," not real hardware output torque (SharpDX/DirectInput exposes
+    /// no such telemetry). <see cref="ECCR.ViewModels.MainWindowViewModel.OnWheelSettingsPropertyChanged"/>
+    /// excludes these two properties from triggering an FFB resync/auto-save, since they change
+    /// on every incoming FFB packet.
     /// </summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    private double _liveOutputForcePercent = 0.0;
+
+    [JsonIgnore]
+    [ObservableProperty]
+    private bool _isClipping = false;
+
     /// <summary>
-    /// User-editable override for the whole device's display name (e.g. "My Wheel" instead of
-    /// the raw DirectInput instance name "MOZA Racing MOZA R9"). Null/empty means show the raw
-    /// name. Keyed the same way as this whole settings object (by <c>MappingEntry.SourceDeviceName</c>),
-    /// so two identical physical devices sharing the same DirectInput instance name also share
-    /// this nickname - a known limitation, same as <see cref="InputNicknames"/> below.
+    /// Shows every physical input the device reports (not just already-bound ones) as
+    /// placeholder rows in the Rebinding Table - see <c>BinderPageViewModel.RebuildDisplayRows</c>.
+    /// Off by default so selecting a device doesn't immediately dump its full capability list
+    /// into the table; the user opts in via the table's "Show All Inputs" toggle.
     /// </summary>
     [ObservableProperty]
-    private string? _deviceNickname = null;
+    private bool _showAllPhysicalInputs = false;
 
-    public Dictionary<string, string> InputNicknames { get; set; } = new();
+    private static string InputKey(InputType type, int index) => $"{type}:{index}";
 
-    private static string NicknameKey(InputType type, int index) => $"{type}:{index}";
+    /// <summary>
+    /// Physical inputs (keyed as "Button:{index}" / "Axis:{index}") the user has explicitly
+    /// dismissed from the Rebinding Table's "Show All Inputs" placeholder listing (see
+    /// <c>BinderPageViewModel.RebuildDisplayRows</c>) - e.g. buttons on a 40-button wheel base
+    /// they'll never bind and don't want cluttering the table. Real, already-bound entries are
+    /// never affected by this - only unbound placeholder rows are ever hidden.
+    /// </summary>
+    public HashSet<string> HiddenPlaceholderInputs { get; set; } = new();
 
-    public string? GetNickname(InputType type, int index) =>
-        InputNicknames.TryGetValue(NicknameKey(type, index), out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : null;
+    public bool IsInputHidden(InputType type, int index) => HiddenPlaceholderInputs.Contains(InputKey(type, index));
 
-    /// <summary>Sets or clears (via null/whitespace) one physical input's nickname, then raises <see cref="InputNicknames"/>'s PropertyChanged so the existing auto-save hook (<c>MainWindowViewModel.OnWheelSettingsPropertyChanged</c>) fires.</summary>
-    public void SetNickname(InputType type, int index, string? nickname)
+    /// <summary>Dismisses (or restores) one placeholder row, then raises <see cref="HiddenPlaceholderInputs"/>'s PropertyChanged so the existing auto-save hook fires.</summary>
+    public void SetInputHidden(InputType type, int index, bool hidden)
     {
-        string key = NicknameKey(type, index);
-        if (string.IsNullOrWhiteSpace(nickname))
-        {
-            InputNicknames.Remove(key);
-        }
-        else
-        {
-            InputNicknames[key] = nickname.Trim();
-        }
-        OnPropertyChanged(nameof(InputNicknames));
+        string key = InputKey(type, index);
+        if (hidden) HiddenPlaceholderInputs.Add(key);
+        else HiddenPlaceholderInputs.Remove(key);
+        OnPropertyChanged(nameof(HiddenPlaceholderInputs));
+    }
+
+    /// <summary>Restores every placeholder row the user has dismissed for this device.</summary>
+    public void ClearHiddenPlaceholderInputs()
+    {
+        if (HiddenPlaceholderInputs.Count == 0) return;
+        HiddenPlaceholderInputs.Clear();
+        OnPropertyChanged(nameof(HiddenPlaceholderInputs));
     }
 }

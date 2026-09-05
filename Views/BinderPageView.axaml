@@ -1,0 +1,638 @@
+<!--
+    The unified Binder page: replaces the old separate Controller Mapping / Device Mapping
+    pages with one device list (every connected wheel, pedal set, and gamepad) on the left and
+    an inline content swap on the right - no navigation, no modal, matching the reference
+    mockup. The "Bindings" tab (visual diagram + Rebinding Table, see BinderDiagramView /
+    Views/Shared/RebindingTableView) is the new default view and replaces the old
+    dropdown-heavy per-device grid as the primary way to bind. The remaining tabs are ported
+    near-verbatim from the old pages and gated by device type (gamepad vs wheel) - see
+    BinderPageViewModel's doc comment.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             xmlns:shared="using:ECCR.Views.Shared"
+             xmlns:views="using:ECCR.Views"
+             xmlns:converters="using:ECCR.Converters"
+             xmlns:avc="using:Avalonia.Data.Converters"
+             mc:Ignorable="d"
+             d:DesignWidth="1300" d:DesignHeight="800"
+             x:Class="ECCR.Views.BinderPageView"
+             x:Name="PageRoot"
+             x:DataType="vm:BinderPageViewModel">
+
+    <UserControl.Resources>
+        <converters:CategoryToGlyphConverter x:Key="CategoryToGlyphConverter"/>
+        <converters:DeviceRowStateConverter x:Key="DeviceRowStateConverter"/>
+    </UserControl.Resources>
+
+    <Design.DataContext>
+        <vm:BinderPageViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto, *" Margin="24">
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,16">
+            <Grid ColumnDefinitions="Auto, *">
+                <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-ControllerLogo.png" Width="22" Height="22"
+                       Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                <TextBlock Grid.Column="1" Text="Binder" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="Bind buttons, axes, and keys for every connected wheel, pedal set, and gamepad - in one place." FontSize="12" Foreground="#8B95A5"/>
+            <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,6,0,0">
+                <TextBlock FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap">
+                    <Run Text="💡" />
+                    <Run Text="Click a device on the left, then click a control on its diagram (or a row's Detected Input) to capture it - you have 7 seconds. "/>
+                    <Run Text="Esc" FontWeight="Bold" Foreground="#D0D0E0"/>
+                    <Run Text=" cancels, "/>
+                    <Run Text="Backspace" FontWeight="Bold" Foreground="#D0D0E0"/>
+                    <Run Text=" clears the binding."/>
+                </TextBlock>
+            </Border>
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="280, 16, *">
+
+            <!-- Device list -->
+            <Border Grid.Column="0" Classes="card" VerticalAlignment="Stretch">
+                <ScrollViewer>
+                    <StackPanel>
+                        <TextBlock Text="DEVICES" FontWeight="Bold" FontSize="12" Foreground="#8B95A5" Margin="2,0,0,10"/>
+                        <ItemsControl ItemsSource="{Binding Devices}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:ControllerStatus">
+                                    <Button Classes="deviceRow" Margin="0,0,0,8"
+                                            Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).SelectDeviceCommand}"
+                                            CommandParameter="{Binding DeviceInstanceName}">
+                                        <Button.Background>
+                                            <MultiBinding Converter="{StaticResource DeviceRowStateConverter}">
+                                                <Binding Path="DeviceInstanceName"/>
+                                                <Binding Path="$parent[UserControl].((vm:BinderPageViewModel)DataContext).SelectedDeviceName"/>
+                                            </MultiBinding>
+                                        </Button.Background>
+                                        <Button.BorderBrush>
+                                            <MultiBinding Converter="{StaticResource DeviceRowStateConverter}" ConverterParameter="Border">
+                                                <Binding Path="DeviceInstanceName"/>
+                                                <Binding Path="$parent[UserControl].((vm:BinderPageViewModel)DataContext).SelectedDeviceName"/>
+                                            </MultiBinding>
+                                        </Button.BorderBrush>
+                                        <Grid ColumnDefinitions="Auto, *">
+                                            <Border Grid.Column="0" Background="#1E2B45" CornerRadius="18" Width="36" Height="36" Margin="0,0,10,0">
+                                                <Image Source="{Binding Category, Converter={StaticResource CategoryToGlyphConverter}}"
+                                                       Width="20" Height="20" Stretch="Uniform"
+                                                       RenderOptions.BitmapInterpolationMode="HighQuality"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                <TextBlock Text="{Binding DeviceInstanceName}" FontWeight="SemiBold" FontSize="12.5" Foreground="White" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Category}" FontSize="10.5" Foreground="#8B95A5"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No controllers, wheels, pedals, or shifters connected." FontSize="12" Foreground="#4B5563" TextWrapping="Wrap" IsVisible="{Binding !HasDevices}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Main content -->
+            <Grid Grid.Column="2" RowDefinitions="Auto, Auto, Auto, *" IsVisible="{Binding SelectedDeviceName, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+
+                <!-- Device sub-header -->
+                <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,10">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SelectedDeviceDisplayName}" FontWeight="Bold" FontSize="16" Foreground="White" VerticalAlignment="Center"/>
+                        <Border Background="#1A202E" CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SelectedDeviceCategory}" FontSize="11" Foreground="#8B95A5"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Profile switcher: gamepad only -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsSelectedDeviceGamepad}">
+                        <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" MinWidth="160" CornerRadius="6" Background="#10141E"/>
+                        <Button Content="+ New" Command="{Binding OpenCreateProfileDialogCommand}" Padding="10,8" CornerRadius="6" Background="#232A3B" BorderBrush="#3D4B6E"/>
+                        <Button Content="Save" Command="{Binding SaveCurrentProfileCommand}" Padding="10,8" CornerRadius="6" FontWeight="SemiBold" Background="#1A4A38" BorderBrush="#266D53"/>
+                        <Button Content="🗑" Command="{Binding DeleteCurrentProfileCommand}" Padding="10,8" CornerRadius="6" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Tab strip -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsBindingsTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Bindings}"
+                            Content="Bindings"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsWheelSettingsTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.WheelSettings}"
+                            Content="Wheel Settings" IsVisible="{Binding IsSelectedDeviceWheel}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsCalibrationTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Calibration}"
+                            Content="Calibration" IsVisible="{Binding IsSelectedDeviceWheel}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsDeadzonesTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Deadzones}"
+                            Content="Deadzones" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsSticksTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Sticks}"
+                            Content="Sticks" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsMotionTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Motion}"
+                            Content="Motion" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsTouchpadTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Touchpad}"
+                            Content="Touchpad" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsMoreOptionsTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.MoreOptions}"
+                            Content="More Options" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
+                </StackPanel>
+
+                <!-- Tab content -->
+                <Panel Grid.Row="3">
+
+                    <!-- Bindings: the new default view. Gamepads get diagram + Rebinding Table
+                         side by side; wheels use the Rebinding Table exclusively (the generic
+                         wheel diagram/hotspot flow is superseded by every physical input already
+                         listed in the table, see BinderPageViewModel.RebuildDisplayRows). -->
+                    <Panel IsVisible="{Binding IsBindingsTabSelected}">
+                        <Grid ColumnDefinitions="1.15*, 16, *" IsVisible="{Binding IsSelectedDeviceGamepad}">
+                            <views:BinderDiagramView Grid.Column="0" DataContext="{Binding Diagram}"/>
+                            <shared:RebindingTableView Grid.Column="2"
+                                                        ItemsSource="{Binding DisplayRows}"
+                                                        DeviceMappingGroup="{Binding SelectedDeviceGroup}"
+                                                        DeviceName="{Binding SelectedDeviceName}"/>
+                        </Grid>
+                        <shared:RebindingTableView IsVisible="{Binding IsSelectedDeviceWheel}"
+                                                    ItemsSource="{Binding DisplayRows}"
+                                                    DeviceMappingGroup="{Binding SelectedDeviceGroup}"
+                                                    DeviceName="{Binding SelectedDeviceName}"/>
+                    </Panel>
+
+                    <!-- Wheel Settings: rotation + force feedback tuning, wheel only. -->
+                    <ScrollViewer IsVisible="{Binding IsWheelSettingsTabSelected}">
+                        <StackPanel Spacing="10" MaxWidth="640" HorizontalAlignment="Left"
+                                    DataContext="{Binding SelectedWheelSettings}" x:DataType="models:WheelDeviceSettings">
+                            <Border Classes="card" IsVisible="{Binding !$parent[UserControl].((vm:BinderPageViewModel)DataContext).IsSelectedDeviceForceFeedbackCapable}">
+                                <TextBlock Text="This device isn't reporting force-feedback support to Windows - rotation/deadzone settings still apply, but effects (spring/damper/friction/etc.) won't reach it." Foreground="#FFAAAA" FontSize="12" TextWrapping="Wrap"/>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Rotation" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="Degrees of physical lock-to-lock rotation this wheel is configured for (set on the wheel's own firmware/driver - this doesn't change that, only how ECCR scales spring-effect torque near the limits)." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <Grid ColumnDefinitions="*, 56">
+                                        <Slider Grid.Column="0" Minimum="90" Maximum="1080" TickFrequency="90" IsSnapToTickEnabled="True" Value="{Binding RotationDegrees}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding RotationDegrees, StringFormat='{}{0}°'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Force Feedback" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding ForceFeedbackEnabled}" OnContent="Enabled" OffContent="Disabled"/>
+                                    </Grid>
+                                    <TextBlock Text="Relays a game's force-feedback effects from its virtual wheel back to this physical wheel in real time." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+
+                                    <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                        <StackPanel Spacing="4">
+                                            <Grid ColumnDefinitions="*, Auto">
+                                                <TextBlock Grid.Column="0" Text="Output" FontSize="10.5" Foreground="#8B95A5"/>
+                                                <TextBlock Grid.Column="1" Text="Clipping!" FontSize="10.5" FontWeight="Bold" Foreground="#FF7088" IsVisible="{Binding IsClipping}"/>
+                                            </Grid>
+                                            <ProgressBar Minimum="0" Maximum="1.5" Value="{Binding LiveOutputForcePercent}"
+                                                         Height="6" CornerRadius="3" Background="#0D1119" Foreground="#00E599"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <StackPanel Spacing="10" IsEnabled="{Binding ForceFeedbackEnabled}">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="Strength" FontSize="11" Foreground="#8B95A5"/>
+                                            <Grid ColumnDefinitions="*, 50">
+                                                <Slider Grid.Column="0" Minimum="0" Maximum="200" Value="{Binding ForceFeedbackStrengthPercent}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding ForceFeedbackStrengthPercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="Minimum Force / Boost" FontSize="11" Foreground="#8B95A5"/>
+                                            <TextBlock Text="Raises weak nonzero forces (e.g. light road texture) up to this floor so they aren't lost to the wheel's own static friction." FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                            <Grid ColumnDefinitions="*, 50">
+                                                <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding MinimumForcePercent}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding MinimumForcePercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <Grid ColumnDefinitions="*, Auto" Margin="0,4,0,0">
+                                            <TextBlock Grid.Column="0" Text="Spring (center-seeking force)" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding SpringEffectEnabled}" OnContent="" OffContent=""/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*, 50" IsEnabled="{Binding SpringEffectEnabled}" Margin="0,0,0,4">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="200" Value="{Binding SpringGainPercent}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding SpringGainPercent, StringFormat='{}{0}%'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <TextBlock Grid.Column="0" Text="Damper (velocity resistance)" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding DamperEffectEnabled}" OnContent="" OffContent=""/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*, 50" IsEnabled="{Binding DamperEffectEnabled}" Margin="0,0,0,4">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="200" Value="{Binding DamperGainPercent}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding DamperGainPercent, StringFormat='{}{0}%'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <TextBlock Grid.Column="0" Text="Inertia (resistance to acceleration)" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding InertiaEffectEnabled}" OnContent="" OffContent=""/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*, 50" IsEnabled="{Binding InertiaEffectEnabled}" Margin="0,0,0,4">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="200" Value="{Binding InertiaGainPercent}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding InertiaGainPercent, StringFormat='{}{0}%'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <TextBlock Grid.Column="0" Text="Friction" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding FrictionEffectEnabled}" OnContent="" OffContent=""/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*, 50" IsEnabled="{Binding FrictionEffectEnabled}" Margin="0,0,0,4">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="200" Value="{Binding FrictionGainPercent}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding FrictionGainPercent, StringFormat='{}{0}%'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <TextBlock Grid.Column="0" Text="Invert Force Direction" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertForce}" OnContent="" OffContent=""/>
+                                        </Grid>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Cloaking" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="For force feedback and full remapping to be authoritative, games must only see ECCR's virtual wheel - hide this device's raw input from other applications via HidHide." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <Button Content="🛡 Open HidHide Cloaking" Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).OpenHidHideCommand}"
+                                            Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,8" CornerRadius="6" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Calibration: live per-axis dashboard for every bound wheel axis, wheel only.
+                         Complements (doesn't replace) the per-entry Calibration dialog reachable
+                         from the Rebinding Table's gear flyout - this tab shows every axis at
+                         once instead of one at a time. -->
+                    <ScrollViewer IsVisible="{Binding IsCalibrationTabSelected}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="No axis inputs bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                                       IsVisible="{Binding !HasWheelAxisEntries}" Margin="4,8"/>
+                            <ItemsControl ItemsSource="{Binding WheelAxisEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <StackPanel Spacing="10">
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding SourceDisplayName}" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding TargetOutput}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                </Grid>
+
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                </Grid>
+                                                <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                </Grid>
+                                                <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+
+                                                <Grid ColumnDefinitions="*, *, *" Margin="0,4,0,0">
+                                                    <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,4,0">
+                                                        <Border Background="#10141E" CornerRadius="6" Padding="6,3">
+                                                            <TextBlock Text="{Binding RawMin, StringFormat='Min: {0}'}" FontSize="11" Foreground="White" HorizontalAlignment="Center"/>
+                                                        </Border>
+                                                        <Button Content="Set Min" Click="OnCalSetMinClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="6,4" CornerRadius="5"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="4" Margin="2,0,2,0">
+                                                        <Border Background="#10141E" CornerRadius="6" Padding="6,3">
+                                                            <TextBlock Text="{Binding RawCenter, StringFormat='Center: {0}'}" FontSize="11" Foreground="White" HorizontalAlignment="Center"/>
+                                                        </Border>
+                                                        <Button Content="Set Center" Click="OnCalSetCenterClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="6,4" CornerRadius="5"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Spacing="4" Margin="4,0,0,0">
+                                                        <Border Background="#10141E" CornerRadius="6" Padding="6,3">
+                                                            <TextBlock Text="{Binding RawMax, StringFormat='Max: {0}'}" FontSize="11" Foreground="White" HorizontalAlignment="Center"/>
+                                                        </Border>
+                                                        <Button Content="Set Max" Click="OnCalSetMaxClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="6,4" CornerRadius="5"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                    <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+
+                                                <Grid ColumnDefinitions="*, 44">
+                                                    <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.0" Maximum="0.3" Value="{Binding DeadzoneOuter}"/>
+
+                                                <Grid ColumnDefinitions="*, 44">
+                                                    <TextBlock Text="Linearity" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LinearityExponent, StringFormat='{}{0:0.00}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.3" Maximum="3.0" Value="{Binding LinearityExponent}"/>
+
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Invert Axis" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Deadzones: axis rows for the selected device, gamepad only. -->
+                    <ScrollViewer IsVisible="{Binding IsDeadzonesTabSelected}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="No axis inputs bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                                       IsVisible="{Binding !HasAxisEntries}" Margin="4,8"/>
+                            <ItemsControl ItemsSource="{Binding AxisEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,8">
+                                            <Grid ColumnDefinitions="1.4*, *, Auto" RowDefinitions="Auto, Auto">
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding SourceDisplayName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding TargetOutput}" FontSize="11" Foreground="#8B95A5" Margin="0,2,0,0"/>
+                                                <Grid Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" ColumnDefinitions="*, 44" VerticalAlignment="Center" Margin="12,0">
+                                                    <Slider Grid.Column="0" Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Content="Calibrate"
+                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenCalibrationCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#1B2130" BorderBrush="#2B354C" CornerRadius="6" Padding="12,8" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Sticks: axis rows grouped by physical stick, gamepad only. -->
+                    <ScrollViewer IsVisible="{Binding IsSticksTabSelected}">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="No axis inputs bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                                       IsVisible="{Binding !HasAxisEntries}" Margin="4,8"/>
+                            <StackPanel Spacing="8" IsVisible="{Binding HasLeftStickAxes}">
+                                <TextBlock Text="Left Stick" FontWeight="SemiBold" FontSize="13" Foreground="#BAC2DE"/>
+                                <ItemsControl ItemsSource="{Binding LeftStickAxes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:MappingEntry">
+                                            <Border Classes="card" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding SourceDisplayName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock Text="Invert" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel Spacing="8" IsVisible="{Binding HasRightStickAxes}">
+                                <TextBlock Text="Right Stick" FontWeight="SemiBold" FontSize="13" Foreground="#BAC2DE"/>
+                                <ItemsControl ItemsSource="{Binding RightStickAxes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:MappingEntry">
+                                            <Border Classes="card" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding SourceDisplayName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock Text="Invert" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel Spacing="8" IsVisible="{Binding HasOtherAxes}">
+                                <TextBlock Text="Other Axes" FontWeight="SemiBold" FontSize="13" Foreground="#BAC2DE"/>
+                                <ItemsControl ItemsSource="{Binding OtherAxes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:MappingEntry">
+                                            <Border Classes="card" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding SourceDisplayName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock Text="Invert" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Motion: live gyro readout + Gyro-Aim toggle, PlayStation only. -->
+                    <ScrollViewer IsVisible="{Binding IsMotionTabSelected}">
+                        <StackPanel Spacing="10" VerticalAlignment="Top">
+                            <Border Classes="card" IsVisible="{Binding !IsMotionSupportedForSelectedDevice}">
+                                <TextBlock Text="Motion is not supported for this device (PlayStation controllers only)." Foreground="#FFAAAA" FontSize="13"/>
+                            </Border>
+                            <Border Classes="card" IsVisible="{Binding IsMotionSupportedForSelectedDevice}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="Live Gyro Reading" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <Grid ColumnDefinitions="54,*,50" RowDefinitions="Auto,Auto,Auto">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Pitch" Foreground="#8B95A5" FontSize="11" VerticalAlignment="Center"/>
+                                        <ProgressBar Grid.Row="0" Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding SelectedDeviceStatus.GyroPitch}" Margin="8,0"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding SelectedDeviceStatus.GyroPitch, StringFormat={}{0:0.00}}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Yaw" Foreground="#8B95A5" FontSize="11" VerticalAlignment="Center" Margin="0,8,0,0"/>
+                                        <ProgressBar Grid.Row="1" Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding SelectedDeviceStatus.GyroYaw}" Margin="8,8,8,0"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding SelectedDeviceStatus.GyroYaw, StringFormat={}{0:0.00}}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" Margin="0,8,0,0"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Roll" Foreground="#8B95A5" FontSize="11" VerticalAlignment="Center" Margin="0,8,0,0"/>
+                                        <ProgressBar Grid.Row="2" Grid.Column="1" Minimum="-1" Maximum="1" Value="{Binding SelectedDeviceStatus.GyroRoll}" Margin="8,8,8,0"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding SelectedDeviceStatus.GyroRoll, StringFormat={}{0:0.00}}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" Margin="0,8,0,0"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="card" IsVisible="{Binding IsMotionSupportedForSelectedDevice}">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Gyro Aim" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="Maps this device's gyro yaw/pitch straight to the Right Stick of the chosen player's virtual Xbox 360 controller." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <Grid ColumnDefinitions="Auto, *, Auto">
+                                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding IsGyroAimEnabledForSelectedDevice}" OnContent="Enabled" OffContent="Disabled"/>
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{x:Static vm:MainWindowViewModel.PlayerTargets}"
+                                                  SelectedValue="{Binding GyroAimTargetPlayer}"
+                                                  SelectedValueBinding="{Binding Id}"
+                                                  MinWidth="220" CornerRadius="6" Background="#10141E">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="models:PlayerTargetOption">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Touchpad: live touch X/Y readout + Touch-Aim toggle, PlayStation only. -->
+                    <ScrollViewer IsVisible="{Binding IsTouchpadTabSelected}">
+                        <StackPanel Spacing="10" VerticalAlignment="Top">
+                            <Border Classes="card" IsVisible="{Binding !IsMotionSupportedForSelectedDevice}">
+                                <TextBlock Text="Touchpad is not supported for this device (PlayStation controllers only)." Foreground="#FFAAAA" FontSize="13"/>
+                            </Border>
+                            <Border Classes="card" IsVisible="{Binding IsMotionSupportedForSelectedDevice}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="Live Touch Reading" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <Grid ColumnDefinitions="54,*,50" RowDefinitions="Auto,Auto">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="X" Foreground="#8B95A5" FontSize="11" VerticalAlignment="Center"/>
+                                        <ProgressBar Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding SelectedDeviceStatus.TouchX}" Margin="8,0"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding SelectedDeviceStatus.TouchX, StringFormat={}{0:0.00}}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" Foreground="#8B95A5" FontSize="11" VerticalAlignment="Center" Margin="0,8,0,0"/>
+                                        <ProgressBar Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding SelectedDeviceStatus.TouchY}" Margin="8,8,8,0"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding SelectedDeviceStatus.TouchY, StringFormat={}{0:0.00}}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" Margin="0,8,0,0"/>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="Finger down:" FontSize="11" Foreground="#8B95A5"/>
+                                        <TextBlock Text="{Binding SelectedDeviceStatus.TouchActive}" FontSize="11" Foreground="#D0D0E0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="card" IsVisible="{Binding IsMotionSupportedForSelectedDevice}">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Touch Aim" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="Maps finger position on the touchpad straight to the Right Stick of the chosen player's virtual Xbox 360 controller while touching." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <Grid ColumnDefinitions="Auto, *, Auto">
+                                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding IsTouchAimEnabledForSelectedDevice}" OnContent="Enabled" OffContent="Disabled"/>
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{x:Static vm:MainWindowViewModel.PlayerTargets}"
+                                                  SelectedValue="{Binding TouchAimTargetPlayer}"
+                                                  SelectedValueBinding="{Binding Id}"
+                                                  MinWidth="220" CornerRadius="6" Background="#10141E">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="models:PlayerTargetOption">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- More Options -->
+                    <ScrollViewer IsVisible="{Binding IsMoreOptionsTabSelected}">
+                        <StackPanel Spacing="10" VerticalAlignment="Top">
+                            <Border Classes="card">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Rumble / Haptics" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <StackPanel Spacing="10" DataContext="{Binding SelectedGamepadSettings}" x:DataType="models:GamepadDeviceSettings">
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <TextBlock Grid.Column="0" Text="Vibration" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding RumbleEnabled}" OnContent="Enabled" OffContent="Disabled"/>
+                                        </Grid>
+                                        <StackPanel Spacing="4" IsEnabled="{Binding RumbleEnabled}">
+                                            <TextBlock Text="Intensity" FontSize="11" Foreground="#8B95A5"/>
+                                            <Grid ColumnDefinitions="*, 50">
+                                                <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding RumbleIntensityPercent}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding RumbleIntensityPercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" DataContext="{Binding ControllerLed}" x:DataType="vm:ControllerLedViewModel">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="Lighting" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="Not supported for this device." Foreground="#FFAAAA" FontSize="12" IsVisible="{Binding !IsSupportedForSelectedDevice}"/>
+
+                                    <StackPanel Spacing="12" IsEnabled="{Binding IsSupportedForSelectedDevice}">
+                                        <Border Height="40" CornerRadius="8" Background="{Binding PreviewBrush}"/>
+
+                                        <Grid ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto, Auto, Auto">
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="R" Foreground="#FF7088" Width="16"/>
+                                            <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="255" Value="{Binding Red}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Red}" Width="32" HorizontalAlignment="Right" Foreground="#8B95A5"/>
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="G" Foreground="#5CFFBE" Width="16" Margin="0,8,0,0"/>
+                                            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="255" Value="{Binding Green}" Margin="0,8,0,0"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Green}" Width="32" HorizontalAlignment="Right" Foreground="#8B95A5" Margin="0,8,0,0"/>
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="B" Foreground="#70A0FF" Width="16" Margin="0,8,0,0"/>
+                                            <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="255" Value="{Binding Blue}" Margin="0,8,0,0"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Blue}" Width="32" HorizontalAlignment="Right" Foreground="#8B95A5" Margin="0,8,0,0"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="Auto, *, Auto">
+                                            <TextBlock Grid.Column="0" Text="Hex" Foreground="#BAC2DE" Width="32" VerticalAlignment="Center"/>
+                                            <TextBox Grid.Column="1" Text="{Binding HexInput}" Watermark="#RRGGBB" MaxLength="7" Background="#10141E" CornerRadius="6">
+                                                <TextBox.KeyBindings>
+                                                    <KeyBinding Gesture="Enter" Command="{Binding ApplyHexInputCommand}"/>
+                                                </TextBox.KeyBindings>
+                                            </TextBox>
+                                            <Button Grid.Column="2" Content="Set" Command="{Binding ApplyHexInputCommand}" Classes="neutral" Margin="6,0,0,0"/>
+                                        </Grid>
+
+                                        <Button Content="Apply Color" Command="{Binding ApplyColorCommand}" Classes="primary" HorizontalAlignment="Right"/>
+                                        <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="#8B95A5"/>
+
+                                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                                        <TextBlock Text="Mode" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                        <ComboBox ItemsSource="{Binding EffectModes}" SelectedItem="{Binding EffectMode}" HorizontalAlignment="Stretch" Background="#10141E" CornerRadius="6"/>
+                                        <StackPanel Spacing="6" IsVisible="{Binding IsEffectModeActive}">
+                                            <TextBlock Text="Speed" Foreground="#8B95A5" FontSize="11"/>
+                                            <Grid ColumnDefinitions="*, Auto">
+                                                <Slider Grid.Column="0" Minimum="0.2" Maximum="3.0" Value="{Binding EffectSpeed}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding EffectSpeed, StringFormat={}{0:0.0}x}" Width="40" HorizontalAlignment="Right" Foreground="#8B95A5"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Connection" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="No status data for this device." Foreground="#8B95A5" FontSize="12" IsVisible="{Binding !HasSelectedDeviceStatus}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="16" IsVisible="{Binding HasSelectedDeviceStatus}">
+                                        <TextBlock Text="{Binding SelectedDeviceStatus.ConnectionType, StringFormat='Connection: {0}'}" FontSize="12" Foreground="#D0D0E0"/>
+                                        <TextBlock Text="{Binding SelectedDeviceStatus.BatteryPercent, StringFormat='Battery: {0}%'}" FontSize="12" Foreground="#D0D0E0" IsVisible="{Binding SelectedDeviceStatus.IsBatterySupported}"/>
+                                        <TextBlock Text="Charging" FontSize="12" Foreground="#5CFFBE" IsVisible="{Binding SelectedDeviceStatus.IsCharging}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Panel>
+            </Grid>
+
+            <TextBlock Grid.Column="2" Text="Select a device on the left to view and edit its bindings." FontSize="13" Foreground="#4B5563"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding SelectedDeviceName, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+        </Grid>
+    </Grid>
+</UserControl>

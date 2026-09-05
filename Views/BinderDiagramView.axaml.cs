@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace ECCR.Views;
 
-public partial class ControllerLedView : UserControl
+public partial class BinderDiagramView : UserControl
 {
-    public ControllerLedView()
+    public BinderDiagramView()
     {
         InitializeComponent();
     }

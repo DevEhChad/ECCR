@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ECCR.Models;
 
 namespace ECCR.Services;
@@ -9,7 +10,6 @@ namespace ECCR.Services;
 /// <summary>Coarse hardware family, inferred from a device's DirectInput name string by <see cref="DevicePresetService.DetectCategory"/>.</summary>
 public enum DeviceHardwareCategory
 {
-    MozaEsxWheel,
     MozaWheel,
     LogitechRig,
     FanatecRig,
@@ -69,11 +69,48 @@ public static class DevicePresetService
         return (0, 1, 3, 4);
     }
 
+    /// <summary>
+    /// USB vendor ID -&gt; hardware category, for the handful of call sites that already have a
+    /// <see cref="DeviceHardwareInfo"/> (and therefore a decoded VID/PID) in hand - more
+    /// reliable than <see cref="DetectCategory"/>'s name-substring matching, which is still the
+    /// only option at the many call sites that only have a bare device-name string. Superset of
+    /// <see cref="HidHideManager"/>'s own vendor table (kept separate there since it maps to a
+    /// display-name string for a different purpose, not a <see cref="DeviceHardwareCategory"/>).
+    /// Moza (Gudsen) and Simucube (Granite Devices) VIDs below are NOT independently verified
+    /// against real hardware or the USB-IF registry - treat them as best-effort until confirmed;
+    /// an unverified/wrong VID here would misclassify an unrelated device, so double check before
+    /// relying on them for anything destructive (e.g. Auto-Bind preset selection).
+    /// </summary>
+    private static readonly Dictionary<int, DeviceHardwareCategory> VendorIdToCategory = new()
+    {
+        [0x054C] = DeviceHardwareCategory.PlayStationController, // Sony
+        [0x057E] = DeviceHardwareCategory.NintendoController,    // Nintendo
+        [0x045E] = DeviceHardwareCategory.XboxGamepad,           // Microsoft
+        [0x046D] = DeviceHardwareCategory.LogitechRig,           // Logitech
+        [0x044F] = DeviceHardwareCategory.ThrustmasterRig,       // Thrustmaster
+        [0x0EB7] = DeviceHardwareCategory.FanatecRig,            // Fanatec
+        [0x1D79] = DeviceHardwareCategory.SimagicRig,            // Simagic
+        // Unverified - see doc comment above.
+        [0x346E] = DeviceHardwareCategory.MozaWheel,             // Moza / Gudsen (community-reported, unconfirmed)
+        [0x16D0] = DeviceHardwareCategory.GenericWheelOrPedals,  // Simucube/Granite Devices *or* Cammus - both community-reported on this VID; can't disambiguate by VID alone, falls back to the generic wheel category rather than guessing one brand over the other
+    };
+
+    /// <summary>
+    /// Preferred category lookup wherever a caller already has a decoded VID/PID (e.g. from
+    /// <see cref="Services.DeviceHardwareInfo"/>) - falls back to the name-substring
+    /// <see cref="DetectCategory"/> when the VID isn't in <see cref="VendorIdToCategory"/>.
+    /// </summary>
+    public static DeviceHardwareCategory DetectCategoryByVidPid(int vendorId, int productId, string fallbackName) =>
+        VendorIdToCategory.TryGetValue(vendorId, out var category) ? category : DetectCategory(fallbackName);
+
     public static bool IsWheelOrPedalCategory(DeviceHardwareCategory category) =>
-        category is DeviceHardwareCategory.MozaEsxWheel or DeviceHardwareCategory.MozaWheel or
+        category is DeviceHardwareCategory.MozaWheel or
                      DeviceHardwareCategory.LogitechRig or DeviceHardwareCategory.FanatecRig or
                      DeviceHardwareCategory.ThrustmasterRig or DeviceHardwareCategory.SimagicRig or
                      DeviceHardwareCategory.GenericWheelOrPedals;
+
+    /// <summary>Matches Moza's numeric model names (R3/R5/R9/R12/R16/R21) as whole tokens only - a bare <c>.Contains("r3")</c>/<c>"r9"</c> etc. would false-positive against unrelated device name substrings.</summary>
+    private static readonly Regex MozaModelNumber = new(@"\br(3|5|9|12|16|21)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static DeviceHardwareCategory DetectCategory(string deviceName)
     {
@@ -82,11 +119,7 @@ public static class DevicePresetService
         if (dev.Contains("dualsense") || dev.Contains("dualshock") || dev.Contains("sony") || dev.Contains("wireless controller") || dev.Contains("ps5") || dev.Contains("ps4") || dev.Contains("ps3"))
             return DeviceHardwareCategory.PlayStationController;
 
-        if (dev.Contains("esx") || (dev.Contains("moza") && dev.Contains("xbox")))
-            return DeviceHardwareCategory.MozaEsxWheel;
-
-        if (dev.Contains("moza") || dev.Contains("gudsen") || dev.Contains("r3") || dev.Contains("r5") ||
-            dev.Contains("r9") || dev.Contains("r12") || dev.Contains("r16") || dev.Contains("r21") ||
+        if (dev.Contains("moza") || dev.Contains("gudsen") || dev.Contains("esx") || MozaModelNumber.IsMatch(dev) ||
             dev.Contains("es steering") || dev.Contains("ks steering") || dev.Contains("fsr") || dev.Contains("cs steering") || dev.Contains("gs steering"))
             return DeviceHardwareCategory.MozaWheel;
 
@@ -125,9 +158,21 @@ public static class DevicePresetService
     /// derived from any spec, so if a new wheel/pad reports its buttons in an unexpected
     /// order, the fix is a new branch here (and in <see cref="GetAxisDisplayName"/> /
     /// <see cref="GeneratePreset"/> for that same category) with corrected index mappings.
+    /// <paramref name="vidPid"/>/<paramref name="sdkProvider"/> are an optional seam for a
+    /// future real vendor SDK integration (see <see cref="IWheelSdkProvider"/>) - when both are
+    /// supplied and the provider recognizes the device/index, its native name wins over the
+    /// hardcoded table below. Neither is passed by any call site today (no real provider
+    /// exists yet), so omitting them preserves exactly today's behavior.
     /// </summary>
-    public static string GetButtonDisplayName(string deviceName, int index)
+    public static string GetButtonDisplayName(string deviceName, int index, (int VendorId, int ProductId)? vidPid = null, IWheelSdkProvider? sdkProvider = null)
     {
+        if (vidPid != null && sdkProvider != null &&
+            sdkProvider.TryGetNativeButtonName(vidPid.Value.VendorId, vidPid.Value.ProductId, index, out var nativeName) &&
+            !string.IsNullOrWhiteSpace(nativeName))
+        {
+            return nativeName!;
+        }
+
         var category = DetectCategory(deviceName);
 
         switch (category)
@@ -156,37 +201,36 @@ public static class DevicePresetService
                     _ => $"Button {index + 1}"
                 };
 
-            case DeviceHardwareCategory.MozaEsxWheel:
             case DeviceHardwareCategory.MozaWheel:
                 return index switch
                 {
-                    0 => "Moza A Button (Xbox Ⓐ)",
-                    1 => "Moza B Button (Xbox Ⓑ)",
-                    2 => "Moza X Button (Xbox Ⓧ)",
-                    3 => "Moza Y Button (Xbox Ⓨ)",
-                    4 => "Moza View Button (⧉ Back)",
-                    5 => "Moza Menu Button (☰ Start)",
+                    0 => "Wheel Button 1 (A / Cross)",
+                    1 => "Wheel Button 2 (B / Circle)",
+                    2 => "Wheel Button 3 (X / Square)",
+                    3 => "Wheel Button 4 (Y / Triangle)",
+                    4 => "Wheel View / Back",
+                    5 => "Wheel Menu / Start",
                     6 => "Left Paddle (Paddle Down / Shift Down)",
                     7 => "Right Paddle (Paddle Up / Shift Up)",
                     8 => "Left Stick Click (LSB)",
                     9 => "Right Stick Click (RSB)",
-                    10 => "Moza Xbox Guide Button (⨂ Home)",
-                    11 => "Moza Share Button / S1",
-                    12 => "Moza S2 / Rotary Press",
-                    128 => "Moza D-Pad Up",
-                    129 => "Moza D-Pad Right",
-                    130 => "Moza D-Pad Down",
-                    131 => "Moza D-Pad Left",
-                    _ => $"Moza Button {index + 1}"
+                    10 => "Guide / Home Button",
+                    11 => "Wheel Button 11 (Share)",
+                    12 => "Rotary Press",
+                    128 => "D-Pad Up",
+                    129 => "D-Pad Right",
+                    130 => "D-Pad Down",
+                    131 => "D-Pad Left",
+                    _ => $"Wheel Button {index + 1}"
                 };
 
             case DeviceHardwareCategory.LogitechRig:
                 return index switch
                 {
-                    0 => "Logitech Cross / A",
-                    1 => "Logitech Square / X",
-                    2 => "Logitech Circle / B",
-                    3 => "Logitech Triangle / Y",
+                    0 => "Wheel Button 1 (A / Cross)",
+                    1 => "Wheel Button 3 (X / Square)",
+                    2 => "Wheel Button 2 (B / Circle)",
+                    3 => "Wheel Button 4 (Y / Triangle)",
                     4 => "Right Paddle (Paddle Up)",
                     5 => "Left Paddle (Paddle Down)",
                     6 => "R2 / RT Button",
@@ -209,7 +253,7 @@ public static class DevicePresetService
                     129 => "D-Pad Right",
                     130 => "D-Pad Down",
                     131 => "D-Pad Left",
-                    _ => $"Logitech Button {index + 1}"
+                    _ => $"Wheel Button {index + 1}"
                 };
 
             case DeviceHardwareCategory.NintendoController:
@@ -293,32 +337,16 @@ public static class DevicePresetService
         }
     }
 
-    /// <summary>
-    /// The name to actually show for one physical input: the user's own nickname if they've set
-    /// one for this device+index (see <see cref="WheelDeviceSettings.GetNickname"/>), else the
-    /// generated name from <see cref="GetButtonDisplayName"/>/<see cref="GetAxisDisplayName"/>.
-    /// This is the one call site everything displaying a physical input's name should use -
-    /// callers should stop calling <see cref="GetButtonDisplayName"/>/<see cref="GetAxisDisplayName"/>
-    /// directly wherever a nickname override should apply.
-    /// </summary>
-    public static string GetEffectiveDisplayName(string deviceName, InputType type, int index, WheelDeviceSettings? settings)
+    /// <summary>Same idea as <see cref="GetButtonDisplayName"/>, but for the 6-8 element raw axis array (see <see cref="RawDeviceInputState.Axes"/>). <paramref name="vidPid"/>/<paramref name="sdkProvider"/> are the same optional future-SDK seam.</summary>
+    public static string GetAxisDisplayName(string deviceName, int index, (int VendorId, int ProductId)? vidPid = null, IWheelSdkProvider? sdkProvider = null)
     {
-        string? nickname = settings?.GetNickname(type, index);
-        if (!string.IsNullOrWhiteSpace(nickname)) return nickname;
-        return type == InputType.Axis ? GetAxisDisplayName(deviceName, index) : GetButtonDisplayName(deviceName, index);
-    }
+        if (vidPid != null && sdkProvider != null &&
+            sdkProvider.TryGetNativeAxisName(vidPid.Value.VendorId, vidPid.Value.ProductId, index, out var nativeName) &&
+            !string.IsNullOrWhiteSpace(nativeName))
+        {
+            return nativeName!;
+        }
 
-    /// <summary>
-    /// The name to actually show for a whole device: the user's device nickname
-    /// (<see cref="WheelDeviceSettings.DeviceNickname"/>) if set, else the raw device name.
-    /// Counterpart to <see cref="GetEffectiveDisplayName"/> for one physical input.
-    /// </summary>
-    public static string GetEffectiveDeviceName(string deviceName, WheelDeviceSettings? settings) =>
-        !string.IsNullOrWhiteSpace(settings?.DeviceNickname) ? settings.DeviceNickname! : deviceName;
-
-    /// <summary>Same idea as <see cref="GetButtonDisplayName"/>, but for the 6-8 element raw axis array (see <see cref="RawDeviceInputState.Axes"/>).</summary>
-    public static string GetAxisDisplayName(string deviceName, int index)
-    {
         var category = DetectCategory(deviceName);
 
         switch (category)
@@ -336,7 +364,6 @@ public static class DevicePresetService
                     _ => $"Axis {index + 1}"
                 };
 
-            case DeviceHardwareCategory.MozaEsxWheel:
             case DeviceHardwareCategory.MozaWheel:
             case DeviceHardwareCategory.LogitechRig:
             case DeviceHardwareCategory.FanatecRig:
@@ -509,7 +536,7 @@ public static class DevicePresetService
             return FinalizePreset(list, deviceName, buttonCount, axisCount, hasPov, outputCategory);
         }
 
-        bool isMoza = category == DeviceHardwareCategory.MozaEsxWheel || category == DeviceHardwareCategory.MozaWheel;
+        bool isMoza = category == DeviceHardwareCategory.MozaWheel;
 
         if (isMoza)
         {
@@ -518,22 +545,22 @@ public static class DevicePresetService
             list.Add(new PresetBindingItem { PhysicalName = "Brake Pedal (Axis Z)", Type = InputType.Axis, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Left Trigger (LT / Brake Axis)", "[Wheel] Brake (Axis Z)") });
             list.Add(new PresetBindingItem { PhysicalName = "Clutch Pedal (Axis Rx)", Type = InputType.Axis, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Clutch (Axis Rx)") });
             list.Add(new PresetBindingItem { PhysicalName = "Handbrake (Axis Ry)", Type = InputType.Axis, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Handbrake (Axis Ry)") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza A Button (Xbox Ⓐ)", Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Button 1") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza B Button (Xbox Ⓑ)", Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox B (Circle / East)", "[Wheel] Button 2") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza X Button (Xbox Ⓧ)", Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox X (Square / West / Shift Down)", "[Wheel] Button 3") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza Y Button (Xbox Ⓨ)", Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Y (Triangle / North / Shift Up)", "[Wheel] Button 4") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza View Button (⧉ Back)", Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox View (Back / Map / Share)", "[Wheel] Button 11") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza Menu Button (☰ Start)", Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Menu (Start / Options)", "[Wheel] Button 12") });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Paddle (Paddle Down / Shift Down)", Type = InputType.Button, PhysicalIndex = 6, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Paddle Down (Left Shift)") });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Paddle (Paddle Up / Shift Up)", Type = InputType.Button, PhysicalIndex = 7, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RB (Right Bumper / R1)", "[Wheel] Paddle Up (Right Shift)") });
-            list.Add(new PresetBindingItem { PhysicalName = "Left Stick Click (LSB)", Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LSB (Left Stick Click / L3)", "[Wheel] Button 9") });
-            list.Add(new PresetBindingItem { PhysicalName = "Right Stick Click (RSB)", Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RSB (Right Stick Click / R3)", "[Wheel] Button 10") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza Xbox Guide Button (⨂ Home)", Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Guide (Home / Guide)", "[Wheel] Button 13") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 0), Type = InputType.Button, PhysicalIndex = 0, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox A (Cross / South / Handbrake)", "[Wheel] Button 1") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 1), Type = InputType.Button, PhysicalIndex = 1, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox B (Circle / East)", "[Wheel] Button 2") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 2), Type = InputType.Button, PhysicalIndex = 2, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox X (Square / West / Shift Down)", "[Wheel] Button 3") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 3), Type = InputType.Button, PhysicalIndex = 3, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Y (Triangle / North / Shift Up)", "[Wheel] Button 4") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 4), Type = InputType.Button, PhysicalIndex = 4, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox View (Back / Map / Share)", "[Wheel] Button 11") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 5), Type = InputType.Button, PhysicalIndex = 5, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Menu (Start / Options)", "[Wheel] Button 12") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 6), Type = InputType.Button, PhysicalIndex = 6, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)", "[Wheel] Paddle Down (Left Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 7), Type = InputType.Button, PhysicalIndex = 7, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RB (Right Bumper / R1)", "[Wheel] Paddle Up (Right Shift)") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 8), Type = InputType.Button, PhysicalIndex = 8, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox LSB (Left Stick Click / L3)", "[Wheel] Button 9") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 9), Type = InputType.Button, PhysicalIndex = 9, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox RSB (Right Stick Click / R3)", "[Wheel] Button 10") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 10), Type = InputType.Button, PhysicalIndex = 10, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] Xbox Guide (Home / Guide)", "[Wheel] Button 13") });
 
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Up", Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Up", "[Wheel] Button 14") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Down", Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Down", "[Wheel] Button 15") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Left", Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Left", "[Wheel] Button 16") });
-            list.Add(new PresetBindingItem { PhysicalName = "Moza D-Pad Right", Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Right", "[Wheel] Button 17") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 128), Type = InputType.Button, PhysicalIndex = 128, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Up", "[Wheel] Button 14") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 130), Type = InputType.Button, PhysicalIndex = 130, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Down", "[Wheel] Button 15") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 131), Type = InputType.Button, PhysicalIndex = 131, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Left", "[Wheel] Button 16") });
+            list.Add(new PresetBindingItem { PhysicalName = GetButtonDisplayName(deviceName, 129), Type = InputType.Button, PhysicalIndex = 129, DefaultTargetOutput = ForCategory(outputCategory, "[Xbox] D-Pad Right", "[Wheel] Button 17") });
             return FinalizePreset(list, deviceName, buttonCount, axisCount, hasPov, outputCategory);
         }
 
@@ -606,20 +633,37 @@ public static class DevicePresetService
     }
 
     /// <summary>
-    /// Applies a generated preset to the shared mapping list for one device: removes every
-    /// existing <see cref="MappingEntry"/> for <paramref name="deviceName"/> and adds one fresh
-    /// entry per <paramref name="presetItems"/>. Pure collection mutation with no ViewModel
-    /// coupling, shared by <c>AutoBindWizardViewModel.ApplyWizardBindings</c> (wizard page) and
+    /// Applies a generated preset to the shared mapping list for one device: for each preset
+    /// item, if a <see cref="MappingEntry"/> already exists at that physical (<see cref="MappingEntry.SourceType"/>,
+    /// <see cref="MappingEntry.SourceIndex"/>) slot, only its <see cref="MappingEntry.TargetOutput"/>/
+    /// <see cref="MappingEntry.TargetDeviceId"/> are updated - its deadzone, inversion,
+    /// calibration and hotspot link are left exactly as the user set them. Only slots with no
+    /// existing entry get a brand-new one. Existing slots the new preset doesn't cover are left
+    /// alone rather than removed. This is deliberately non-destructive (see the doc comment on
+    /// <c>MainWindowViewModel.ApplyOutputModeToDevice</c> and the Auto-Bind Wizard's own
+    /// instructions) - a prior version of this method deleted every existing entry for the
+    /// device and rebuilt from scratch, silently wiping any customization on every re-run. Pure
+    /// collection mutation with no ViewModel coupling, shared by
+    /// <c>AutoBindWizardViewModel.ApplyWizardBindings</c> (wizard page) and
     /// <c>MainWindowViewModel.ApplyOutputModeToDevice</c> (the main grid's per-device "Output As"
     /// switch) so both entry points stay in sync instead of maintaining two copies of this logic.
     /// </summary>
     public static void ApplyPreset(ObservableCollection<MappingEntry> mappings, string deviceName, Guid deviceGuid, List<PresetBindingItem> presetItems, uint targetDeviceId)
     {
-        var toRemove = mappings.Where(m => m.SourceDeviceName == deviceName).ToList();
-        foreach (var r in toRemove) mappings.Remove(r);
+        var existingBySlot = mappings
+            .Where(m => m.SourceDeviceName == deviceName)
+            .GroupBy(m => (m.SourceType, m.SourceIndex))
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var item in presetItems)
         {
+            if (existingBySlot.TryGetValue((item.Type, item.PhysicalIndex), out var existing))
+            {
+                existing.TargetOutput = item.DefaultTargetOutput;
+                existing.TargetDeviceId = targetDeviceId;
+                continue;
+            }
+
             bool shouldInvert = item.Type == InputType.Axis &&
                 (item.PhysicalName.Contains("Vertical") || item.PhysicalName.Contains("Stick Y") ||
                  item.PhysicalName.Contains("Throttle") || item.PhysicalName.Contains("Brake"));

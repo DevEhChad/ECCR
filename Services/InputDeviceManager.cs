@@ -18,6 +18,16 @@ public class DeviceHardwareInfo
 
     /// <summary>Whether the device reports a POV hat (D-Pad) - gates whether <see cref="DevicePresetService.GeneratePreset"/> emits the synthetic 128-131 D-Pad button indices for it.</summary>
     public bool HasPov { get; set; }
+
+    /// <summary>
+    /// USB vendor/product ID, decoded from <see cref="ProductGuid"/> (standard DirectInput
+    /// convention: a product GUID's first 4 bytes are the VID/PID as two little-endian
+    /// UInt16s - <c>{PPPPVVVV-0000-0000-0000-504944564944}</c>). 0 if decoding failed. Lets
+    /// <see cref="DevicePresetService.DetectCategoryByVidPid"/> identify hardware more reliably
+    /// than the name-substring fallback wherever a caller already has this struct in hand.
+    /// </summary>
+    public int VendorId { get; set; }
+    public int ProductId { get; set; }
 }
 
 /// <summary>
@@ -75,6 +85,8 @@ public class InputDeviceManager : IDisposable
                 }
                 catch { /* keep the 32/8/true fallback */ }
 
+                var (vendorId, productId) = ParseVidPidFromProductGuid(d.ProductGuid);
+
                 list.Add(new DeviceHardwareInfo
                 {
                     InstanceGuid = d.InstanceGuid,
@@ -83,12 +95,30 @@ public class InputDeviceManager : IDisposable
                     ProductName = d.ProductName,
                     ButtonCount = buttonCount,
                     AxisCount = axisCount,
-                    HasPov = hasPov
+                    HasPov = hasPov,
+                    VendorId = vendorId,
+                    ProductId = productId
                 });
             }
         }
         catch { }
         return list;
+    }
+
+    /// <summary>Decodes a DirectInput product GUID's embedded USB VID/PID (see <see cref="DeviceHardwareInfo.VendorId"/>'s doc comment). Returns (0, 0) if the GUID doesn't follow the standard layout.</summary>
+    private static (int VendorId, int ProductId) ParseVidPidFromProductGuid(Guid productGuid)
+    {
+        try
+        {
+            var bytes = productGuid.ToByteArray();
+            int vendorId = bytes[0] | (bytes[1] << 8);
+            int productId = bytes[2] | (bytes[3] << 8);
+            return (vendorId, productId);
+        }
+        catch
+        {
+            return (0, 0);
+        }
     }
 
     public void RefreshDevices()

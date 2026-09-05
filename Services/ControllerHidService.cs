@@ -91,9 +91,14 @@ public class ControllerHidService : IDisposable
     private const int PollIntervalMs = 4;
     private int _pollInProgress;
 
+    /// <summary>WMI-backed device enumeration is far heavier than a hot-path report read (see <see cref="PollOnceCore"/>'s old inline call, now removed) - runs on its own independent, much slower timer instead of sharing a tick with gyro/touch/battery reads.</summary>
+    private Timer? _refreshTimer;
+    private const int RefreshIntervalMs = 1000;
+
     public void Start()
     {
         RefreshDevices();
+        _refreshTimer = new Timer(_ => RefreshDevices(), null, dueTime: RefreshIntervalMs, period: RefreshIntervalMs);
         _pollTimer = new Timer(_ => PollOnce(), null, dueTime: 0, period: PollIntervalMs);
     }
 
@@ -101,6 +106,8 @@ public class ControllerHidService : IDisposable
     {
         _pollTimer?.Dispose();
         _pollTimer = null;
+        _refreshTimer?.Dispose();
+        _refreshTimer = null;
 
         lock (_lock)
         {
@@ -193,8 +200,6 @@ public class ControllerHidService : IDisposable
         catch { }
     }
 
-    private int _ticksSinceRefresh;
-
     private void PollOnce()
     {
         if (_disposed) return;
@@ -215,12 +220,9 @@ public class ControllerHidService : IDisposable
 
     private void PollOnceCore()
     {
-        // Device enumeration (WMI-backed) is far heavier than a report read - only do it once
-        // per second's worth of ticks, not on every ~33ms tick.
-        if (_ticksSinceRefresh++ % Math.Max(1, 1000 / PollIntervalMs) == 0)
-        {
-            RefreshDevices();
-        }
+        // Device enumeration (WMI-backed, see RefreshDevices) used to run inline here once a
+        // second's worth of ticks, causing a periodic latency spike on whichever poll tick it
+        // landed on - it now runs on its own independent Timer (see Start()) instead.
 
         List<OpenDevice> snapshot;
         lock (_lock) { snapshot = _openDevices.Values.ToList(); }

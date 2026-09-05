@@ -77,37 +77,86 @@ public partial class ControllerLedViewModel : ViewModelBase, IDisposable
 
     public IBrush PreviewBrush => new SolidColorBrush(DisplayColor);
 
+    /// <summary>
+    /// The per-device settings object <see cref="Red"/>/<see cref="Green"/>/<see cref="Blue"/>/
+    /// <see cref="EffectMode"/>/<see cref="EffectSpeed"/> mirror into as the user edits them (see
+    /// <see cref="SetActiveDevice"/>) - null when no gamepad is selected (or the selected device
+    /// is a wheel, which has no LED settings). Writing into it is what actually persists the
+    /// color per-device: <c>GamepadDeviceSettings</c> is an <c>ObservableObject</c> that
+    /// <c>MainWindowViewModel.OnGamepadSettingsPropertyChanged</c> already auto-saves on change.
+    /// </summary>
+    public GamepadDeviceSettings? ActiveDeviceSettings { get; private set; }
+
+    /// <summary>
+    /// Retargets this view model at the given gamepad and its per-device LED settings - called
+    /// by <c>BinderPageViewModel</c> whenever the Binder page's selected device changes, since
+    /// LED settings moved from one profile-wide color to per-device (see
+    /// <see cref="ActiveDeviceSettings"/>). Loads <paramref name="settings"/>' saved color/mode
+    /// while suppressing the mirror-back-into-settings writes below, the same way
+    /// <see cref="SetColorFromProfile"/> already does for the old profile-wide load path.
+    /// </summary>
+    public void SetActiveDevice(ControllerStatus? device, GamepadDeviceSettings? settings)
+    {
+        if (device != null && GamepadDevices.Contains(device)) SelectedDevice = device;
+        ActiveDeviceSettings = settings;
+
+        if (settings != null)
+        {
+            SetColorFromProfile(settings.LedRed, settings.LedGreen, settings.LedBlue, settings.LedMode, settings.LedSpeed);
+        }
+    }
+
     partial void OnRedChanged(int value)
     {
         SyncHexFromRgb();
         RefreshStaticPreview();
-        if (!_isRestoringColor) _onColorChanged();
+        if (!_isRestoringColor)
+        {
+            if (ActiveDeviceSettings != null) ActiveDeviceSettings.LedRed = (byte)Math.Clamp(value, 0, 255);
+            _onColorChanged();
+        }
     }
 
     partial void OnGreenChanged(int value)
     {
         SyncHexFromRgb();
         RefreshStaticPreview();
-        if (!_isRestoringColor) _onColorChanged();
+        if (!_isRestoringColor)
+        {
+            if (ActiveDeviceSettings != null) ActiveDeviceSettings.LedGreen = (byte)Math.Clamp(value, 0, 255);
+            _onColorChanged();
+        }
     }
 
     partial void OnBlueChanged(int value)
     {
         SyncHexFromRgb();
         RefreshStaticPreview();
-        if (!_isRestoringColor) _onColorChanged();
+        if (!_isRestoringColor)
+        {
+            if (ActiveDeviceSettings != null) ActiveDeviceSettings.LedBlue = (byte)Math.Clamp(value, 0, 255);
+            _onColorChanged();
+        }
     }
 
     partial void OnEffectModeChanged(LedEffectMode value)
     {
         OnPropertyChanged(nameof(IsEffectModeActive));
         RestartEffectEngine();
-        if (!_isRestoringColor) _onColorChanged();
+        if (!_isRestoringColor)
+        {
+            if (ActiveDeviceSettings != null) ActiveDeviceSettings.LedMode = value;
+            _onColorChanged();
+        }
     }
 
     partial void OnEffectSpeedChanged(double value)
     {
-        if (!_isRestoringColor) _onColorChanged();
+        if (!_isRestoringColor)
+        {
+            if (ActiveDeviceSettings != null) ActiveDeviceSettings.LedSpeed = value;
+            _onColorChanged();
+        }
     }
 
     /// <summary>Design-time constructor.</summary>

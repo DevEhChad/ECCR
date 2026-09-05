@@ -44,6 +44,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly WheelForceFeedbackService _wheelForceFeedback = new();
     private readonly UpdateService _updateService = new();
     private readonly Stopwatch _pollStopwatch = new();
+    private IDisposable? _highResTimerHandle;
     private readonly string _baseDirectory;
     private readonly string _profilesDirectory;
     private readonly string _settingsFilePath;
@@ -280,8 +281,10 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ControllerHidService _controllerHidService = new();
     private readonly Dictionary<AppPage, ViewModelBase> _pageViewModels = new();
     private ControllerLedViewModel? _controllerLedViewModel;
-    private ControllerMappingViewModel? _controllerMappingViewModel;
-    private DeviceMappingViewModel? _deviceMappingViewModel;
+    private BinderPageViewModel? _binderPageViewModel;
+
+    /// <summary>Controller LED state - embedded per-device in the Binder page's More Options tab (see <see cref="BinderPageViewModel.ControllerLed"/>) rather than a standalone nav page. Constructed eagerly in <see cref="InitializeShellNavigation"/> (before <see cref="LoadSelectedProfile"/> runs), same lifetime as before this became per-device - only the standalone page/nav registration was removed.</summary>
+    public ControllerLedViewModel ControllerLedViewModel => _controllerLedViewModel!;
 
     // Shell navigation
     [ObservableProperty]
@@ -312,10 +315,18 @@ public partial class MainWindowViewModel : ViewModelBase
     /// Rotation/force-feedback tuning per wheel device name, keyed and persisted the same way
     /// as <see cref="UserProfile.WheelSettings"/> (round-tripped in <see cref="SaveProfileToDisk"/>/
     /// <see cref="LoadSelectedProfile"/>). Entries are created lazily via
-    /// <see cref="GetOrCreateWheelSettings"/> - the Wheel Settings tab (<see cref="DeviceMappingViewModel"/>)
+    /// <see cref="GetOrCreateWheelSettings"/> - the Wheel Settings tab (<see cref="BinderPageViewModel"/>)
     /// is the only consumer today.
     /// </summary>
     public Dictionary<string, WheelDeviceSettings> WheelSettings { get; private set; } = new();
+
+    /// <summary>
+    /// Rumble/LED tuning per gamepad device name, keyed and persisted the same way as
+    /// <see cref="WheelSettings"/> (round-tripped in <see cref="SaveProfileToDisk"/>/
+    /// <see cref="LoadSelectedProfile"/>). Entries are created lazily via
+    /// <see cref="GetOrCreateGamepadSettings"/>.
+    /// </summary>
+    public Dictionary<string, GamepadDeviceSettings> GamepadSettings { get; private set; } = new();
 
     /// <summary>Underlying real force-feedback relay (vJoy PID packets -> real wheel effects) - see its own doc comment.</summary>
     public WheelForceFeedbackService WheelForceFeedback => _wheelForceFeedback;
@@ -332,8 +343,62 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnWheelSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // Clipping-meter telemetry changes on every incoming FFB packet - never persisted and
+        // never worth an FFB resync, so it's excluded here the same way MappingEntry's own live
+        // polling properties are excluded from its property-changed handler.
+        if (e.PropertyName is nameof(WheelDeviceSettings.LiveOutputForcePercent) or nameof(WheelDeviceSettings.IsClipping)) return;
+
         SyncWheelForceFeedbackMappings();
         AutoSaveCurrentProfile();
+    }
+
+    public GamepadDeviceSettings GetOrCreateGamepadSettings(string deviceName)
+    {
+        if (GamepadSettings.TryGetValue(deviceName, out var existing)) return existing;
+
+        var settings = new GamepadDeviceSettings();
+        settings.PropertyChanged += OnGamepadSettingsPropertyChanged;
+        GamepadSettings[deviceName] = settings;
+        return settings;
+    }
+
+    private void OnGamepadSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        AutoSaveCurrentProfile();
+    }
+
+    /// <summary>Swaps in a freshly-deserialized <see cref="GamepadSettings"/> dictionary, re-subscribing each entry the same way <see cref="GetOrCreateGamepadSettings"/> does for one created on demand.</summary>
+    private void LoadGamepadSettings(Dictionary<string, GamepadDeviceSettings> settings)
+    {
+        foreach (var existing in GamepadSettings.Values) existing.PropertyChanged -= OnGamepadSettingsPropertyChanged;
+
+        GamepadSettings = settings;
+        foreach (var entry in GamepadSettings.Values) entry.PropertyChanged += OnGamepadSettingsPropertyChanged;
+    }
+
+    /// <summary>
+    /// One-shot migration for profiles saved before LED color became a per-device setting: if
+    /// no gamepad has a <see cref="GamepadDeviceSettings"/> entry yet but the profile's legacy
+    /// whole-profile <see cref="UserProfile.LedRed"/>/<see cref="UserProfile.LedGreen"/>/
+    /// <see cref="UserProfile.LedBlue"/>/<see cref="UserProfile.LedMode"/>/<see cref="UserProfile.LedSpeed"/>
+    /// aren't at their defaults, seed every currently-known gamepad device's new setting from
+    /// them - same idea as <see cref="MigrateLegacyWheelRotationDegrees"/>.
+    /// </summary>
+    private void MigrateLegacyLedColor(byte r, byte g, byte b, LedEffectMode mode, double speed)
+    {
+        if (GamepadSettings.Count > 0) return;
+        bool isDefault = r == 0 && g == 122 && b == 255 && mode == LedEffectMode.Static && Math.Abs(speed - 1.0) < 0.001;
+        if (isDefault) return;
+
+        foreach (var device in StatusBar.GamepadStatuses)
+        {
+            var settings = GetOrCreateGamepadSettings(device.DeviceInstanceName);
+            settings.LedRed = r;
+            settings.LedGreen = g;
+            settings.LedBlue = b;
+            settings.LedMode = mode;
+            settings.LedSpeed = speed;
+        }
     }
 
     /// <summary>
@@ -446,6 +511,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
         _deviceManager.OnInputPolled += ProcessInputPolling;
 
+        // Raise the OS timer resolution for the lifetime of the app - see WinmmTimer's doc
+        // comment. Covers both this poll loop and ControllerHidService's below with one call.
+        _highResTimerHandle = WinmmTimer.Request(1);
+
         _deviceManager.RefreshDevices();
         _pollStopwatch.Start();
         _deviceManager.StartPolling(pollIntervalMs: 4);
@@ -466,18 +535,31 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Forwards a game's rumble feedback (via either virtual pad type) to whichever
         // physical Sony device(s) are mapped into that player slot - the reverse direction of
-        // the axis/button feed above.
+        // the axis/button feed above. Scaled (or silenced) per-device by GamepadDeviceSettings'
+        // Rumble toggle/intensity, same per-device convention WheelDeviceSettings already uses
+        // for force-feedback strength.
         _feeder.RumbleReceived += (targetDeviceId, largeMotor, smallMotor) =>
         {
-            var guids = Mappings
+            var sources = Mappings
                 .Where(m => m.TargetDeviceId == targetDeviceId && m.SourceDeviceGuid != Guid.Empty)
-                .Select(m => m.SourceDeviceGuid)
+                .Select(m => (m.SourceDeviceGuid, m.SourceDeviceName))
                 .Distinct();
 
-            foreach (var guid in guids)
+            foreach (var (guid, deviceName) in sources)
             {
                 var (vendorId, productId) = ControllerHidService.GetVidPid(guid);
-                _controllerHidService.SetRumble(vendorId, productId, largeMotor, smallMotor);
+                var settings = GetOrCreateGamepadSettings(deviceName);
+
+                if (!settings.RumbleEnabled)
+                {
+                    _controllerHidService.SetRumble(vendorId, productId, 0, 0);
+                    continue;
+                }
+
+                double scale = Math.Clamp(settings.RumbleIntensityPercent, 0, 100) / 100.0;
+                byte scaledLarge = (byte)Math.Round(largeMotor * scale);
+                byte scaledSmall = (byte)Math.Round(smallMotor * scale);
+                _controllerHidService.SetRumble(vendorId, productId, scaledLarge, scaledSmall);
             }
         };
 
@@ -507,18 +589,14 @@ public partial class MainWindowViewModel : ViewModelBase
         var homeIcon = LoadIcon("Full-HomeLogo.png");
         var devicesIcon = LoadIcon("Full-DevicesLogo.png");
         var controllerIcon = LoadIcon("Full-ControllerLogo.png");
-        var wheelIcon = LoadIcon("Full-WheelLogo.png");
-        var ledIcon = LoadIcon("Full-LEDLogo.png");
         var hidHideIcon = LoadIcon("Full-HidHide.png");
+
+        _controllerLedViewModel = new ControllerLedViewModel(StatusBar.GamepadStatuses, _controllerHidService, AutoSaveCurrentProfile);
 
         _pageViewModels[AppPage.Home] = new HomeViewModel(StatusBar, BuildQuickActionCards(devicesIcon, hidHideIcon), NavigateToCommand);
         _pageViewModels[AppPage.ConnectedDevices] = new ConnectedDevicesPageViewModel(this, StatusBar.AllDeviceStatuses);
-        _controllerMappingViewModel = new ControllerMappingViewModel(this, GamepadGroupedMappings);
-        _pageViewModels[AppPage.ControllerMapping] = _controllerMappingViewModel;
-        _deviceMappingViewModel = new DeviceMappingViewModel(this, WheelGroupedMappings);
-        _pageViewModels[AppPage.DeviceMapping] = _deviceMappingViewModel;
-        _controllerLedViewModel = new ControllerLedViewModel(StatusBar.GamepadStatuses, _controllerHidService, AutoSaveCurrentProfile);
-        _pageViewModels[AppPage.ControllerLed] = _controllerLedViewModel;
+        _binderPageViewModel = new BinderPageViewModel(this, StatusBar.AllDeviceStatuses, GamepadGroupedMappings, WheelGroupedMappings);
+        _pageViewModels[AppPage.Binder] = _binderPageViewModel;
         _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this);
         _pageViewModels[AppPage.HidHide] = HidHide;
         _pageViewModels[AppPage.AutoBind] = AutoBind;
@@ -527,9 +605,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         PrimaryNavItems.Add(new NavItem(AppPage.Home, "Home", "🏠", iconImage: homeIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", iconImage: devicesIcon));
-        PrimaryNavItems.Add(new NavItem(AppPage.ControllerMapping, "Controller Mapping", "🎯", iconImage: controllerIcon));
-        PrimaryNavItems.Add(new NavItem(AppPage.DeviceMapping, "Device Mapping", "🗺️", iconImage: wheelIcon));
-        PrimaryNavItems.Add(new NavItem(AppPage.ControllerLed, "Controller LED", "💡", iconImage: ledIcon));
+        PrimaryNavItems.Add(new NavItem(AppPage.Binder, "Binder", "🧷", iconImage: controllerIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.Profiles, "Profiles", "📄"));
 
         UtilityNavItems.Add(new NavItem(AppPage.HidHide, "HidHide", "🛡", iconImage: hidHideIcon));
@@ -586,17 +662,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (string.IsNullOrEmpty(deviceName)) return;
 
-        var category = DevicePresetService.DetectCategory(deviceName);
-        if (DevicePresetService.IsWheelOrPedalCategory(category))
+        if (_binderPageViewModel != null)
         {
-            if (_deviceMappingViewModel != null) _deviceMappingViewModel.SelectedDeviceName = deviceName;
-            NavigateTo(AppPage.DeviceMapping);
+            _binderPageViewModel.SelectedDeviceName = deviceName;
+            _binderPageViewModel.SelectTabCommand.Execute(BinderTab.Bindings);
         }
-        else
-        {
-            if (_controllerMappingViewModel != null) _controllerMappingViewModel.SelectedDeviceName = deviceName;
-            NavigateTo(AppPage.ControllerMapping);
-        }
+        NavigateTo(AppPage.Binder);
     }
 
     [RelayCommand]
@@ -837,8 +908,8 @@ public partial class MainWindowViewModel : ViewModelBase
         foreach (var bind in ds4Binds) outputs.Add(bind);
 
         // Sentinel: selecting it from the row's Target combo reveals the Key Picker Flyout
-        // button (see MappingEntry.IsKeyboardTarget / DeviceMappingGroupsPanel's Target column)
-        // for actually choosing a key. Never persisted as a final TargetOutput itself.
+        // button (see MappingEntry.IsKeyboardTarget) for actually choosing a key. Never
+        // persisted as a final TargetOutput itself.
         outputs.Add(KeyboardTargetSentinel);
 
         // Every real "[Keyboard] <Key>" value a row's TargetOutput can hold must also be listed
@@ -922,7 +993,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(deviceName)) return;
 
-        var info = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
+        var info = GetDeviceHardwareInfo(deviceName);
         int buttonCount = info?.ButtonCount ?? 32;
         int axisCount = info?.AxisCount ?? 8;
         bool hasPov = info?.HasPov ?? true;
@@ -934,6 +1005,29 @@ public partial class MainWindowViewModel : ViewModelBase
         RebuildGroupedMappings();
         UpdateVirtualDeviceSummary();
         AutoSaveCurrentProfile();
+    }
+
+    /// <summary>Public wrapper around the same connected-device capability lookup <see cref="ApplyOutputModeToDevice"/>/the Auto-Bind wizard already do inline - lets <see cref="ViewModels.BinderPageViewModel"/> synthesize placeholder rows for every physical input a device reports (see <c>BinderPageViewModel.RebuildDisplayRows</c>).</summary>
+    public DeviceHardwareInfo? GetDeviceHardwareInfo(string deviceName) =>
+        _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
+
+    /// <summary>
+    /// Adds <paramref name="entry"/> to <see cref="Mappings"/> if it isn't already there - a
+    /// no-op for every existing call path (an entry created via "+ Add Input", Auto-Bind, or a
+    /// diagram hotspot is already registered), and the promotion seam for a placeholder row
+    /// synthesized by <c>BinderPageViewModel.RebuildDisplayRows</c> (see <see cref="MappingEntry.IsPlaceholder"/>):
+    /// called as the first step of both <see cref="StartListening"/> and <see cref="StartKeyPick"/>
+    /// so a placeholder becomes a real, persisted binding the instant the user starts
+    /// interacting with it, before its <see cref="MappingEntry.TargetOutput"/>/capture result is
+    /// even known.
+    /// </summary>
+    public void EnsureMappingRegistered(MappingEntry entry)
+    {
+        if (Mappings.Contains(entry)) return;
+        entry.IsPlaceholder = false;
+        Mappings.Add(entry);
+        RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
     }
 
     /// <summary>
@@ -1040,7 +1134,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (state.Buttons[i])
             {
-                string btnLabel = DevicePresetService.GetEffectiveDisplayName(state.DeviceName, InputType.Button, i, GetOrCreateWheelSettings(state.DeviceName));
+                string btnLabel = DevicePresetService.GetButtonDisplayName(state.DeviceName, i);
                 AssignDetectedInput(_listeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i, btnLabel);
                 return;
             }
@@ -1052,7 +1146,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (Math.Abs(state.Axes[i] - baselines[i]) > 10000)
             {
-                string axisLabel = DevicePresetService.GetEffectiveDisplayName(state.DeviceName, InputType.Axis, i, GetOrCreateWheelSettings(state.DeviceName));
+                string axisLabel = DevicePresetService.GetAxisDisplayName(state.DeviceName, i);
                 AssignDetectedInput(_listeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i, axisLabel);
                 return;
             }
@@ -1078,52 +1172,6 @@ public partial class MainWindowViewModel : ViewModelBase
             StopListening();
             AutoSaveCurrentProfile();
         });
-    }
-
-    /// <summary>
-    /// Sets (or, if <paramref name="nickname"/> is null/whitespace, clears) the user-editable
-    /// nickname for one physical input, then refreshes <see cref="MappingEntry.SourceDisplayName"/>
-    /// on every mapping entry bound to that same physical device+index - not just the one the
-    /// user renamed from - so the new name shows up immediately everywhere that input appears
-    /// (e.g. the same wheel button mapped to two different targets in two different mapping
-    /// rows). Called from the rename Flyout in <see cref="ECCR.Views.Shared.DeviceMappingGroupsPanel"/>.
-    /// </summary>
-    public void RenameBoundInput(MappingEntry entry, string? nickname)
-    {
-        // An unbound "Click to Bind" row shares its placeholder SourceDeviceName/Type/Index with
-        // every other unbound row in the same section - renaming it would silently rename all of
-        // them. The rename pencil is hidden for these (see MappingEntry.IsBound), but guard here
-        // too since this is also reachable if that visibility binding is ever bypassed.
-        if (!entry.IsBound || string.IsNullOrWhiteSpace(entry.SourceDeviceName)) return;
-
-        var settings = GetOrCreateWheelSettings(entry.SourceDeviceName);
-        settings.SetNickname(entry.SourceType, entry.SourceIndex, nickname);
-
-        string effectiveName = DevicePresetService.GetEffectiveDisplayName(entry.SourceDeviceName, entry.SourceType, entry.SourceIndex, settings);
-        foreach (var m in Mappings.Where(m =>
-                     string.Equals(m.SourceDeviceName, entry.SourceDeviceName, StringComparison.OrdinalIgnoreCase) &&
-                     m.SourceType == entry.SourceType &&
-                     m.SourceIndex == entry.SourceIndex))
-        {
-            m.SourceDisplayName = effectiveName;
-        }
-    }
-
-    /// <summary>
-    /// Sets (or clears) the whole-device nickname shown in the group header/device pickers -
-    /// counterpart to <see cref="RenameBoundInput"/> for a single physical input. Persisted the
-    /// same way, via <see cref="WheelDeviceSettings.DeviceNickname"/> in the per-device settings
-    /// this same device name already keys into.
-    /// </summary>
-    public void RenameDevice(string deviceName, string? nickname)
-    {
-        if (string.IsNullOrWhiteSpace(deviceName)) return;
-
-        var settings = GetOrCreateWheelSettings(deviceName);
-        settings.DeviceNickname = string.IsNullOrWhiteSpace(nickname) ? null : nickname.Trim();
-
-        RebuildGroupedMappings();
-        AutoSaveCurrentProfile();
     }
 
     /// <summary>
@@ -1175,7 +1223,7 @@ public partial class MainWindowViewModel : ViewModelBase
             };
         }
 
-        bool isMoza = category == DeviceHardwareCategory.MozaEsxWheel || category == DeviceHardwareCategory.MozaWheel;
+        bool isMoza = category == DeviceHardwareCategory.MozaWheel;
 
         if (isMoza)
         {
@@ -1293,6 +1341,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void StartListening(MappingEntry entry)
     {
+        EnsureMappingRegistered(entry);
+
         if (_listeningEntry == entry)
         {
             CancelListening();
@@ -1327,6 +1377,22 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (_listeningEntry == null) return;
         var entry = _listeningEntry;
+        StopListening();
+        ClearMapping(entry);
+    }
+
+    /// <summary>
+    /// Wipes one entry back to a fully unbound "Click to Bind" state without deleting it from
+    /// <see cref="Mappings"/> - the row stays visible (now under an "Uncategorized ..." group)
+    /// so the user can re-capture a different physical input for the same target/customization
+    /// rather than starting over. Reachable from the Rebinding Table's gear flyout "Clear"
+    /// button as well as <see cref="ClearListeningBinding"/> (the Backspace-while-listening
+    /// shortcut), which previously was the only way to reach this behavior.
+    /// </summary>
+    [RelayCommand]
+    public void ClearMapping(MappingEntry entry)
+    {
+        if (_listeningEntry == entry) StopListening();
 
         // Falls back into whichever "Uncategorized ..." group matches the section the entry
         // was already in (by its old device name's category) rather than always landing in the
@@ -1336,7 +1402,6 @@ public partial class MainWindowViewModel : ViewModelBase
         entry.SourceDeviceGuid = Guid.Empty;
         entry.SourceIndex = 0;
         entry.SourceDisplayName = "Click to Bind";
-        StopListening();
         RebuildGroupedMappings();
         AutoSaveCurrentProfile();
     }
@@ -1364,6 +1429,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>Arms in-window keyboard capture for the given row's Key Picker Flyout "Press a Key" toggle.</summary>
     public void StartKeyPick(MappingEntry entry)
     {
+        EnsureMappingRegistered(entry);
         if (_listeningEntry != null) CancelListening();
         _keyPickEntry = entry;
         OnPropertyChanged(nameof(IsPickingKeyboardKey));
@@ -1597,8 +1663,6 @@ public partial class MainWindowViewModel : ViewModelBase
             var deviceGroup = new DeviceMappingGroup(group.Key);
             if (expandedStates.TryGetValue(group.Key, out bool wasExpanded))
                 deviceGroup.IsExpanded = wasExpanded;
-
-            deviceGroup.DisplayName = DevicePresetService.GetEffectiveDeviceName(group.Key, WheelSettings.GetValueOrDefault(group.Key));
 
             foreach (var mapping in group) deviceGroup.Entries.Add(mapping);
             GroupedMappings.Add(deviceGroup);
@@ -2005,7 +2069,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 LedBlue = (byte)(_controllerLedViewModel?.Blue ?? 255),
                 LedMode = _controllerLedViewModel?.EffectMode ?? LedEffectMode.Static,
                 LedSpeed = _controllerLedViewModel?.EffectSpeed ?? 1.0,
-                WheelSettings = WheelSettings
+                WheelSettings = WheelSettings,
+                GamepadSettings = GamepadSettings
             };
             File.WriteAllText(Path.Combine(_profilesDirectory, $"{profileName}.json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -2038,7 +2103,9 @@ public partial class MainWindowViewModel : ViewModelBase
                     UpdateVirtualDeviceSummary();
                     ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
                     LoadWheelSettings(profile.WheelSettings);
+                    LoadGamepadSettings(profile.GamepadSettings);
                     MigrateLegacyWheelRotationDegrees();
+                    MigrateLegacyLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
                     SyncHidHideCloakingForAllMappings();
                     return;
                 }
@@ -2050,6 +2117,7 @@ public partial class MainWindowViewModel : ViewModelBase
             UpdateVirtualDeviceSummary();
             ApplyProfileLedColor(0, 122, 255, LedEffectMode.Static, 1.0);
             LoadWheelSettings(new Dictionary<string, WheelDeviceSettings>());
+            LoadGamepadSettings(new Dictionary<string, GamepadDeviceSettings>());
         }
         finally
         {
@@ -2187,5 +2255,6 @@ public partial class MainWindowViewModel : ViewModelBase
         RunShutdownStep("ControllerLedViewModel.Dispose", () => _controllerLedViewModel?.Dispose());
         RunShutdownStep("Feeder.Dispose", () => _feeder.Dispose());
         RunShutdownStep("WheelForceFeedback.Dispose", () => _wheelForceFeedback.Dispose());
+        RunShutdownStep("WinmmTimer release", () => _highResTimerHandle?.Dispose());
     }
 }

@@ -14,16 +14,8 @@ public partial class DeviceMappingGroup : ObservableObject
 {
     public string DeviceName { get; }
 
-    /// <summary>
-    /// The name actually shown in the UI - the user's device nickname
-    /// (<see cref="WheelDeviceSettings.DeviceNickname"/>) if set, else <see cref="DeviceName"/>.
-    /// <see cref="DeviceName"/> itself stays the raw DirectInput name always, since it's the
-    /// lookup key used by grouping/bulk-assign/auto-bind; only this property changes for display.
-    /// Set by <c>MainWindowViewModel.RebuildGroupedMappings</c> via
-    /// <see cref="ECCR.Services.DevicePresetService.GetEffectiveDeviceName"/>.
-    /// </summary>
-    [ObservableProperty]
-    private string _displayName;
+    /// <summary>The raw DirectInput device name - shown in the UI as-is now that per-device nicknames have been removed.</summary>
+    public string DisplayName => DeviceName;
 
     [ObservableProperty]
     private bool _isExpanded = true;
@@ -35,7 +27,6 @@ public partial class DeviceMappingGroup : ObservableObject
     public DeviceMappingGroup(string deviceName)
     {
         DeviceName = deviceName;
-        _displayName = deviceName;
         Entries.CollectionChanged += (s, e) => OnPropertyChanged(nameof(EntryCount));
     }
 }
