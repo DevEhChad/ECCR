@@ -1,7 +1,7 @@
 ﻿using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Media;
+using ECCR.Converters;
 using ECCR.Models;
 using ECCR.Services;
 
@@ -76,7 +76,7 @@ public partial class CalibrationDialog : Window
             GenericOutputBar.IsVisible = false;
             SteeringWheelPanel.IsVisible = false;
             PedalBarPanel.IsVisible = true;
-            PedalFill.Background = ResolvePedalBrush(target);
+            PedalFill.Background = PedalColorConverter.Resolve(target);
             WheelRotationPanel.IsVisible = false;
             WheelRotationDivider.IsVisible = false;
         }
@@ -93,14 +93,6 @@ public partial class CalibrationDialog : Window
         PedalBarPanel.IsVisible = false;
         WheelRotationPanel.IsVisible = false;
         WheelRotationDivider.IsVisible = false;
-    }
-
-    private static IBrush ResolvePedalBrush(string targetOutput)
-    {
-        if (targetOutput.Contains("Handbrake", StringComparison.OrdinalIgnoreCase)) return Brush.Parse("#FFAF70");
-        if (targetOutput.Contains("Brake", StringComparison.OrdinalIgnoreCase)) return Brush.Parse("#FF4D6A");
-        if (targetOutput.Contains("Clutch", StringComparison.OrdinalIgnoreCase)) return Brush.Parse("#3E7BFA");
-        return Brush.Parse("#00E599");
     }
 
     private void OnSetMinClick(object? sender, RoutedEventArgs e)

@@ -54,7 +54,7 @@
         </Border>
 
         <!-- Gamepad skin diagram -->
-        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsGamepadDevice}">
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsGamepadDevice}" MinWidth="480" MinHeight="270">
             <Viewbox Stretch="Uniform" MaxHeight="480">
                 <Canvas Width="2816" Height="1536">
                     <Image Source="{Binding SkinImage}" Width="2816" Height="1536" Stretch="Uniform"
@@ -78,6 +78,7 @@
                                 <Button Classes="hotspot"
                                         Classes.hotspotPressed="{Binding IsPressed}"
                                         Classes.hotspotBound="{Binding IsBound}"
+                                        Classes.hotspotArmed="{Binding IsArmed}"
                                         Width="{Binding BoundsWidth}"
                                         Height="{Binding BoundsHeight}"
                                         Command="{Binding ArmCommand}"
@@ -109,7 +110,7 @@
              use. The rim group rotates live with SteeringAngleDegrees; the pedal cluster shows
              a semi-transparent "fill" overlay whose Height scales with each pedal's live
              travel (ThrottleFill01/BrakeFill01/ClutchFill01, 0..1). -->
-        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsWheelDevice}">
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsWheelDevice}" MinWidth="420" MinHeight="270">
             <Viewbox Stretch="Uniform" MaxHeight="480">
                 <Canvas Width="1400" Height="900" Background="#0A0D14">
 
@@ -127,7 +128,7 @@
                 </Canvas>
             </Viewbox>
         </Border>
-        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsWheelDevice}">
+        <Border Grid.Row="1" Classes="card" Margin="0,0,0,10" HorizontalAlignment="Center" IsVisible="{Binding IsWheelDevice}" MinWidth="420" MinHeight="270">
             <Viewbox Stretch="Uniform" MaxHeight="480">
                 <Canvas Width="1400" Height="900">
                     <!-- Pedal fill overlays (behind the hotspots below) -->
@@ -161,6 +162,7 @@
                                 <Button Classes="hotspot"
                                         Classes.hotspotPressed="{Binding IsPressed}"
                                         Classes.hotspotBound="{Binding IsBound}"
+                                        Classes.hotspotArmed="{Binding IsArmed}"
                                         Width="{Binding BoundsWidth}"
                                         Height="{Binding BoundsHeight}"
                                         Command="{Binding ArmCommand}"

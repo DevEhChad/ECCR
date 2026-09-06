@@ -193,11 +193,14 @@ public static class DevicePresetService
                     10 => "L3 Stick Click",
                     11 => "R3 Stick Click",
                     12 => "PS Guide Button",
-                    13 => "Touchpad Click",
+                    13 => "Touchpad Click (Full)",
                     128 => "D-Pad Up",
                     129 => "D-Pad Right",
                     130 => "D-Pad Down",
                     131 => "D-Pad Left",
+                    133 => "Touchpad Left Click",
+                    134 => "Touchpad Right Click",
+                    135 => "Touchpad Top Click",
                     _ => $"Button {index + 1}"
                 };
 

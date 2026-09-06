@@ -126,6 +126,8 @@
                                     <TextBlock Text="{Binding RawCenter}" FontWeight="Bold" FontSize="12" Foreground="White" HorizontalAlignment="Center"/>
                                 </Border>
                                 <Button Content="Set Center" Click="OnSetCenterClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="8,5" CornerRadius="5"/>
+                                <TextBlock Text="{Binding CenterOffset, StringFormat='Offset: {0:+#;-#;0}'}" FontSize="10" Foreground="#8B95A5" HorizontalAlignment="Center"
+                                           ToolTip.Tip="How far the calibrated center sits from the raw min/max midpoint"/>
                             </StackPanel>
 
                             <!-- Max Point -->
@@ -147,9 +149,9 @@
                         <Grid x:Name="WheelRotationPanel" IsVisible="False" ColumnDefinitions="*, Auto">
                             <StackPanel Grid.Column="0" Spacing="2" MinWidth="0">
                                 <TextBlock Text="Wheel Rotation Range" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
-                                <TextBlock Text="Total lock-to-lock degrees (900 for most wheels, up to 3600 for direct-drive)." FontSize="11" Foreground="#888899" TextWrapping="Wrap"/>
+                                <TextBlock Text="Total lock-to-lock degrees (900 for most wheels, up to 2700 for direct-drive)." FontSize="11" Foreground="#888899" TextWrapping="Wrap"/>
                             </StackPanel>
-                            <NumericUpDown Grid.Column="1" Value="{Binding ElementName=CalRoot, Path=WheelSettings.RotationDegrees}" Minimum="180" Maximum="3600" Increment="90"
+                            <NumericUpDown Grid.Column="1" Value="{Binding ElementName=CalRoot, Path=WheelSettings.RotationDegrees}" Minimum="180" Maximum="2700" Increment="90"
                                            FormatString="0" ShowButtonSpinner="True" FontSize="12" Width="110" HorizontalContentAlignment="Center"/>
                         </Grid>
 

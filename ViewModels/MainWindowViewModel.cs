@@ -18,6 +18,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ECCR.Models;
 using ECCR.Services;
+using ECCR.Services.GameDiscovery;
 using ECCR.Views;
 using Velopack;
 
@@ -39,6 +40,7 @@ namespace ECCR.ViewModels;
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly InputDeviceManager? _deviceManager;
+    private readonly GameProcessWatcherService? _gameProcessWatcher;
     private readonly DependencyManager _dependencyManager = new();
     private readonly IVirtualFeeder _feeder = new CompositeFeederService();
     private readonly WheelForceFeedbackService _wheelForceFeedback = new();
@@ -49,7 +51,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly string _profilesDirectory;
     private readonly string _settingsFilePath;
 
-    private bool _isLoadingProfile = false;
+    /// <summary>Owns profile load/save/CRUD - see its own doc comment for why load/save state (<c>_isLoadingProfile</c>) now lives there instead of here.</summary>
+    private readonly ProfileService _profileService;
+
+    /// <summary>Owns the persisted game library and its Steam/Epic scanners - see its own doc comment.</summary>
+    private readonly GameLibraryService _gameLibraryService;
+
     private bool _isLoadingSettings = false;
     private UpdateInfo? _availableUpdateInfo;
     private ECCR.Models.AppSettings _currentSettings = new();
@@ -111,6 +118,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<ChangelogBlock> ChangelogEntries { get; } = new();
 
+    /// <summary>Master switch for automatic profile switching, surfaced on the Games page (<see cref="GamesPageViewModel.IsAutoSwitchingEnabled"/>) rather than Settings since it's part of the game-binding workflow. Per-game opt-in (<see cref="Models.GameInfo.AutoSwitchEnabled"/>) still applies on top of this.</summary>
+    [ObservableProperty]
+    private bool _isAutoSwitchingEnabled = false;
+
+    /// <summary>Whether <see cref="Views.ProfileSwitchToastWindow"/> appears when auto-switching changes the active profile - surfaced in Settings alongside the other app-wide notification-style toggles. The switch itself still happens when this is off.</summary>
+    [ObservableProperty]
+    private bool _enableProfileSwitchNotifications = true;
+
     [ObservableProperty]
     private string _mappingStatus = "Active";
 
@@ -131,6 +146,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isCreatingProfile = false;
+
+    /// <summary>Profile that loads automatically at app startup instead of <see cref="AppSettings.LastActiveProfile"/>, when set and still present - see the Profiles page's "Set as Global Default" card action. Null means no default is pinned; startup falls back to last-used exactly as before this existed.</summary>
+    [ObservableProperty]
+    private string? _defaultProfileName;
+
+    /// <summary>Set while the Create-Profile overlay (<see cref="IsCreatingProfile"/>) is open for a Duplicate action rather than a brand-new profile - read by <see cref="ConfirmCreateProfile"/> to route to <see cref="ProfileService.DuplicateProfile"/> instead of the normal blank-create path. Reuses the one overlay/dialog for both flows.</summary>
+    private string? _duplicateSourceProfileName;
 
     // Settings Modal & Toggles
     [ObservableProperty]
@@ -197,7 +219,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool HasMissingDependencies => !IsViGEmInstalled || !IsHidHideServiceInstalled || !IsVJoyInstalled;
 
-    public ObservableCollection<string> Profiles { get; } = new();
+    public ObservableCollection<string> Profiles => _profileService.ProfileNames;
     public ObservableCollection<VirtualEmulationMode> EmulationModes { get; } = new()
     {
         VirtualEmulationMode.DirectInputWheel,
@@ -296,10 +318,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSidebarCollapsed = false;
 
+
     public ObservableCollection<NavItem> PrimaryNavItems { get; } = new();
     public ObservableCollection<NavItem> UtilityNavItems { get; } = new();
 
+    [ObservableProperty]
     private MappingEntry? _listeningEntry;
+
+    /// <summary>Keeps <see cref="MappingEntry.IsArmed"/> in sync with whichever entry (if any) is currently being captured, regardless of whether it was armed from the Rebinding Table or a Visual Binder hotspot - both call through <see cref="StartListening"/>, which is the single writer of <see cref="ListeningEntry"/>.</summary>
+    partial void OnListeningEntryChanged(MappingEntry? oldValue, MappingEntry? newValue)
+    {
+        if (oldValue != null) oldValue.IsArmed = false;
+        if (newValue != null) newValue.IsArmed = true;
+        OnPropertyChanged(nameof(IsListening));
+    }
 
     /// <summary>
     /// Fired once per physical device per poll tick with a live, calibration-independent
@@ -448,6 +480,8 @@ public partial class MainWindowViewModel : ViewModelBase
             _deviceManager = null;
             HidHide = new HidHideViewModel();
             AutoBind = new AutoBindWizardViewModel();
+            _profileService = new ProfileService();
+            _gameLibraryService = new GameLibraryService();
             return;
         }
 
@@ -460,6 +494,68 @@ public partial class MainWindowViewModel : ViewModelBase
 
         HidHide = new HidHideViewModel(() => _currentSettings, SaveAppSettings);
         IsHidHideServiceInstalled = HidHide.IsDriverInstalled;
+
+        _profileService = new ProfileService(
+            _profilesDirectory,
+            captureCurrentStateAsProfile: (name, id) => new UserProfile
+            {
+                ProfileName = name,
+                Id = id,
+                OutputMode = VirtualEmulationMode.DirectInputWheel,
+                Mappings = Mappings.ToList(),
+                LedRed = (byte)(_controllerLedViewModel?.Red ?? 0),
+                LedGreen = (byte)(_controllerLedViewModel?.Green ?? 122),
+                LedBlue = (byte)(_controllerLedViewModel?.Blue ?? 255),
+                LedMode = _controllerLedViewModel?.EffectMode ?? LedEffectMode.Static,
+                LedSpeed = _controllerLedViewModel?.EffectSpeed ?? 1.0,
+                WheelSettings = WheelSettings,
+                GamepadSettings = GamepadSettings
+            },
+            applyLoadedProfileToLiveState: profile =>
+            {
+                if (profile != null)
+                {
+                    Mappings.Clear();
+                    foreach (var m in profile.Mappings)
+                    {
+                        // See LoadSelectedProfile's old doc comment: defends against a corrupt/
+                        // hand-edited profile file (or a past bug).
+                        if (m == null) continue;
+                        if (string.IsNullOrWhiteSpace(m.TargetOutput)) m.TargetOutput = "[Xbox] Xbox A (Cross / South / Handbrake)";
+                        Mappings.Add(m);
+                    }
+                    RebuildGroupedMappings();
+                    UpdateVirtualDeviceSummary();
+                    ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
+                    LoadWheelSettings(profile.WheelSettings);
+                    LoadGamepadSettings(profile.GamepadSettings);
+                    MigrateLegacyWheelRotationDegrees();
+                    MigrateLegacyLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
+                    SyncHidHideCloakingForAllMappings();
+                }
+                else
+                {
+                    Mappings.Clear();
+                    AddUncategorizedMapping(isWheel: false);
+                    RebuildGroupedMappings();
+                    UpdateVirtualDeviceSummary();
+                    ApplyProfileLedColor(0, 122, 255, LedEffectMode.Static, 1.0);
+                    LoadWheelSettings(new Dictionary<string, WheelDeviceSettings>());
+                    LoadGamepadSettings(new Dictionary<string, GamepadDeviceSettings>());
+                }
+            });
+
+        _gameLibraryService = new GameLibraryService(
+            Path.Combine(_baseDirectory, "games.json"),
+            new List<IGameDiscoveryProvider>
+            {
+                new SteamGameDiscoveryProvider(),
+                new EpicGameDiscoveryProvider(),
+                new XboxGameDiscoveryProvider(),
+                new EAGameDiscoveryProvider()
+            });
+        _gameLibraryService.Load();
+        _profileService.ProfileDeleted += id => _gameLibraryService.UnbindGamesForProfile(id);
 
         AutoBind = new AutoBindWizardViewModel(
             ConnectedDevices,
@@ -476,9 +572,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
         InitializeShellNavigation();
 
-        LoadProfileListFromDisk();
+        _profileService.LoadProfileListFromDisk();
         LoadAppSettings();
         CheckPostUpdateStatus();
+
+        // Fire-and-forget: populates the Profiles page's game grid from Steam/Epic without
+        // making first launch wait on disk/registry scans.
+        _ = _gameLibraryService.RescanAsync();
+
+        _gameProcessWatcher = new GameProcessWatcherService();
+        _gameProcessWatcher.ForegroundExecutableChanged += OnForegroundExecutableChanged;
+        _gameProcessWatcher.Start();
 
         _deviceManager = new InputDeviceManager();
         _deviceManager.OnDevicesRefreshed += devices =>
@@ -518,6 +622,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _deviceManager.RefreshDevices();
         _pollStopwatch.Start();
         _deviceManager.StartPolling(pollIntervalMs: 4);
+        _deviceManager.StartHotplugWatcher();
 
         _controllerHidService.OnStatusUpdated += statuses =>
         {
@@ -534,10 +639,13 @@ public partial class MainWindowViewModel : ViewModelBase
         _controllerHidService.Start();
 
         // Forwards a game's rumble feedback (via either virtual pad type) to whichever
-        // physical Sony device(s) are mapped into that player slot - the reverse direction of
-        // the axis/button feed above. Scaled (or silenced) per-device by GamepadDeviceSettings'
-        // Rumble toggle/intensity, same per-device convention WheelDeviceSettings already uses
-        // for force-feedback strength.
+        // physical device(s) are mapped into that player slot - the reverse direction of the
+        // axis/button feed above. Scaled (or silenced) per-device, per-motor by
+        // GamepadDeviceSettings' Rumble toggle/Heavy-Light intensities, same per-device
+        // convention WheelDeviceSettings already uses for force-feedback strength.
+        // ControllerHidService.SetRumble reaches Sony pads (raw HID report); XInputRumbleService
+        // reaches real Xbox-brand pads (XInputSetState) - both are safe to call unconditionally,
+        // since each already no-ops for a device it doesn't recognize.
         _feeder.RumbleReceived += (targetDeviceId, largeMotor, smallMotor) =>
         {
             var sources = Mappings
@@ -553,17 +661,20 @@ public partial class MainWindowViewModel : ViewModelBase
                 if (!settings.RumbleEnabled)
                 {
                     _controllerHidService.SetRumble(vendorId, productId, 0, 0);
+                    XInputRumbleService.SetRumble(vendorId, productId, 0, 0);
                     continue;
                 }
 
-                double scale = Math.Clamp(settings.RumbleIntensityPercent, 0, 100) / 100.0;
-                byte scaledLarge = (byte)Math.Round(largeMotor * scale);
-                byte scaledSmall = (byte)Math.Round(smallMotor * scale);
+                double heavyScale = Math.Clamp(settings.HeavyMotorIntensityPercent, 0, 100) / 100.0;
+                double lightScale = Math.Clamp(settings.LightMotorIntensityPercent, 0, 100) / 100.0;
+                byte scaledLarge = (byte)Math.Round(largeMotor * heavyScale);
+                byte scaledSmall = (byte)Math.Round(smallMotor * lightScale);
                 _controllerHidService.SetRumble(vendorId, productId, scaledLarge, scaledSmall);
+                XInputRumbleService.SetRumble(vendorId, productId, scaledLarge, scaledSmall);
             }
         };
 
-        LoadSelectedProfile();
+        _profileService.SelectProfile(SelectedProfile);
         RefreshDependencyStates();
         UpdateVirtualDeviceSummary();
 
@@ -597,7 +708,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _pageViewModels[AppPage.ConnectedDevices] = new ConnectedDevicesPageViewModel(this, StatusBar.AllDeviceStatuses);
         _binderPageViewModel = new BinderPageViewModel(this, StatusBar.AllDeviceStatuses, GamepadGroupedMappings, WheelGroupedMappings);
         _pageViewModels[AppPage.Binder] = _binderPageViewModel;
-        _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this);
+        _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this, _gameLibraryService, _profileService);
+        _pageViewModels[AppPage.Games] = new GamesPageViewModel(this, _gameLibraryService, _profileService);
         _pageViewModels[AppPage.HidHide] = HidHide;
         _pageViewModels[AppPage.AutoBind] = AutoBind;
         _pageViewModels[AppPage.About] = new AboutViewModel(AppVersion);
@@ -607,6 +719,7 @@ public partial class MainWindowViewModel : ViewModelBase
         PrimaryNavItems.Add(new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", iconImage: devicesIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.Binder, "Binder", "🧷", iconImage: controllerIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.Profiles, "Profiles", "📄"));
+        PrimaryNavItems.Add(new NavItem(AppPage.Games, "Games", "🎮"));
 
         UtilityNavItems.Add(new NavItem(AppPage.HidHide, "HidHide", "🛡", iconImage: hidHideIcon));
         UtilityNavItems.Add(new NavItem(AppPage.AutoBind, "Auto Bind", "⚡"));
@@ -624,6 +737,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", "View connected controllers, wheels, and pedals.", devicesIcon),
         new NavItem(AppPage.Profiles, "Profiles", "📄", "Manage and switch profiles."),
+        new NavItem(AppPage.Games, "Games", "🎮", "Bind installed games to profiles."),
         new NavItem(AppPage.HidHide, "HidHide", "🛡", "Hide physical devices from games.", hidHideIcon),
         new NavItem(AppPage.AutoBind, "Auto Bind", "⚡", "Generate a starting set of bindings."),
         new NavItem(AppPage.Settings, "Settings", "⚙️", "Manage app settings."),
@@ -1012,6 +1126,74 @@ public partial class MainWindowViewModel : ViewModelBase
         _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
 
     /// <summary>
+    /// Fires a short rumble pulse directly at the named device's real hardware, bypassing the
+    /// game-feedback path entirely (<c>_feeder.RumbleReceived</c> above) - the "Test Vibration"
+    /// button's command, so a user can preview their configured Heavy/Light intensities without a
+    /// game running. Tries both physical rumble sinks (Sony HID and Xbox-brand XInput); each
+    /// already no-ops for a device it doesn't recognize.
+    /// </summary>
+    public void TestVibration(string deviceName)
+    {
+        var info = GetDeviceHardwareInfo(deviceName);
+        if (info == null) return;
+
+        var settings = GetOrCreateGamepadSettings(deviceName);
+        if (!settings.RumbleEnabled) return;
+
+        byte heavy = (byte)Math.Round(255 * (Math.Clamp(settings.HeavyMotorIntensityPercent, 0, 100) / 100.0));
+        byte light = (byte)Math.Round(255 * (Math.Clamp(settings.LightMotorIntensityPercent, 0, 100) / 100.0));
+        int vendorId = info.VendorId;
+        int productId = info.ProductId;
+
+        _controllerHidService.SetRumble(vendorId, productId, heavy, light);
+        XInputRumbleService.SetRumble(vendorId, productId, heavy, light);
+
+        _ = Task.Delay(400).ContinueWith(_ =>
+        {
+            _controllerHidService.SetRumble(vendorId, productId, 0, 0);
+            XInputRumbleService.SetRumble(vendorId, productId, 0, 0);
+        });
+    }
+
+    /// <summary>Fired (on the UI thread) whenever <see cref="OnForegroundExecutableChanged"/> actually switches the active profile for a recognized, auto-switch-enabled game - <see cref="Views.ProfileSwitchToastWindow"/> subscribes to this to show its notification.</summary>
+    public event Action<GameInfo, string>? ProfileAutoSwitched;
+
+    /// <summary>
+    /// <see cref="_gameProcessWatcher"/>'s callback - the first real consumer of
+    /// <see cref="IsAutoSwitchingEnabled"/>/<see cref="GameInfo.AutoSwitchEnabled"/>, both of
+    /// which were previously stored config only. Runs on the watcher's own timer thread, so every
+    /// mutation here is posted to the UI thread.
+    /// </summary>
+    private void OnForegroundExecutableChanged(string? exePath)
+    {
+        if (!IsAutoSwitchingEnabled) return;
+
+        GameInfo? game = exePath != null ? _gameLibraryService.FindByExecutablePath(exePath) : null;
+        bool matched = game is { AutoSwitchEnabled: true, BoundProfileId: not null };
+        string? targetProfileName = matched ? _profileService.GetProfileName(game!.BoundProfileId!.Value) : null;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (matched && targetProfileName != null)
+            {
+                if (SelectedProfile != targetProfileName)
+                {
+                    SelectedProfile = targetProfileName;
+                    ProfileAutoSwitched?.Invoke(game!, targetProfileName);
+                }
+            }
+            else if (!string.IsNullOrEmpty(DefaultProfileName) && SelectedProfile != DefaultProfileName)
+            {
+                // Foreground app isn't a tracked, auto-switch-enabled game - fall back to the
+                // pinned default profile (if one is set) rather than leaving whatever game
+                // profile was last active engaged while the user is elsewhere (desktop, browser,
+                // an untracked app).
+                SelectedProfile = DefaultProfileName;
+            }
+        });
+    }
+
+    /// <summary>
     /// Adds <paramref name="entry"/> to <see cref="Mappings"/> if it isn't already there - a
     /// no-op for every existing call path (an entry created via "+ Add Input", Auto-Bind, or a
     /// diagram hotspot is already registered), and the promotion seam for a placeholder row
@@ -1021,9 +1203,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// interacting with it, before its <see cref="MappingEntry.TargetOutput"/>/capture result is
     /// even known.
     /// </summary>
-    public void EnsureMappingRegistered(MappingEntry entry)
+    public void EnsureMappingRegistered(MappingEntry? entry)
     {
-        if (Mappings.Contains(entry)) return;
+        if (entry == null || Mappings.Contains(entry)) return;
         entry.IsPlaceholder = false;
         Mappings.Add(entry);
         RebuildGroupedMappings();
@@ -1039,6 +1221,80 @@ public partial class MainWindowViewModel : ViewModelBase
     /// large axis movement on any device and bind that to the listening entry). The two
     /// never run in the same tick so a listening session can't also be feeding stale output.
     /// </summary>
+    /// <summary>
+    /// Reserved synthetic touchpad-click zone indices - one layer above InputDeviceManager's own
+    /// 128-131 D-Pad-from-POV expansion, since the deciding factor here (finger touch position)
+    /// isn't a DirectInput concept at all and only exists in ControllerHidService's separate raw
+    /// HID parse. 132 is deliberately left unused so 133-135 read as an obviously-grouped block.
+    /// </summary>
+    private const int TouchpadClickFullIndex = 13;
+    private const int TouchpadClickLeftIndex = 133;
+    private const int TouchpadClickRightIndex = 134;
+    private const int TouchpadClickTopIndex = 135;
+    private const int ExpandedButtonCount = 136;
+
+    /// <summary>
+    /// Resolves the physical touchpad-click bit (index 13) against the device's configured
+    /// <see cref="TouchpadClickMode"/> and the latest finger touch position bridged over from
+    /// <see cref="_controllerHidService"/> (a separate poll thread - see
+    /// <see cref="ControllerHidService.TryGetLatestTouch"/>), producing a widened copy of
+    /// <paramref name="state"/>'s button array with index 13 itself made "smart" (full-panel
+    /// only in Unified mode, or as the no-touch fallback) and the three new synthetic zone
+    /// indices populated. Every other consumer (live output, live diagram feedback, capture
+    /// scanning) reads this widened array exactly like any other button index - no other
+    /// special-casing needed, the same way D-Pad's synthetic indices already work generically
+    /// everywhere once InputDeviceManager expands them.
+    /// </summary>
+    private bool[] ResolveTouchpadZones(ECCR.Services.RawDeviceInputState state)
+    {
+        if (state.Buttons.Length <= TouchpadClickFullIndex) return state.Buttons;
+
+        var category = DevicePresetService.DetectCategory(state.DeviceName);
+        if (category != DeviceHardwareCategory.PlayStationController) return state.Buttons;
+
+        bool rawClick = state.Buttons[TouchpadClickFullIndex];
+        bool full = false, left = false, right = false, top = false;
+
+        if (rawClick)
+        {
+            var settings = GetOrCreateGamepadSettings(state.DeviceName);
+            if (settings.TouchpadClickMode == TouchpadClickMode.Unified)
+            {
+                full = true;
+            }
+            else
+            {
+                var (vendorId, productId) = ControllerHidService.GetVidPid(state.InstanceGuid);
+                bool hasTouch = _controllerHidService.TryGetLatestTouch(vendorId, productId, out var touch) && touch.Active;
+
+                if (!hasTouch)
+                {
+                    full = true; // No-touch fallback (gloved hand, edge contact, etc.)
+                }
+                else if (settings.TouchpadClickMode == TouchpadClickMode.MultiZone && touch.Y < settings.TouchpadTopSplitFraction)
+                {
+                    top = true;
+                }
+                else if (touch.X < 0.5)
+                {
+                    left = true;
+                }
+                else
+                {
+                    right = true;
+                }
+            }
+        }
+
+        var expanded = new bool[ExpandedButtonCount];
+        Array.Copy(state.Buttons, expanded, Math.Min(state.Buttons.Length, ExpandedButtonCount));
+        expanded[TouchpadClickFullIndex] = full;
+        expanded[TouchpadClickLeftIndex] = left;
+        expanded[TouchpadClickRightIndex] = right;
+        expanded[TouchpadClickTopIndex] = top;
+        return expanded;
+    }
+
     private void ProcessInputPolling(ECCR.Services.RawDeviceInputState state)
     {
         if (IsShuttingDown) return;
@@ -1052,7 +1308,9 @@ public partial class MainWindowViewModel : ViewModelBase
             Latency = $"{latencyMs:F1}ms";
         });
 
-        if (_listeningEntry == null)
+        bool[] buttons = ResolveTouchpadZones(state);
+
+        if (ListeningEntry == null)
         {
             if (OnLiveDeviceStateUpdated != null)
             {
@@ -1061,7 +1319,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     DeviceName = state.DeviceName,
                     InstanceGuid = state.InstanceGuid,
-                    Buttons = (bool[])state.Buttons.Clone(),
+                    Buttons = (bool[])buttons.Clone(),
                     NormalizedAxes = state.Axes.Select(a => a / 65535.0).ToArray(),
                     HasSticks = lx >= 0,
                     LeftStickX = lx >= 0 ? state.Axes[lx] / 65535.0 : 0.5,
@@ -1107,9 +1365,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
                 else if (mapping.SourceType == InputType.Button)
                 {
-                    if (IsVirtualOutputActive && mapping.SourceIndex >= 0 && mapping.SourceIndex < state.Buttons.Length)
+                    if (IsVirtualOutputActive && mapping.SourceIndex >= 0 && mapping.SourceIndex < buttons.Length)
                     {
-                        _feeder.UpdateButton(mapping.TargetDeviceId, mapping.TargetOutput, state.Buttons[mapping.SourceIndex]);
+                        _feeder.UpdateButton(mapping.TargetDeviceId, mapping.TargetOutput, buttons[mapping.SourceIndex]);
                     }
                 }
             }
@@ -1130,12 +1388,12 @@ public partial class MainWindowViewModel : ViewModelBase
         // while a wheel/pedal can drift enough on its own to cross the axis threshold below,
         // so preferring buttons avoids accidentally capturing axis noise when the user meant
         // to press a button that happens to share a poll tick with it.
-        for (int i = 0; i < state.Buttons.Length; i++)
+        for (int i = 0; i < buttons.Length; i++)
         {
-            if (state.Buttons[i])
+            if (buttons[i])
             {
                 string btnLabel = DevicePresetService.GetButtonDisplayName(state.DeviceName, i);
-                AssignDetectedInput(_listeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i, btnLabel);
+                AssignDetectedInput(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i, btnLabel);
                 return;
             }
         }
@@ -1147,7 +1405,7 @@ public partial class MainWindowViewModel : ViewModelBase
             if (Math.Abs(state.Axes[i] - baselines[i]) > 10000)
             {
                 string axisLabel = DevicePresetService.GetAxisDisplayName(state.DeviceName, i);
-                AssignDetectedInput(_listeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i, axisLabel);
+                AssignDetectedInput(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i, axisLabel);
                 return;
             }
         }
@@ -1167,11 +1425,38 @@ public partial class MainWindowViewModel : ViewModelBase
             entry.TargetOutput = guessedTarget;
             entry.IsInverted = (type == InputType.Axis && (displayName.Contains("Stick Y") || displayName.Contains("Vertical") || displayName.Contains("Brake") || displayName.Contains("Throttle")));
 
+            // Belt-and-suspenders: entries captured via the Rebinding Table/Auto-Bind never get
+            // SemanticHotspot set by anything else, which used to make the Binder diagram's
+            // exact-match lookup always call them "unbound" (see BinderDiagramViewModel.RefreshBoundEntries'
+            // physical-index fallback, the actual fix for already-saved profiles). Setting it here
+            // too just lets freshly-captured bindings hit the cheap exact-match path immediately.
+            // Never overwrites an entry the diagram itself already armed.
+            entry.SemanticHotspot ??= TryResolveSemanticHotspot(deviceName, type, index);
+
             RebuildGroupedMappings();
             UpdateVirtualDeviceSummary();
             StopListening();
             AutoSaveCurrentProfile();
         });
+    }
+
+    /// <summary>Reverse lookup for <see cref="AssignDetectedInput"/>: given the physical device+index a capture just landed on, finds the matching gamepad/wheel hotspot's semantic name, if any.</summary>
+    private static string? TryResolveSemanticHotspot(string deviceName, InputType type, int index)
+    {
+        var category = DevicePresetService.DetectCategory(deviceName);
+
+        if (DevicePresetService.IsWheelOrPedalCategory(category))
+        {
+            var wheelMatch = WheelHotspotService.Hotspots.FirstOrDefault(h =>
+                (h.IsAxis ? InputType.Axis : InputType.Button) == type &&
+                WheelHotspotService.GetWheelSemanticIndex(category, h.Semantic) == index);
+            return wheelMatch?.Semantic.ToString();
+        }
+
+        if (type != InputType.Button) return null;
+        var buttonMatch = ControllerHotspotService.Hotspots.FirstOrDefault(h =>
+            ControllerHotspotService.GetSemanticButtonIndex(category, h.Semantic) == index);
+        return buttonMatch?.Semantic.ToString();
     }
 
     /// <summary>
@@ -1328,7 +1613,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>True while a "Click to Bind" capture is armed - drives Esc/Backspace routing in <c>MainWindow.OnKeyDown</c> and the hint banner's active state.</summary>
-    public bool IsListening => _listeningEntry != null;
+    public bool IsListening => ListeningEntry != null;
 
     /// <summary>
     /// Arms (or, if already armed for this entry, cancels) capture mode - see
@@ -1343,20 +1628,19 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         EnsureMappingRegistered(entry);
 
-        if (_listeningEntry == entry)
+        if (ListeningEntry == entry)
         {
             CancelListening();
             return;
         }
 
-        if (_listeningEntry != null) CancelListening();
+        if (ListeningEntry != null) CancelListening();
 
         _preListenDisplayName = entry.SourceDisplayName;
         _axisBaselines.Clear();
         entry.SourceDisplayName = "Listening... (Esc to cancel, Backspace to clear, 7s timeout)";
         MappingStatus = $"Listening ({entry.TargetOutput})";
-        _listeningEntry = entry;
-        OnPropertyChanged(nameof(IsListening));
+        ListeningEntry = entry;
 
         _listenTimeoutTimer?.Stop();
         _listenTimeoutTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
@@ -1367,16 +1651,16 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>Aborts an in-progress capture without touching the entry's existing binding - restores whatever label it showed before listening started.</summary>
     public void CancelListening()
     {
-        if (_listeningEntry == null) return;
-        _listeningEntry.SourceDisplayName = _preListenDisplayName;
+        if (ListeningEntry == null) return;
+        ListeningEntry.SourceDisplayName = _preListenDisplayName;
         StopListening();
     }
 
     /// <summary>Wipes the currently-listening entry back to a fully unbound state.</summary>
     public void ClearListeningBinding()
     {
-        if (_listeningEntry == null) return;
-        var entry = _listeningEntry;
+        if (ListeningEntry == null) return;
+        var entry = ListeningEntry;
         StopListening();
         ClearMapping(entry);
     }
@@ -1390,9 +1674,10 @@ public partial class MainWindowViewModel : ViewModelBase
     /// shortcut), which previously was the only way to reach this behavior.
     /// </summary>
     [RelayCommand]
-    public void ClearMapping(MappingEntry entry)
+    public void ClearMapping(MappingEntry? entry)
     {
-        if (_listeningEntry == entry) StopListening();
+        if (entry == null) return;
+        if (ListeningEntry == entry) StopListening();
 
         // Falls back into whichever "Uncategorized ..." group matches the section the entry
         // was already in (by its old device name's category) rather than always landing in the
@@ -1410,10 +1695,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _listenTimeoutTimer?.Stop();
         _listenTimeoutTimer = null;
-        _listeningEntry = null;
+        ListeningEntry = null;
         _axisBaselines.Clear();
         MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
-        OnPropertyChanged(nameof(IsListening));
     }
 
     private MappingEntry? _keyPickEntry;
@@ -1430,7 +1714,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public void StartKeyPick(MappingEntry entry)
     {
         EnsureMappingRegistered(entry);
-        if (_listeningEntry != null) CancelListening();
+        if (ListeningEntry != null) CancelListening();
         _keyPickEntry = entry;
         OnPropertyChanged(nameof(IsPickingKeyboardKey));
     }
@@ -1487,7 +1771,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var item in selected)
         {
-            if (_listeningEntry == item) StopListening();
+            if (ListeningEntry == item) StopListening();
             Mappings.Remove(item);
         }
 
@@ -1497,26 +1781,30 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void SelectAllInGroup(DeviceMappingGroup group)
+    public void SelectAllInGroup(DeviceMappingGroup? group)
     {
+        if (group?.Entries == null) return;
         foreach (var entry in group.Entries) entry.IsSelected = true;
     }
 
     [RelayCommand]
-    public void DeselectAllInGroup(DeviceMappingGroup group)
+    public void DeselectAllInGroup(DeviceMappingGroup? group)
     {
+        if (group?.Entries == null) return;
         foreach (var entry in group.Entries) entry.IsSelected = false;
     }
 
     [RelayCommand]
-    public void RemoveSelectedInGroup(DeviceMappingGroup group)
+    public void RemoveSelectedInGroup(DeviceMappingGroup? group)
     {
+        if (group?.Entries == null) return;
+
         var selected = group.Entries.Where(e => e.IsSelected).ToList();
         if (selected.Count == 0) return;
 
         foreach (var item in selected)
         {
-            if (_listeningEntry == item) StopListening();
+            if (ListeningEntry == item) StopListening();
             Mappings.Remove(item);
         }
 
@@ -1751,7 +2039,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void RemoveMapping(MappingEntry entry)
     {
-        if (_listeningEntry == entry) StopListening();
+        if (ListeningEntry == entry) StopListening();
         Mappings.Remove(entry);
         RebuildGroupedMappings();
         UpdateVirtualDeviceSummary();
@@ -1825,10 +2113,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _currentSettings = new ECCR.Models.AppSettings();
         SaveAppSettings();
 
-        Profiles.Clear();
-        LoadProfileListFromDisk();
+        _profileService.LoadProfileListFromDisk();
         SelectedProfile = Profiles.FirstOrDefault() ?? "Default";
-        LoadSelectedProfile();
+        _profileService.SelectProfile(SelectedProfile);
 
         RefreshDependencyStates();
     }
@@ -1846,7 +2133,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 // PropertyChanged, so OnMappingEntryPropertyChanged's cloak hook alone would
                 // miss it. Skipped during profile load: SyncHidHideCloakingForAllMappings()
                 // already covers that in one deduplicated pass after the whole profile is in.
-                if (!_isLoadingProfile && item.SourceDeviceGuid != Guid.Empty)
+                if (!_profileService.IsLoading && item.SourceDeviceGuid != Guid.Empty)
                 {
                     HidHide.EnsureDeviceCloaked(item.SourceDeviceGuid, item.SourceDeviceName);
                 }
@@ -1894,8 +2181,8 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private void AutoSaveCurrentProfile()
     {
-        if (_isLoadingProfile || _isLoadingSettings || string.IsNullOrWhiteSpace(SelectedProfile)) return;
-        SaveProfileToDisk(SelectedProfile);
+        if (_profileService.IsLoading || _isLoadingSettings || string.IsNullOrWhiteSpace(SelectedProfile)) return;
+        _profileService.SaveCurrentProfile(SelectedProfile);
     }
 
     private void LoadAppSettings()
@@ -1938,6 +2225,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     IsSidebarCollapsed = settings.IsSidebarCollapsed;
                     ControllerSkin = settings.ControllerSkin;
+                    IsAutoSwitchingEnabled = settings.AutoSwitchingEnabled;
+                    EnableProfileSwitchNotifications = settings.EnableProfileSwitchNotifications;
 
                     GyroAimEnabled = settings.GyroAimEnabled;
                     GyroAimSourceDeviceName = settings.GyroAimSourceDeviceName;
@@ -1946,7 +2235,17 @@ public partial class MainWindowViewModel : ViewModelBase
                     TouchAimSourceDeviceName = settings.TouchAimSourceDeviceName;
                     TouchAimTargetPlayer = settings.TouchAimTargetPlayer;
 
-                    if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
+                    DefaultProfileName = settings.DefaultProfileName;
+
+                    // A pinned default profile wins at startup over "whatever was last selected" -
+                    // manual switching mid-session is untouched and still always updates
+                    // LastActiveProfile (OnSelectedProfileChanged), so removing the default later
+                    // falls back to last-used exactly as it did before DefaultProfileName existed.
+                    if (!string.IsNullOrWhiteSpace(settings.DefaultProfileName) && Profiles.Contains(settings.DefaultProfileName))
+                    {
+                        SelectedProfile = settings.DefaultProfileName;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(settings.LastActiveProfile) && Profiles.Contains(settings.LastActiveProfile))
                     {
                         SelectedProfile = settings.LastActiveProfile;
                     }
@@ -1966,6 +2265,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _currentSettings.LastActiveProfile = SelectedProfile;
+            _currentSettings.DefaultProfileName = DefaultProfileName;
             _currentSettings.LastRunVersion = AppVersion;
             _currentSettings.StartWithWindows = StartWithWindows;
             _currentSettings.RunInSystemTray = RunInSystemTray;
@@ -1976,6 +2276,8 @@ public partial class MainWindowViewModel : ViewModelBase
             _currentSettings.IsVirtualOutputActive = IsVirtualOutputActive;
             _currentSettings.IsSidebarCollapsed = IsSidebarCollapsed;
             _currentSettings.ControllerSkin = ControllerSkin;
+            _currentSettings.AutoSwitchingEnabled = IsAutoSwitchingEnabled;
+            _currentSettings.EnableProfileSwitchNotifications = EnableProfileSwitchNotifications;
             _currentSettings.GyroAimEnabled = GyroAimEnabled;
             _currentSettings.GyroAimSourceDeviceName = GyroAimSourceDeviceName;
             _currentSettings.GyroAimTargetPlayer = GyroAimTargetPlayer;
@@ -1989,37 +2291,55 @@ public partial class MainWindowViewModel : ViewModelBase
         catch { }
     }
 
-    private void LoadProfileListFromDisk()
-    {
-        Profiles.Clear();
-        foreach (var file in Directory.GetFiles(_profilesDirectory, "*.json"))
-            Profiles.Add(Path.GetFileNameWithoutExtension(file));
-
-        if (Profiles.Count == 0)
-        {
-            Profiles.Add("Default");
-            SaveProfileToDisk("Default");
-        }
-    }
-
     partial void OnSelectedProfileChanged(string value)
     {
         if (_isLoadingSettings) return;
         SaveAppSettings();
-        LoadSelectedProfile();
+        _profileService.SelectProfile(value);
+    }
+
+    partial void OnDefaultProfileNameChanged(string? value)
+    {
+        if (_isLoadingSettings) return;
+        SaveAppSettings();
     }
 
     [RelayCommand]
     public void SaveCurrentProfile()
     {
-        if (!string.IsNullOrWhiteSpace(SelectedProfile)) SaveProfileToDisk(SelectedProfile);
+        if (!string.IsNullOrWhiteSpace(SelectedProfile)) _profileService.SaveCurrentProfile(SelectedProfile);
+    }
+
+    /// <summary>Drives the Create-Profile overlay's title so the one dialog reads correctly for both flows it now serves.</summary>
+    public string CreateProfileDialogTitle => _duplicateSourceProfileName != null ? "Duplicate Profile" : "Create New Profile";
+
+    /// <summary>Drives the overlay's confirm button label - same "one dialog, two flows" reasoning as <see cref="CreateProfileDialogTitle"/>.</summary>
+    public string ConfirmProfileDialogButtonText => _duplicateSourceProfileName != null ? "Duplicate & Save" : "Create & Save";
+
+    private void RaiseCreateProfileDialogTextChanged()
+    {
+        OnPropertyChanged(nameof(CreateProfileDialogTitle));
+        OnPropertyChanged(nameof(ConfirmProfileDialogButtonText));
     }
 
     [RelayCommand]
     public void OpenCreateProfileDialog()
     {
+        _duplicateSourceProfileName = null;
         CustomProfileInput = string.Empty;
         IsCreatingProfile = true;
+        RaiseCreateProfileDialogTextChanged();
+    }
+
+    /// <summary>Opens the same overlay as <see cref="OpenCreateProfileDialog"/>, tagged as a duplicate of <paramref name="sourceName"/> - used by the Profiles page's per-card "Duplicate" action, which (unlike the toolbar's New button) needs to clone a specific card, not necessarily the currently-selected profile.</summary>
+    [RelayCommand]
+    public void OpenDuplicateProfileDialog(string sourceName)
+    {
+        if (string.IsNullOrWhiteSpace(sourceName)) return;
+        _duplicateSourceProfileName = sourceName;
+        CustomProfileInput = string.Empty;
+        IsCreatingProfile = true;
+        RaiseCreateProfileDialogTextChanged();
     }
 
     [RelayCommand]
@@ -2027,6 +2347,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         IsCreatingProfile = false;
         CustomProfileInput = string.Empty;
+        _duplicateSourceProfileName = null;
     }
 
     [RelayCommand]
@@ -2034,95 +2355,59 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(CustomProfileInput)) return;
         string cleanName = CustomProfileInput.Trim();
-        if (!Profiles.Contains(cleanName)) Profiles.Add(cleanName);
 
+        if (_duplicateSourceProfileName != null)
+        {
+            _profileService.DuplicateProfile(_duplicateSourceProfileName, cleanName);
+            _duplicateSourceProfileName = null;
+            IsCreatingProfile = false;
+            CustomProfileInput = string.Empty;
+            return;
+        }
+
+        _profileService.RegisterName(cleanName);
+
+        // Setting SelectedProfile triggers OnSelectedProfileChanged -> ProfileService.SelectProfile,
+        // which (since no file exists yet for a genuinely new name) seeds a placeholder mapping
+        // via the apply-callback's fallback branch - preserved from the original behavior here,
+        // not a "clone current state" flow.
         SelectedProfile = cleanName;
-        SaveProfileToDisk(cleanName);
+        _profileService.SaveCurrentProfile(cleanName);
         SaveAppSettings();
         IsCreatingProfile = false;
         CustomProfileInput = string.Empty;
     }
 
     [RelayCommand]
-    public void DeleteCurrentProfile()
+    public void DeleteCurrentProfile() => DeleteProfile(SelectedProfile);
+
+    /// <summary>Backs both the toolbar's Delete button (always the current profile) and the Profiles page's per-card Delete action (any profile). Refuses the last remaining profile (existing guard) and the pinned <see cref="DefaultProfileName"/> (new guard - "prevent deletion of the active fallback default").</summary>
+    public void DeleteProfile(string name)
     {
         if (Profiles.Count <= 1) return;
-        string path = Path.Combine(_profilesDirectory, $"{SelectedProfile}.json");
-        if (File.Exists(path)) File.Delete(path);
+        if (!string.IsNullOrEmpty(DefaultProfileName) && name == DefaultProfileName) return;
 
-        string current = SelectedProfile;
-        Profiles.Remove(current);
-        SelectedProfile = Profiles.FirstOrDefault() ?? "Default";
+        _profileService.DeleteProfile(name);
+        if (name == SelectedProfile) SelectedProfile = Profiles.FirstOrDefault() ?? "Default";
     }
 
-    private void SaveProfileToDisk(string profileName)
+    /// <summary>New: no equivalent existed before this overhaul.</summary>
+    [RelayCommand]
+    public void RenameSelectedProfile(string newName)
     {
-        try
-        {
-            var profile = new UserProfile
-            {
-                ProfileName = profileName,
-                OutputMode = VirtualEmulationMode.DirectInputWheel,
-                Mappings = Mappings.ToList(),
-                LedRed = (byte)(_controllerLedViewModel?.Red ?? 0),
-                LedGreen = (byte)(_controllerLedViewModel?.Green ?? 122),
-                LedBlue = (byte)(_controllerLedViewModel?.Blue ?? 255),
-                LedMode = _controllerLedViewModel?.EffectMode ?? LedEffectMode.Static,
-                LedSpeed = _controllerLedViewModel?.EffectSpeed ?? 1.0,
-                WheelSettings = WheelSettings,
-                GamepadSettings = GamepadSettings
-            };
-            File.WriteAllText(Path.Combine(_profilesDirectory, $"{profileName}.json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch { }
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        string cleanNew = newName.Trim();
+        _profileService.RenameProfile(SelectedProfile, cleanNew);
+        if (Profiles.Contains(cleanNew)) SelectedProfile = cleanNew;
+        SaveAppSettings();
     }
 
-    private void LoadSelectedProfile()
+    /// <summary>New: no equivalent existed before this overhaul.</summary>
+    [RelayCommand]
+    public void DuplicateSelectedProfile(string newName)
     {
-        _isLoadingProfile = true;
-        try
-        {
-            string path = Path.Combine(_profilesDirectory, $"{SelectedProfile}.json");
-            if (File.Exists(path))
-            {
-                var profile = JsonSerializer.Deserialize<UserProfile>(File.ReadAllText(path));
-                if (profile != null)
-                {
-                    Mappings.Clear();
-                    foreach (var m in profile.Mappings)
-                    {
-                        // Defends against a corrupt/hand-edited profile file (or a past bug) -
-                        // a null list entry or a null/blank TargetOutput would otherwise crash
-                        // the app the moment anything dereferences it (MigrateLegacyWheelRotationDegrees,
-                        // IsWheelTarget/IsKeyboardTarget, the feed-through poll loop, ...).
-                        if (m == null) continue;
-                        if (string.IsNullOrWhiteSpace(m.TargetOutput)) m.TargetOutput = "[Xbox] Xbox A (Cross / South / Handbrake)";
-                        Mappings.Add(m);
-                    }
-                    RebuildGroupedMappings();
-                    UpdateVirtualDeviceSummary();
-                    ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
-                    LoadWheelSettings(profile.WheelSettings);
-                    LoadGamepadSettings(profile.GamepadSettings);
-                    MigrateLegacyWheelRotationDegrees();
-                    MigrateLegacyLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
-                    SyncHidHideCloakingForAllMappings();
-                    return;
-                }
-            }
-
-            Mappings.Clear();
-            AddUncategorizedMapping(isWheel: false);
-            RebuildGroupedMappings();
-            UpdateVirtualDeviceSummary();
-            ApplyProfileLedColor(0, 122, 255, LedEffectMode.Static, 1.0);
-            LoadWheelSettings(new Dictionary<string, WheelDeviceSettings>());
-            LoadGamepadSettings(new Dictionary<string, GamepadDeviceSettings>());
-        }
-        finally
-        {
-            _isLoadingProfile = false;
-        }
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        _profileService.DuplicateProfile(SelectedProfile, newName.Trim());
     }
 
     /// <summary>
@@ -2251,6 +2536,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _deviceManager?.StopPolling();
             _deviceManager?.Dispose();
         });
+        RunShutdownStep("GameProcessWatcher.Dispose", () => _gameProcessWatcher?.Dispose());
         RunShutdownStep("ControllerHidService.Dispose", () => _controllerHidService.Dispose());
         RunShutdownStep("ControllerLedViewModel.Dispose", () => _controllerLedViewModel?.Dispose());
         RunShutdownStep("Feeder.Dispose", () => _feeder.Dispose());

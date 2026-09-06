@@ -1,0 +1,182 @@
+<!--
+    Games page: a game-library grid (Steam/Epic/Xbox/EA/Custom), split out of the old combined
+    Profiles page. Each card binds/creates a mapping profile for a game via the right-anchored
+    Assignment Drawer. IsAutoSwitchingEnabled is the master switch for the whole auto-switching
+    feature; per-game toggles below it are the per-game override and are disabled while it's off
+    (their stored value is untouched, just inert) - actual switching behavior ships in a later
+    phase, this page only manages the configuration for it.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:avc="using:Avalonia.Data.Converters"
+             xmlns:converters="using:ECCR.Converters"
+             mc:Ignorable="d"
+             d:DesignWidth="1100" d:DesignHeight="700"
+             x:Class="ECCR.Views.GamesPageView"
+             x:DataType="vm:GamesPageViewModel"
+             x:Name="GamesPageRoot">
+
+    <Design.DataContext>
+        <vm:GamesPageViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
+        <converters:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
+    </UserControl.Resources>
+
+    <Panel>
+        <ScrollViewer>
+            <StackPanel Margin="24" Spacing="16">
+                <Grid ColumnDefinitions="*, Auto, Auto, Auto">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="🎮 Games" FontWeight="Bold" FontSize="18" Foreground="White"/>
+                        <TextBlock Text="Bind installed games to mapping profiles." FontSize="12" Foreground="#8B95A5"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Remove Uninstalled" Margin="0,0,8,0" Padding="12,8" CornerRadius="6"
+                            Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                            IsEnabled="{Binding HasScannedThisSession}"
+                            Command="{Binding RemoveUninstalledGamesCommand}"
+                            ToolTip.Tip="Remove games this rescan didn't find anymore (uninstalled, moved, or on a disconnected drive) - never runs automatically."/>
+                    <Button Grid.Column="2" Content="Rescan Libraries" Margin="0,0,8,0" Padding="12,8" CornerRadius="6"
+                            Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                            IsEnabled="{Binding !IsScanning}"
+                            Command="{Binding RescanLibrariesCommand}"
+                            ToolTip.Tip="Re-scan Steam and Epic libraries for installed games"/>
+                    <Button Grid.Column="3" Classes="primary" Content="+ Add Game" Padding="14,8" CornerRadius="6"
+                            Command="{Binding AddManualGameCommand}"/>
+                </Grid>
+
+                <!-- Master auto-switching toggle -->
+                <Border Classes="card" Padding="14">
+                    <Grid ColumnDefinitions="*, Auto">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="Enable Auto-Switching" FontWeight="SemiBold" FontSize="13" Foreground="White"/>
+                            <TextBlock Text="Master switch for automatically changing the active profile based on the focused game. Each game below also needs its own Auto-Switch toggle on."
+                                       FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsAutoSwitchingEnabled, Mode=TwoWay}" VerticalAlignment="Center" OnContent="" OffContent=""/>
+                    </Grid>
+                </Border>
+
+                <!-- Quick-filter tab strip -->
+                <StackPanel Orientation="Horizontal" Spacing="0">
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsAllTabSelected}" Content="All" Command="{Binding SelectTabCommand}" CommandParameter="All"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsSteamTabSelected}" Content="Steam" Command="{Binding SelectTabCommand}" CommandParameter="Steam"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsEpicTabSelected}" Content="Epic" Command="{Binding SelectTabCommand}" CommandParameter="Epic"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsXboxTabSelected}" Content="Xbox" Command="{Binding SelectTabCommand}" CommandParameter="Xbox"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsEaTabSelected}" Content="EA" Command="{Binding SelectTabCommand}" CommandParameter="EA"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsCustomTabSelected}" Content="Custom" Command="{Binding SelectTabCommand}" CommandParameter="Custom"/>
+                </StackPanel>
+
+                <!-- Test banner -->
+                <Border IsVisible="{Binding IsTestBannerVisible}" Background="#193627" BorderBrush="#00B074" BorderThickness="1" CornerRadius="6" Padding="12,8">
+                    <Grid ColumnDefinitions="*, Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding TestBannerText}" FontSize="12" Foreground="#5CFFBE" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="✕" Padding="6,2" Background="Transparent" BorderThickness="0" Foreground="#5CFFBE" Command="{Binding DismissTestBannerCommand}"/>
+                    </Grid>
+                </Border>
+
+                <TextBlock Text="No games yet - click + Add Game, or Rescan Libraries if you have Steam/Epic installed."
+                           FontSize="12" Foreground="#8B95A5" Margin="4,8"
+                           IsVisible="{Binding GameCards.Count, Converter={x:Static converters:IntToVisibilityConverters.IsZero}}"/>
+
+                <ItemsControl ItemsSource="{Binding GameCards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GameCardViewModel">
+                            <Border Classes="gameCard" Width="200" Margin="0,0,16,16">
+                                <StackPanel Spacing="8">
+                                    <Panel Height="110" Background="#0D1119">
+                                        <Image Source="{Binding BannerImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
+                                               Stretch="UniformToFill"
+                                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                                               IsVisible="{Binding BannerImagePath, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+                                        <TextBlock Text="🎮" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   IsVisible="{Binding BannerImagePath, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+                                    </Panel>
+
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="13" Foreground="White" TextTrimming="CharacterEllipsis"/>
+
+                                    <Border Classes="pill" HorizontalAlignment="Left" Padding="8,3">
+                                        <TextBlock Text="{Binding BoundProfileDisplay}" FontSize="10.5" Foreground="#BAC2DE"/>
+                                    </Border>
+
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Auto-Switch" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoSwitchEnabled, Mode=TwoWay}"
+                                                      IsEnabled="{Binding #GamesPageRoot.((vm:GamesPageViewModel)DataContext).IsAutoSwitchingEnabled}"
+                                                      OnContent="" OffContent=""
+                                                      ToolTip.Tip="Override: lets this specific game skip auto-switching even while the master switch above is on. Disabled here (rather than hidden) while the master switch is off, so a per-game preference isn't lost."/>
+                                    </Grid>
+
+                                    <Grid ColumnDefinitions="*, *, *" >
+                                        <Button Grid.Column="0" Classes="neutral" Content="Launch" FontSize="10.5" Padding="6,5" Margin="0,0,3,0" HorizontalContentAlignment="Center" Command="{Binding LaunchCommand}"/>
+                                        <Button Grid.Column="1" Classes="neutral" Content="Test" FontSize="10.5" Padding="6,5" Margin="3,0,3,0" HorizontalContentAlignment="Center" Command="{Binding TestCommand}"/>
+                                        <Button Grid.Column="2" Classes="neutral" Content="Calibrate" FontSize="10.5" Padding="6,5" Margin="3,0,0,0" HorizontalContentAlignment="Center" Command="{Binding CalibrateCommand}"/>
+                                    </Grid>
+
+                                    <Button Classes="primary" Content="Assign Profile" FontSize="11" Padding="8,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding OpenAssignmentDrawerCommand}"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ASSIGNMENT DRAWER -->
+        <Border IsVisible="{Binding IsAssignmentDrawerOpen}" Background="{DynamicResource OverlayScrimBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="#161B26" BorderBrush="#2D374D" BorderThickness="1,0,0,0" CornerRadius="0" Padding="24" Width="320"
+                    HorizontalAlignment="Right" VerticalAlignment="Stretch">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="{Binding DrawerTargetGame.DisplayName}" FontSize="18" FontWeight="Bold" Foreground="White" TextWrapping="Wrap"/>
+
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Assign existing profile" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                        <ComboBox ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding DrawerSelectedExistingProfile}" HorizontalAlignment="Stretch"/>
+                        <Button Content="Assign" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding AssignExistingProfileCommand}"/>
+                    </StackPanel>
+
+                    <Border Height="1" Background="#20283C"/>
+
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Or create new profile" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                        <TextBox Text="{Binding DrawerNewProfileName}" Watermark="Profile name" CornerRadius="6" Background="#0E1118" Padding="10,8"/>
+                        <Button Content="Create &amp; Assign" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding CreateAndAssignProfileCommand}"/>
+                    </StackPanel>
+
+                    <Border Height="1" Background="#20283C"/>
+
+                    <Button Content="Edit Exe Path" Classes="neutral" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding EditDrawerTargetExePathCommand}"
+                            ToolTip.Tip="If auto-detection picked the wrong executable, point this binding at the correct one"/>
+                    <Button Content="Unbind" Classes="danger" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding UnbindDrawerTargetCommand}"/>
+
+                    <Button Content="Close" Background="#262D3D" CornerRadius="6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding CloseDrawerCommand}"/>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- ADD GAME DIALOG -->
+        <Border IsVisible="{Binding IsAddGameDialogOpen}" Background="{DynamicResource OverlayScrimBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="#161B26" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="10" Padding="24" Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Add Game" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="{Binding PendingGameExePath}" FontSize="11" Foreground="#8B95A5" TextTrimming="CharacterEllipsis"/>
+                    <TextBox Text="{Binding PendingGameDisplayName}" Watermark="Display name" CornerRadius="6" Background="#0E1118" Padding="10,8"/>
+                    <Button Content="Choose Banner Image (optional)" Classes="neutral" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding PickPendingGameBannerCommand}"/>
+                    <Grid ColumnDefinitions="*, *">
+                        <Button Grid.Column="0" Content="Cancel" Command="{Binding CancelAddManualGameCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,6,0" Background="#262D3D" CornerRadius="6"/>
+                        <Button Grid.Column="1" Content="Add Game" Command="{Binding ConfirmAddManualGameCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="6,0,0,0" Classes="primary"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Panel>
+</UserControl>

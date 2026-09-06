@@ -6,7 +6,7 @@ namespace ECCR.ViewModels;
 /// Thin forwarder backing the Settings page - every toggle, driver status flag, update-flow
 /// property and command here is owned by <see cref="MainWindowViewModel"/>; this class only
 /// proxies to it and re-raises property-changed notifications for the properties it wraps.
-/// Same rationale as <see cref="ProfilesViewModel"/>. The app version display
+/// Same rationale as the old thin-forwarder ProfilesViewModel this app used to have. The app version display
 /// (<see cref="DisplayVersionText"/>) stays on this page per product decision, not About.
 /// </summary>
 public partial class SettingsViewModel : ViewModelBase
@@ -30,6 +30,7 @@ public partial class SettingsViewModel : ViewModelBase
                 nameof(MainWindowViewModel.CloseMinimizesToTray) or
                 nameof(MainWindowViewModel.AutoCheckForUpdates) or
                 nameof(MainWindowViewModel.ShowChangelogOnUpdate) or
+                nameof(MainWindowViewModel.EnableProfileSwitchNotifications) or
                 nameof(MainWindowViewModel.DriverInstallProgressText) or
                 nameof(MainWindowViewModel.IsBusyWithDriverAction) or
                 nameof(MainWindowViewModel.IsViGEmInstalled) or
@@ -81,6 +82,12 @@ public partial class SettingsViewModel : ViewModelBase
     {
         get => _host.ShowChangelogOnUpdate;
         set => _host.ShowChangelogOnUpdate = value;
+    }
+
+    public bool EnableProfileSwitchNotifications
+    {
+        get => _host.EnableProfileSwitchNotifications;
+        set => _host.EnableProfileSwitchNotifications = value;
     }
 
     public string DriverInstallProgressText => _host.DriverInstallProgressText;

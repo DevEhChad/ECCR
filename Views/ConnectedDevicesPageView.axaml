@@ -48,7 +48,7 @@
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="{Binding DeviceInstanceName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                                        <TextBlock Text="{Binding DeviceInstanceName}" FontWeight="Bold" FontSize="14" Foreground="White" TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Text="{Binding Category}" FontSize="11" Foreground="#8B95A5"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" IsVisible="{Binding IsBatterySupported}">

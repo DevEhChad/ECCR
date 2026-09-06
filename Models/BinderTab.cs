@@ -14,9 +14,11 @@ public enum BinderTab
     Bindings,
     Deadzones,
     Sticks,
+    Triggers,
     Motion,
     Touchpad,
     WheelSettings,
     Calibration,
+    PedalSettings,
     MoreOptions
 }

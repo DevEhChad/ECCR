@@ -36,6 +36,16 @@ public partial class MainWindow : Window
             {
                 var handle = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
                 vm.SetNativeWindowHandle(handle);
+
+                // Non-modal, always-on-top, non-activating - a genuinely new window pattern in
+                // this app (CalibrationDialog is the only other secondary window, and it's
+                // modal). A fresh ProfileSwitchToastWindow per event rather than a reused
+                // instance, since profile switches are infrequent and each toast is short-lived.
+                vm.ProfileAutoSwitched += (game, profileName) =>
+                {
+                    if (!vm.EnableProfileSwitchNotifications) return;
+                    new ProfileSwitchToastWindow().ShowToast(game, profileName);
+                };
             }
         };
     }

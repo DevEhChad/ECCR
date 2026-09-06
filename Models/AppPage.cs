@@ -10,6 +10,7 @@ public enum AppPage
     ConnectedDevices,
     Binder,
     Profiles,
+    Games,
     HidHide,
     AutoBind,
     About,

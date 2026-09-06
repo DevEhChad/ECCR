@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace ECCR.Models;
 
@@ -12,6 +13,20 @@ namespace ECCR.Models;
 /// </summary>
 public class UserProfile
 {
+    /// <summary>
+    /// Stable identity that survives a rename (unlike <see cref="ProfileName"/>, which is also
+    /// the filename) - <see cref="GameInfo.BoundProfileId"/> keys off this. Deliberately has NO
+    /// default-value initializer: a field initializer would run during deserialization's
+    /// object-construction step and, since old files have no "Id" property to overwrite it, every
+    /// old file would silently get a fresh random Id on every single load instead of ever being
+    /// migrated once. Every code path that creates a genuinely new profile
+    /// (<see cref="ECCR.Services.ProfileService"/>'s create/duplicate/bootstrap paths) sets this
+    /// explicitly; a profile file saved before this field existed deserializes with
+    /// <c>Id == Guid.Empty</c>, which <see cref="ECCR.Services.ProfileService"/> detects and
+    /// migrates (assigns + rewrites the file) exactly once.
+    /// </summary>
+    public Guid Id { get; set; }
+
     public string ProfileName { get; set; } = "Default";
     public VirtualEmulationMode OutputMode { get; set; } = VirtualEmulationMode.DirectInputWheel;
     public List<MappingEntry> Mappings { get; set; } = [];

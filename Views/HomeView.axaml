@@ -67,7 +67,7 @@
                                                    Width="18" Height="18" Stretch="Uniform"
                                                    RenderOptions.BitmapInterpolationMode="HighQuality"
                                                    VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding DeviceInstanceName}" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding DeviceInstanceName}" FontSize="14" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>
@@ -98,7 +98,7 @@
                                 <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="30" VerticalAlignment="Center" Margin="6,0,18,0"
                                            IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                    <TextBlock Text="{Binding Label}" FontWeight="Bold" FontSize="17" Foreground="White"/>
+                                    <TextBlock Text="{Binding Label}" FontWeight="Bold" FontSize="17" Foreground="White" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text="{Binding Description}" FontSize="13" Foreground="#8B95A5" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Grid>

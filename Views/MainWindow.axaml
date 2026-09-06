@@ -25,8 +25,8 @@
         d:DesignHeight="800"
         Width="1280"
         Height="800"
-        MinWidth="1100"
-        MinHeight="680"
+        MinWidth="800"
+        MinHeight="600"
         x:Class="ECCR.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="RootWindow"
@@ -157,7 +157,7 @@
              and opened showing the full history on demand from Settings > Software Updates.
              Independent of the About page's own current-version-only changelog view. -->
         <Border IsVisible="{Binding IsChangelogOpen}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="22" Width="620" Height="600" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border Background="#121620" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="12" Padding="22" Width="620" MaxHeight="560" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid RowDefinitions="Auto, *, Auto">
                     <!-- Header -->
                     <Border Grid.Row="0" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,12">

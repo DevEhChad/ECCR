@@ -11,6 +11,9 @@ namespace ECCR.Models;
 public class AppSettings
 {
     public string LastActiveProfile { get; set; } = "Default";
+
+    /// <summary>Profile pinned as the "Global/Desktop Default" via the Profiles page - loads at startup instead of <see cref="LastActiveProfile"/> when set and still present. Null means no default is pinned.</summary>
+    public string? DefaultProfileName { get; set; }
     public string LastRunVersion { get; set; } = string.Empty;
     public bool StartWithWindows { get; set; } = false;
     public bool RunInSystemTray { get; set; } = true;
@@ -21,6 +24,12 @@ public class AppSettings
     public bool IsVirtualOutputActive { get; set; } = true;
     public bool IsHidHideActive { get; set; } = false;
     public bool IsAppListInverted { get; set; } = false;
+
+    /// <summary>Master switch for automatic profile switching based on the focused game's window (per-game opt-in still required via <see cref="ECCR.Models.GameInfo.AutoSwitchEnabled"/>). Off by default since it's an opt-in feature.</summary>
+    public bool AutoSwitchingEnabled { get; set; } = false;
+
+    /// <summary>Whether the floating toast notification appears when auto-switching actually changes the active profile. On by default; the switch itself still happens either way.</summary>
+    public bool EnableProfileSwitchNotifications { get; set; } = true;
 
     /// <summary>When true (default), HidHideViewModel automatically turns cloaking off when Virtual Devices are turned off and restores whatever it was before when Virtual Devices come back on. When false, cloaking is fully manual and ignores the Virtual Devices toggle.</summary>
     public bool LinkCloakingToVirtualDevices { get; set; } = true;

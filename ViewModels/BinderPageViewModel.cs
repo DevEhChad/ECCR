@@ -123,6 +123,12 @@ public partial class BinderPageViewModel : ViewModelBase
         DevicePresetService.DetectCategory(SelectedDeviceName ?? string.Empty);
 
     public bool IsSelectedDeviceWheel => SelectedDeviceName != null && DevicePresetService.IsWheelOrPedalCategory(SelectedDeviceCategory);
+
+    /// <summary>Gates the More Options tab's Touchpad Click Mode card - only PlayStation-category devices report a touchpad at all.</summary>
+    public bool IsSelectedDeviceTouchpadCapable => SelectedDeviceCategory == DeviceHardwareCategory.PlayStationController;
+
+    /// <summary>Every value of <see cref="TouchpadClickMode"/>, for the Touchpad Click Mode ComboBox's ItemsSource - same plain-enum-values ComboBox convention already used for <c>ControllerLedViewModel.EffectModes</c>.</summary>
+    public static IReadOnlyList<TouchpadClickMode> TouchpadClickModes { get; } = System.Enum.GetValues<TouchpadClickMode>();
     public bool IsSelectedDeviceGamepad => SelectedDeviceName != null && !IsSelectedDeviceWheel;
 
     public string SelectedDeviceDisplayName => SelectedDeviceName ?? string.Empty;
@@ -132,9 +138,19 @@ public partial class BinderPageViewModel : ViewModelBase
 
     partial void OnSelectedDeviceNameChanged(string? value) => RaiseDeviceScopedPropertiesChanged();
 
+    /// <summary>
+    /// Only picks a fallback device when nothing is selected yet - a hotplug refresh
+    /// (<see cref="InputDeviceManager"/>'s periodic re-enumeration) can now make
+    /// <see cref="Devices"/> shrink and grow live mid-session, and reassigning
+    /// <see cref="SelectedDeviceName"/> just because it's momentarily missing would silently
+    /// yank the user to a different device while they're mid-edit. A device that's unplugged
+    /// stays "selected" (see <see cref="HasSelectedDeviceStatus"/>'s doc comment for how that's
+    /// surfaced) so its last-known bindings stay visible, and reappears automatically once the
+    /// same-named device is reacquired.
+    /// </summary>
     private void EnsureSelectedDeviceIsValid()
     {
-        if (SelectedDeviceName != null && Devices.Any(d => d.DeviceInstanceName == SelectedDeviceName)) return;
+        if (!string.IsNullOrEmpty(SelectedDeviceName)) return;
         SelectedDeviceName = Devices.Count > 0 ? Devices[0].DeviceInstanceName : null;
     }
 
@@ -143,6 +159,7 @@ public partial class BinderPageViewModel : ViewModelBase
         EnsureSelectedDeviceIsValid();
         OnPropertyChanged(nameof(SelectedDeviceCategory));
         OnPropertyChanged(nameof(IsSelectedDeviceWheel));
+        OnPropertyChanged(nameof(IsSelectedDeviceTouchpadCapable));
         OnPropertyChanged(nameof(IsSelectedDeviceGamepad));
         OnPropertyChanged(nameof(SelectedDeviceDisplayName));
         OnPropertyChanged(nameof(SelectedDeviceGroup));
@@ -156,6 +173,11 @@ public partial class BinderPageViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasOtherAxes));
         OnPropertyChanged(nameof(WheelAxisEntries));
         OnPropertyChanged(nameof(HasWheelAxisEntries));
+        OnPropertyChanged(nameof(LeftTriggerEntry));
+        OnPropertyChanged(nameof(RightTriggerEntry));
+        OnPropertyChanged(nameof(ThrottlePedalEntry));
+        OnPropertyChanged(nameof(BrakePedalEntry));
+        OnPropertyChanged(nameof(ClutchPedalEntry));
         OnPropertyChanged(nameof(SelectedDeviceStatus));
         OnPropertyChanged(nameof(HasSelectedDeviceStatus));
         OnPropertyChanged(nameof(IsMotionSupportedForSelectedDevice));
@@ -164,6 +186,7 @@ public partial class BinderPageViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedWheelSettings));
         OnPropertyChanged(nameof(IsSelectedDeviceForceFeedbackCapable));
         OnPropertyChanged(nameof(SelectedGamepadSettings));
+        OnPropertyChanged(nameof(IsVisualBinderHidden));
         OnPropertyChanged(nameof(IsShowAllInputsEnabled));
 
         ResubscribeDisplayRowSource();
@@ -298,10 +321,12 @@ public partial class BinderPageViewModel : ViewModelBase
     public bool IsBindingsTabSelected => SelectedTab == BinderTab.Bindings;
     public bool IsDeadzonesTabSelected => SelectedTab == BinderTab.Deadzones;
     public bool IsSticksTabSelected => SelectedTab == BinderTab.Sticks;
+    public bool IsTriggersTabSelected => SelectedTab == BinderTab.Triggers;
     public bool IsMotionTabSelected => SelectedTab == BinderTab.Motion;
     public bool IsTouchpadTabSelected => SelectedTab == BinderTab.Touchpad;
     public bool IsWheelSettingsTabSelected => SelectedTab == BinderTab.WheelSettings;
     public bool IsCalibrationTabSelected => SelectedTab == BinderTab.Calibration;
+    public bool IsPedalSettingsTabSelected => SelectedTab == BinderTab.PedalSettings;
     public bool IsMoreOptionsTabSelected => SelectedTab == BinderTab.MoreOptions;
 
     partial void OnSelectedTabChanged(BinderTab value)
@@ -309,10 +334,12 @@ public partial class BinderPageViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsBindingsTabSelected));
         OnPropertyChanged(nameof(IsDeadzonesTabSelected));
         OnPropertyChanged(nameof(IsSticksTabSelected));
+        OnPropertyChanged(nameof(IsTriggersTabSelected));
         OnPropertyChanged(nameof(IsMotionTabSelected));
         OnPropertyChanged(nameof(IsTouchpadTabSelected));
         OnPropertyChanged(nameof(IsWheelSettingsTabSelected));
         OnPropertyChanged(nameof(IsCalibrationTabSelected));
+        OnPropertyChanged(nameof(IsPedalSettingsTabSelected));
         OnPropertyChanged(nameof(IsMoreOptionsTabSelected));
     }
 
@@ -325,6 +352,27 @@ public partial class BinderPageViewModel : ViewModelBase
         get => _host.SelectedProfile;
         set => _host.SelectedProfile = value;
     }
+
+    /// <summary>
+    /// Per-gamepad-device state (see <see cref="Models.GamepadDeviceSettings.IsVisualBinderHidden"/>)
+    /// rather than a global app setting - switching devices shows each one's own saved layout
+    /// choice. Wheels never show the diagram at all (unreachable/hidden for that device type), so
+    /// there's no wheel-settings equivalent. Falls back to <c>false</c> (diagram shown) when no
+    /// device is selected yet.
+    /// </summary>
+    public bool IsVisualBinderHidden
+    {
+        get => SelectedGamepadSettings?.IsVisualBinderHidden ?? false;
+        set
+        {
+            if (SelectedGamepadSettings == null) return;
+            SelectedGamepadSettings.IsVisualBinderHidden = value;
+            OnPropertyChanged();
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleVisualBinderHidden() => IsVisualBinderHidden = !IsVisualBinderHidden;
 
     public string CustomProfileInput
     {
@@ -359,11 +407,22 @@ public partial class BinderPageViewModel : ViewModelBase
         !e.SourceDisplayName.Contains("Left Stick") && !e.SourceDisplayName.Contains("Right Stick"));
     public bool HasOtherAxes => OtherAxes.Any();
 
+    // --- Triggers tab (gamepad) ---
+
+    public MappingEntry? LeftTriggerEntry => AxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Left Trigger"));
+    public MappingEntry? RightTriggerEntry => AxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Right Trigger"));
+
     // --- More Options tab (gamepad) ---
 
     public ControllerStatus? SelectedDeviceStatus =>
         Devices.FirstOrDefault(s => s.DeviceInstanceName == SelectedDeviceName);
 
+    /// <summary>
+    /// Also doubles as "is the selected device currently connected" - false the moment a hotplug
+    /// refresh removes it from <see cref="Devices"/>, true again the instant it's reacquired
+    /// under the same name. <see cref="Views.BinderPageView"/>'s disconnected banner binds to
+    /// this directly rather than a separate property.
+    /// </summary>
     public bool HasSelectedDeviceStatus => SelectedDeviceStatus != null;
 
     // --- Motion / Touchpad tabs (gamepad, PlayStation only) ---
@@ -439,6 +498,13 @@ public partial class BinderPageViewModel : ViewModelBase
     public IEnumerable<MappingEntry> WheelAxisEntries => AxisEntries;
     public bool HasWheelAxisEntries => WheelAxisEntries.Any();
 
+    // --- Pedal Settings tab (wheel) ---
+
+    public MappingEntry? ThrottlePedalEntry => WheelAxisEntries.FirstOrDefault(e =>
+        e.TargetOutput.Contains("Throttle") || e.TargetOutput.Contains("Gas"));
+    public MappingEntry? BrakePedalEntry => WheelAxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Brake"));
+    public MappingEntry? ClutchPedalEntry => WheelAxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Clutch"));
+
     // --- More Options tab: Rumble/Haptics + LED (gamepad) ---
 
     public GamepadDeviceSettings? SelectedGamepadSettings =>
@@ -446,4 +512,10 @@ public partial class BinderPageViewModel : ViewModelBase
 
     [RelayCommand]
     private void OpenHidHide() => _host.NavigateToCommand.Execute(AppPage.HidHide);
+
+    [RelayCommand]
+    private void TestVibration()
+    {
+        if (SelectedDeviceName != null) _host.TestVibration(SelectedDeviceName);
+    }
 }

@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -24,6 +27,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly BinderPageViewModel _parent;
+    private readonly HashSet<MappingEntry> _trackedMappings = new();
 
     public static readonly string[] AvailableSkins =
     [
@@ -98,7 +102,27 @@ public partial class BinderDiagramViewModel : ViewModelBase
             }
         };
 
-        _host.Mappings.CollectionChanged += (_, _) => RefreshBoundEntries();
+        // Per-entry PropertyChanged subscriptions (not just Mappings.CollectionChanged) so an
+        // in-place mutation - ClearMapping's SourceDeviceName reassignment, a TargetOutput edit
+        // from the Rebind popup - refreshes the diagram immediately instead of only on the next
+        // unrelated add/remove. See OnMappingEntryPropertyChanged's doc comment for why only
+        // identity-affecting properties trigger a full RefreshBoundEntries() pass here.
+        foreach (var m in _host.Mappings) TrackMapping(m);
+
+        _host.Mappings.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+            {
+                foreach (var m in _trackedMappings.ToList()) UntrackMapping(m);
+                foreach (var m in _host.Mappings) TrackMapping(m);
+            }
+            else
+            {
+                if (e.OldItems != null) foreach (MappingEntry m in e.OldItems) UntrackMapping(m);
+                if (e.NewItems != null) foreach (MappingEntry m in e.NewItems) TrackMapping(m);
+            }
+            RefreshBoundEntries();
+        };
         _host.OnLiveDeviceStateUpdated += HandleLiveDeviceState;
 
         // ControllerSkin's real saved value isn't known yet at the point LoadSkinImage() just
@@ -125,18 +149,77 @@ public partial class BinderDiagramViewModel : ViewModelBase
         SkinImage = new Bitmap(AssetLoader.Open(new Uri($"avares://ECCR/Assets/ControllerSkins/{SelectedSkin}.png")));
     }
 
+    private void TrackMapping(MappingEntry m)
+    {
+        if (_trackedMappings.Add(m)) m.PropertyChanged += OnMappingEntryPropertyChanged;
+    }
+
+    private void UntrackMapping(MappingEntry m)
+    {
+        if (_trackedMappings.Remove(m)) m.PropertyChanged -= OnMappingEntryPropertyChanged;
+    }
+
+    /// <summary>
+    /// Only identity-affecting properties need a full re-match pass here - a bound hotspot's
+    /// TargetOutput/SourceDisplayName changes are instead handled per-hotspot by
+    /// HotspotViewModel/WheelHotspotViewModel's own BoundEntry subscription, which updates just
+    /// that one hotspot's tooltip without re-walking every hotspot.
+    /// </summary>
+    private void OnMappingEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MappingEntry.SourceDeviceName) or nameof(MappingEntry.SemanticHotspot)
+            or nameof(MappingEntry.SourceIndex) or nameof(MappingEntry.SourceType) or nameof(MappingEntry.SourceDisplayName))
+            RefreshBoundEntries();
+    }
+
+    /// <summary>
+    /// Matches each hotspot to its <see cref="MappingEntry"/> by exact <see cref="MappingEntry.SemanticHotspot"/>
+    /// first (set only for entries created by clicking this diagram - see <see cref="ArmHotspot"/>/
+    /// <see cref="ArmWheelHotspot"/>), falling back to a physical device+index match (the same
+    /// reverse-index lookup <see cref="HandleLiveDeviceState"/> already uses for live press
+    /// highlighting) for entries created via the Rebinding Table, Auto-Bind, or a loaded profile
+    /// that predates any diagram click - those never get <see cref="MappingEntry.SemanticHotspot"/>
+    /// set, so without this fallback they always looked "unbound" here despite being genuinely
+    /// bound (per <see cref="MappingEntry.IsBound"/>, the table's own definition).
+    /// </summary>
     private void RefreshBoundEntries()
     {
         string? deviceName = SelectedDeviceName;
+        var category = DevicePresetService.DetectCategory(deviceName ?? string.Empty);
+
         foreach (var hvm in HotspotViewModels)
         {
-            hvm.BoundEntry = _host.Mappings.FirstOrDefault(m =>
-                m.SourceDeviceName == deviceName && m.SemanticHotspot == hvm.Hotspot.Semantic.ToString());
+            string semanticName = hvm.Hotspot.Semantic.ToString();
+            var entry = _host.Mappings.FirstOrDefault(m => m.SourceDeviceName == deviceName && m.SemanticHotspot == semanticName);
+            if (entry == null)
+            {
+                int? physicalIndex = ControllerHotspotService.GetSemanticButtonIndex(category, hvm.Hotspot.Semantic);
+                if (physicalIndex.HasValue)
+                {
+                    entry = _host.Mappings.FirstOrDefault(m =>
+                        m.SourceDeviceName == deviceName && m.IsBound &&
+                        m.SourceType == InputType.Button && m.SourceIndex == physicalIndex.Value);
+                }
+            }
+            hvm.BoundEntry = entry;
         }
+
         foreach (var wvm in WheelHotspotViewModels)
         {
-            wvm.BoundEntry = _host.Mappings.FirstOrDefault(m =>
-                m.SourceDeviceName == deviceName && m.SemanticHotspot == wvm.Hotspot.Semantic.ToString());
+            string semanticName = wvm.Hotspot.Semantic.ToString();
+            var entry = _host.Mappings.FirstOrDefault(m => m.SourceDeviceName == deviceName && m.SemanticHotspot == semanticName);
+            if (entry == null)
+            {
+                int? physicalIndex = WheelHotspotService.GetWheelSemanticIndex(category, wvm.Hotspot.Semantic);
+                if (physicalIndex.HasValue)
+                {
+                    var expectedType = wvm.Hotspot.IsAxis ? InputType.Axis : InputType.Button;
+                    entry = _host.Mappings.FirstOrDefault(m =>
+                        m.SourceDeviceName == deviceName && m.IsBound &&
+                        m.SourceType == expectedType && m.SourceIndex == physicalIndex.Value);
+                }
+            }
+            wvm.BoundEntry = entry;
         }
     }
 
@@ -223,7 +306,16 @@ public partial class BinderDiagramViewModel : ViewModelBase
 
         if (IsWheelDevice)
         {
-            if (state.NormalizedAxes.Length > 0) SteeringAngleDegrees = (state.NormalizedAxes[0] - 0.5) * 2 * 180;
+            if (state.NormalizedAxes.Length > 0)
+            {
+                // Scales with this wheel's own configured DOR (Wheel Settings tab), same formula
+                // Converters/SteeringAngleConverter.cs already uses for the separate Calibration
+                // dialog's dial - previously hardcoded to a fixed +-180 regardless of DOR, so a
+                // direct-drive wheel configured for e.g. 1800/2700 degrees never showed more than
+                // one physical turn's worth of visual rotation here.
+                int rotationDegrees = _host.GetOrCreateWheelSettings(state.DeviceName).RotationDegrees;
+                SteeringAngleDegrees = (state.NormalizedAxes[0] - 0.5) * rotationDegrees;
+            }
             if (state.NormalizedAxes.Length > 1) ThrottleFill01 = state.NormalizedAxes[1];
             if (state.NormalizedAxes.Length > 2) BrakeFill01 = state.NormalizedAxes[2];
             if (state.NormalizedAxes.Length > 3) ClutchFill01 = state.NormalizedAxes[3];
@@ -275,11 +367,18 @@ public partial class HotspotViewModel : ObservableObject
     [ObservableProperty]
     private MappingEntry? _boundEntry;
 
+    /// <summary>Mirrors <see cref="BoundEntry"/>'s own <see cref="MappingEntry.IsArmed"/> - drives this hotspot's "armed" ring when it (or the matching Rebinding Table row) is currently being captured.</summary>
+    [ObservableProperty]
+    private bool _isArmed;
+
     public bool IsBound => BoundEntry != null;
 
     public string TooltipText => BoundEntry != null
         ? $"{Hotspot.Label}\nBound to: {BoundEntry.TargetOutput}"
         : $"{Hotspot.Label}\nNot bound - click to bind";
+
+    /// <summary>Whichever entry <see cref="BoundEntry"/> was pointed at last, so <see cref="OnBoundEntryChanged"/> can unsubscribe from it - the generated single-argument partial method doesn't expose the old value.</summary>
+    private MappingEntry? _subscribedEntry;
 
     public HotspotViewModel(ControllerHotspot hotspot, BinderDiagramViewModel parent)
     {
@@ -289,8 +388,28 @@ public partial class HotspotViewModel : ObservableObject
 
     partial void OnBoundEntryChanged(MappingEntry? value)
     {
+        if (_subscribedEntry != null) _subscribedEntry.PropertyChanged -= OnBoundEntryPropertyChanged;
+        _subscribedEntry = value;
+        if (_subscribedEntry != null) _subscribedEntry.PropertyChanged += OnBoundEntryPropertyChanged;
+
+        IsArmed = value?.IsArmed ?? false;
         OnPropertyChanged(nameof(IsBound));
         OnPropertyChanged(nameof(TooltipText));
+    }
+
+    /// <summary>Live-updates this one hotspot's tooltip/armed state on an in-place edit to its bound entry, without needing a full RefreshBoundEntries() pass.</summary>
+    private void OnBoundEntryPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(MappingEntry.TargetOutput):
+            case nameof(MappingEntry.SourceDisplayName):
+                OnPropertyChanged(nameof(TooltipText));
+                break;
+            case nameof(MappingEntry.IsArmed):
+                IsArmed = BoundEntry?.IsArmed ?? false;
+                break;
+        }
     }
 }
 
@@ -311,11 +430,18 @@ public partial class WheelHotspotViewModel : ObservableObject
     [ObservableProperty]
     private MappingEntry? _boundEntry;
 
+    /// <summary>Mirrors <see cref="BoundEntry"/>'s own <see cref="MappingEntry.IsArmed"/> - drives this hotspot's "armed" ring when it (or the matching Rebinding Table row) is currently being captured.</summary>
+    [ObservableProperty]
+    private bool _isArmed;
+
     public bool IsBound => BoundEntry != null;
 
     public string TooltipText => BoundEntry != null
         ? $"{Hotspot.Label}\nBound to: {BoundEntry.TargetOutput}"
         : $"{Hotspot.Label}\nNot bound - click to bind";
+
+    /// <summary>Whichever entry <see cref="BoundEntry"/> was pointed at last, so <see cref="OnBoundEntryChanged"/> can unsubscribe from it - the generated single-argument partial method doesn't expose the old value.</summary>
+    private MappingEntry? _subscribedEntry;
 
     public WheelHotspotViewModel(WheelHotspot hotspot, BinderDiagramViewModel parent)
     {
@@ -325,7 +451,27 @@ public partial class WheelHotspotViewModel : ObservableObject
 
     partial void OnBoundEntryChanged(MappingEntry? value)
     {
+        if (_subscribedEntry != null) _subscribedEntry.PropertyChanged -= OnBoundEntryPropertyChanged;
+        _subscribedEntry = value;
+        if (_subscribedEntry != null) _subscribedEntry.PropertyChanged += OnBoundEntryPropertyChanged;
+
+        IsArmed = value?.IsArmed ?? false;
         OnPropertyChanged(nameof(IsBound));
         OnPropertyChanged(nameof(TooltipText));
+    }
+
+    /// <summary>Live-updates this one hotspot's tooltip/armed state on an in-place edit to its bound entry, without needing a full RefreshBoundEntries() pass.</summary>
+    private void OnBoundEntryPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(MappingEntry.TargetOutput):
+            case nameof(MappingEntry.SourceDisplayName):
+                OnPropertyChanged(nameof(TooltipText));
+                break;
+            case nameof(MappingEntry.IsArmed):
+                IsArmed = BoundEntry?.IsArmed ?? false;
+                break;
+        }
     }
 }

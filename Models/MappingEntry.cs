@@ -26,6 +26,16 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private bool _isSelected = false;
 
+    /// <summary>True while this is the entry currently armed for capture (<see cref="ECCR.ViewModels.MainWindowViewModel.ListeningEntry"/>) - distinct from <see cref="IsSelected"/>, which means "checked for a bulk Select All/Remove Selected action." Drives the Rebinding Table row's highlight and the Visual Binder hotspot's matching ring, whichever side armed it.</summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    private bool _isArmed = false;
+
+    /// <summary>True while this is a button-type mapping whose physical input is currently held down - live feedback only, not persisted, populated from <see cref="ECCR.ViewModels.MainWindowViewModel.OnLiveDeviceStateUpdated"/> the same way the Visual Binder's hotspot press state is.</summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    private bool _isLivePressed = false;
+
     [ObservableProperty]
     private string _sourceDeviceName = string.Empty;
 
@@ -72,6 +82,10 @@ public partial class MappingEntry : ObservableObject
 
     [ObservableProperty]
     private bool _isInverted = false;
+
+    /// <summary>Pedal/trigger axes only (ignored for centered axes - sticks/steering): snaps output directly to 1.0 the instant travel passes the inner <see cref="Deadzone"/>, skipping the normal <see cref="LinearityExponent"/> ramp entirely - digital-microswitch-style "hair trigger" behavior, e.g. for LT/RT.</summary>
+    [ObservableProperty]
+    private bool _isHairTriggerMode = false;
 
     [ObservableProperty]
     private int _rawMin = 0;
@@ -189,6 +203,14 @@ public partial class MappingEntry : ObservableObject
     [JsonIgnore]
     public bool IsWheelTarget => TargetOutput.StartsWith("[Wheel]", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Whether this is the wheel's steering axis specifically - drives the Calibration tab's embedded rotation gauge and "Center Offset" display, which only make sense for steering (not pedals).</summary>
+    [JsonIgnore]
+    public bool IsSteeringAxis => TargetOutput.Contains("Steer", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>How far <see cref="RawCenter"/> sits from the theoretical RawMin/RawMax midpoint - 0 for a wheel/stick that's never had "Set Center" used (or one that happens to rest exactly centered). Purely a display value; the actual calibration math in <see cref="CalculateCalibratedValue"/> reads <see cref="RawCenter"/> directly.</summary>
+    [JsonIgnore]
+    public int CenterOffset => RawCenter - (RawMin + RawMax) / 2;
+
     partial void OnTargetOutputChanged(string value)
     {
         OnPropertyChanged(nameof(IsWheelTarget));
@@ -196,7 +218,12 @@ public partial class MappingEntry : ObservableObject
         OnPropertyChanged(nameof(ShowPlayerCombo));
         OnPropertyChanged(nameof(ShowWheelSlotCombo));
         OnPropertyChanged(nameof(TargetOutputDisplay));
+        OnPropertyChanged(nameof(IsSteeringAxis));
     }
+
+    partial void OnRawCenterChanged(int value) => OnPropertyChanged(nameof(CenterOffset));
+    partial void OnRawMinChanged(int value) => OnPropertyChanged(nameof(CenterOffset));
+    partial void OnRawMaxChanged(int value) => OnPropertyChanged(nameof(CenterOffset));
 
     /// <summary>
     /// Turns one raw DirectInput axis reading (0-65535) into a calibrated 0.0-1.0 output
@@ -228,32 +255,46 @@ public partial class MappingEntry : ObservableObject
 
         if (isCenteredAxis)
         {
-            double offset = normalized - 0.5;
-            double halfDz = Deadzone * 0.5;
+            // RawCenter marks the physical resting position ("Set Center") - normalized into the
+            // same [0,1] window as `normalized` so travel below/above center rescales against
+            // its own actual available range, rather than assuming center sits exactly at the
+            // RawMin/RawMax midpoint. A wheel/stick that's genuinely off-center (RawCenter not
+            // equidistant from RawMin/RawMax) still reaches a clean 0.0/1.0 at both physical
+            // extremes this way instead of clipping early on the shorter side. When RawCenter is
+            // still at its default (the midpoint), centerNormalized is exactly 0.5 and every step
+            // below is numerically identical to the pre-existing fixed-0.5 math.
+            double centerNormalized = (double)(Math.Clamp(RawCenter, min, max) - min) / (max - min);
 
-            if (Math.Abs(offset) < halfDz)
+            double rawSideOffset = normalized - centerNormalized;
+            double sideRange = rawSideOffset < 0 ? centerNormalized : 1.0 - centerNormalized;
+            if (sideRange <= 0.0) sideRange = 0.0001; // center pinned at (or past) an extreme - guard against div-by-zero
+
+            // From here, `mag` is "how far into this side's own travel, 0..1" - same shape as the
+            // pedal branch's own deadzone/outer/linearity steps below, just applied per-side
+            // instead of to the whole 0..1 pedal range.
+            double mag = Math.Abs(rawSideOffset) / sideRange;
+
+            if (mag < Deadzone)
             {
-                offset = 0.0;
+                mag = 0.0;
             }
             else
             {
-                // Rescale the remaining travel outside the deadzone back up to the full
-                // 0..0.5 half-range so output still reaches 0.0/1.0 at the physical extremes.
-                offset = Math.Sign(offset) * ((Math.Abs(offset) - halfDz) / (0.5 - halfDz)) * 0.5;
+                mag = (mag - Deadzone) / (1.0 - Deadzone);
             }
 
-            // Outer deadzone: travel within DeadzoneOuter of either extreme snaps flat to that
-            // extreme, same idea as the inner cutoff but at the other end of travel.
-            if (DeadzoneOuter > 0.0 && Math.Abs(offset) > 0.5 - DeadzoneOuter * 0.5)
+            if (DeadzoneOuter > 0.0 && mag > 1.0 - DeadzoneOuter)
             {
-                offset = Math.Sign(offset) * 0.5;
+                mag = 1.0;
             }
 
-            if (LinearityExponent != 1.0 && offset != 0.0)
+            if (LinearityExponent != 1.0 && mag > 0.0)
             {
-                offset = Math.Sign(offset) * Math.Pow(Math.Abs(offset) / 0.5, LinearityExponent) * 0.5;
+                mag = Math.Pow(mag, LinearityExponent);
             }
 
+            mag = Math.Clamp(mag, 0.0, 1.0);
+            double offset = Math.Sign(rawSideOffset) * mag * 0.5;
             normalized = 0.5 + offset;
         }
         else
@@ -265,6 +306,15 @@ public partial class MappingEntry : ObservableObject
                     normalized = 0.0;
                 else
                     normalized = (normalized - Deadzone) / (1.0 - Deadzone);
+            }
+
+            // Hair-trigger mode: snap straight to full output the instant travel clears the
+            // inner deadzone, bypassing the outer-deadzone snap (already a no-op once normalized
+            // is 1.0) and the linearity curve below entirely - digital-microswitch behavior
+            // rather than a ramp.
+            if (IsHairTriggerMode && normalized > 0.0)
+            {
+                normalized = 1.0;
             }
 
             // Outer deadzone: travel within DeadzoneOuter of full trigger/pedal travel snaps to 1.0.

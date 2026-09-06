@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ECCR.Models;
 using ECCR.ViewModels;
@@ -31,6 +33,16 @@ public partial class RebindingTableView : UserControl
 
     public static readonly StyledProperty<DeviceMappingGroup?> DeviceMappingGroupProperty =
         AvaloniaProperty.Register<RebindingTableView, DeviceMappingGroup?>(nameof(DeviceMappingGroup));
+
+    /// <summary>Set when the visual binder diagram is hidden for the current device, so this table can claim the full width - drives an "expanded" style class (larger font/padding/hitboxes) rather than any layout logic of its own.</summary>
+    public static readonly StyledProperty<bool> IsExpandedLayoutProperty =
+        AvaloniaProperty.Register<RebindingTableView, bool>(nameof(IsExpandedLayout));
+
+    public bool IsExpandedLayout
+    {
+        get => GetValue(IsExpandedLayoutProperty);
+        set => SetValue(IsExpandedLayoutProperty, value);
+    }
 
     /// <summary>The selected device's mapping group - only used as the CommandParameter for the Select All/Deselect All/Remove Selected toolbar buttons (<see cref="ViewModels.MainWindowViewModel.SelectAllInGroupCommand"/> and friends), which take a whole group rather than an individual entry.</summary>
     public DeviceMappingGroup? DeviceMappingGroup
@@ -73,10 +85,70 @@ public partial class RebindingTableView : UserControl
     public ObservableCollection<MappingEntry> FilteredEntries { get; } = new();
 
     private ObservableCollection<MappingEntry>? _subscribedSource;
+    private MainWindowViewModel? _hostVm;
 
     public RebindingTableView()
     {
         InitializeComponent();
+    }
+
+    /// <summary>
+    /// Closes two gaps between this table and the Visual Binder diagram: scrolling/highlighting
+    /// to whichever row is currently armed for capture (<see cref="MainWindowViewModel.ListeningEntry"/>,
+    /// settable from either this table's own "Detected Input" buttons or a diagram hotspot), and
+    /// live per-row "physical button held down" feedback (<see cref="MainWindowViewModel.OnLiveDeviceStateUpdated"/>),
+    /// mirroring <c>BinderDiagramViewModel.HandleLiveDeviceState</c>'s existing pattern.
+    /// </summary>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm })
+        {
+            _hostVm = vm;
+            _hostVm.PropertyChanged += OnHostVmPropertyChanged;
+            _hostVm.OnLiveDeviceStateUpdated += OnLiveDeviceStateUpdated;
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (_hostVm != null)
+        {
+            _hostVm.PropertyChanged -= OnHostVmPropertyChanged;
+            _hostVm.OnLiveDeviceStateUpdated -= OnLiveDeviceStateUpdated;
+        }
+        _hostVm = null;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnHostVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainWindowViewModel.ListeningEntry)) return;
+
+        var entry = _hostVm?.ListeningEntry;
+        if (entry == null) return;
+
+        int index = FilteredEntries.IndexOf(entry);
+        if (index < 0) return; // this table instance doesn't hold the armed entry - correct no-op
+
+        // Posted at Loaded priority: ArmHotspot/ArmWheelHotspot can create a brand-new
+        // MappingEntry and add it to Mappings in the same call that arms it, so its row may not
+        // be realized in the panel yet on this same layout pass.
+        Dispatcher.UIThread.Post(() => EntriesItemsControl.ScrollIntoView(index), DispatcherPriority.Loaded);
+    }
+
+    private void OnLiveDeviceStateUpdated(LiveDeviceInputState state)
+    {
+        foreach (var entry in FilteredEntries)
+        {
+            if (entry.SourceType != InputType.Button) continue;
+            if (!string.Equals(entry.SourceDeviceName, state.DeviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                entry.IsLivePressed = false;
+                continue;
+            }
+            entry.IsLivePressed = entry.SourceIndex >= 0 && entry.SourceIndex < state.Buttons.Length && state.Buttons[entry.SourceIndex];
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -93,6 +165,10 @@ public partial class RebindingTableView : UserControl
         else if (change.Property == SearchTextProperty)
         {
             RebuildFilteredEntries();
+        }
+        else if (change.Property == IsExpandedLayoutProperty)
+        {
+            Classes.Set("expanded", change.GetNewValue<bool>());
         }
     }
 

@@ -47,6 +47,10 @@ public class InputDeviceManager : IDisposable
     private CancellationTokenSource? _pollingCts;
     private Task? _pollingTask;
 
+    /// <summary>Independent, much slower timer than the poll loop - re-runs <see cref="RefreshDevices"/> periodically so a hotplug (controller plugged/unplugged mid-session) is picked up without an app restart. Same pattern as <see cref="ControllerHidService"/>'s own device-refresh timer.</summary>
+    private Timer? _hotplugTimer;
+    private const int HotplugRefreshIntervalMs = 1500;
+
     public event Action<List<DeviceHardwareInfo>>? OnDevicesRefreshed;
     public event Action<RawDeviceInputState>? OnInputPolled;
 
@@ -159,6 +163,13 @@ public class InputDeviceManager : IDisposable
         OnDevicesRefreshed?.Invoke(devices);
     }
 
+    /// <summary>Starts the periodic re-enumeration timer that detects hotplug events. Call once, alongside <see cref="StartPolling"/>.</summary>
+    public void StartHotplugWatcher()
+    {
+        _hotplugTimer?.Dispose();
+        _hotplugTimer = new Timer(_ => RefreshDevices(), null, dueTime: HotplugRefreshIntervalMs, period: HotplugRefreshIntervalMs);
+    }
+
     public void StartPolling(int pollIntervalMs = 4)
     {
         StopPolling();
@@ -248,6 +259,9 @@ public class InputDeviceManager : IDisposable
 
     public void StopPolling()
     {
+        _hotplugTimer?.Dispose();
+        _hotplugTimer = null;
+
         var cts = _pollingCts;
         _pollingCts = null;
         if (cts != null)
@@ -271,6 +285,8 @@ public class InputDeviceManager : IDisposable
 
     public void Dispose()
     {
+        _hotplugTimer?.Dispose();
+        _hotplugTimer = null;
         StopPolling();
         lock (_acquiredJoysticks)
         {

@@ -26,7 +26,14 @@ public enum SemanticButton
     Share,
     Options,
     Guide,
-    TouchpadClick
+    /// <summary>Full-panel touchpad click - the physical click switch, ignoring finger touch position. Always what a plain physical click means in "Unified" TouchpadClickMode, and the fallback meaning for any mode when no valid touch coordinate accompanies the click.</summary>
+    TouchpadClick,
+    /// <summary>Touchpad click with the active finger touch on the left half (excluding the top band in Multi-Zone mode) - only fires in Split-Left/Right or Multi-Zone TouchpadClickMode.</summary>
+    TouchpadClickLeft,
+    /// <summary>Touchpad click with the active finger touch on the right half (excluding the top band in Multi-Zone mode) - only fires in Split-Left/Right or Multi-Zone TouchpadClickMode.</summary>
+    TouchpadClickRight,
+    /// <summary>Touchpad click with the active finger touch in the upper band - only fires in Multi-Zone TouchpadClickMode.</summary>
+    TouchpadClickTop
 }
 
 /// <summary>A named clickable region on the controller skin image, in native 2816x1536 pixel space.</summary>

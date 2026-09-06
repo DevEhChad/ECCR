@@ -50,7 +50,17 @@ public static class ControllerHotspotService
         new() { Semantic = SemanticButton.L3, Label = "L3 (Left Stick Click)",         PixelBounds = Around(1117, 1118, 220, 220) },
         new() { Semantic = SemanticButton.R3, Label = "R3 (Right Stick Click)",        PixelBounds = Around(1700, 1118, 220, 220) },
 
-        new() { Semantic = SemanticButton.TouchpadClick, Label = "Touchpad Click",     PixelBounds = new Rect(1012, 522, 793, 398) },
+        new() { Semantic = SemanticButton.TouchpadClick, Label = "Touchpad Click (Full)", PixelBounds = new Rect(1012, 522, 793, 398) },
+
+        // Three sub-zones of the same physical pad, for Split-Left/Right and Multi-Zone
+        // TouchpadClickMode - split at the same fractions ProcessInputPolling uses by default
+        // (top band = upper 30% of height, then an even left/right split of the remainder). All
+        // four touchpad hotspots always coexist here regardless of the device's actual configured
+        // mode - the mode only governs which one(s) receive live input at runtime (see
+        // MainWindowViewModel.ProcessInputPolling), so every one is always bindable from the diagram.
+        new() { Semantic = SemanticButton.TouchpadClickTop,   Label = "Touchpad Top Click",   PixelBounds = new Rect(1012, 522, 793, 119) },
+        new() { Semantic = SemanticButton.TouchpadClickLeft,  Label = "Touchpad Left Click",  PixelBounds = new Rect(1012, 641, 396, 279) },
+        new() { Semantic = SemanticButton.TouchpadClickRight, Label = "Touchpad Right Click", PixelBounds = new Rect(1408, 641, 397, 279) },
     };
 
     public static string GetSemanticLabel(SemanticButton semantic) =>
@@ -86,6 +96,15 @@ public static class ControllerHotspotService
                     SemanticButton.R3 => 11,
                     SemanticButton.Guide => 12,
                     SemanticButton.TouchpadClick => 13,
+                    // 132 is reserved/unused (kept as an explicit gap rather than densely packing
+                    // touchpad zone indices, so 133-135 stay obviously grouped with 13). Computed
+                    // per-tick by MainWindowViewModel.ProcessInputPolling from the physical click
+                    // bit (13) + live touch position - not a real DirectInput-reported index, same
+                    // idea as the synthetic 128-131 D-Pad expansion just one layer further up the
+                    // stack (touch position isn't a DirectInput concept at all).
+                    SemanticButton.TouchpadClickLeft => 133,
+                    SemanticButton.TouchpadClickRight => 134,
+                    SemanticButton.TouchpadClickTop => 135,
                     SemanticButton.DPadUp => 128,
                     SemanticButton.DPadRight => 129,
                     SemanticButton.DPadDown => 130,

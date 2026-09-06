@@ -56,6 +56,12 @@ public class ControllerHidService : IDisposable
     private Timer? _pollTimer;
     private bool _disposed;
 
+    /// <summary>Snapshot of one device's most recent finger-touch state, for cross-thread reads by <see cref="TryGetLatestTouch"/>. Only finger 1 is tracked (see <see cref="ParseMotionAndTouch"/>).</summary>
+    public readonly record struct TouchSnapshot(bool Active, double X, double Y);
+
+    /// <summary>Keyed by product ID only (vendor is always Sony here, same convention <see cref="FindOutputTarget"/> already uses) - updated every poll tick in <see cref="PollOnceCore"/>, guarded by <see cref="_lock"/>.</summary>
+    private readonly Dictionary<int, TouchSnapshot> _latestTouchByProductId = new();
+
     private static readonly string LogFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "hid-debug.log");
 
@@ -132,6 +138,21 @@ public class ControllerHidService : IDisposable
         int vendorId = bytes[0] | (bytes[1] << 8);
         int productId = bytes[2] | (bytes[3] << 8);
         return (vendorId, productId);
+    }
+
+    /// <summary>Latest finger-touch snapshot for a Sony device tracked by this service (matched by VID/PID via <see cref="GetVidPid"/>, same as <see cref="SetRumble"/>). Safe to call from any thread. Returns false (default snapshot) for a non-Sony VID or a device this service hasn't seen a report from yet.</summary>
+    public bool TryGetLatestTouch(int vendorId, int productId, out TouchSnapshot touch)
+    {
+        if (vendorId != SonyVendorId)
+        {
+            touch = default;
+            return false;
+        }
+
+        lock (_lock)
+        {
+            return _latestTouchByProductId.TryGetValue(productId, out touch);
+        }
     }
 
     private void RefreshDevices()
@@ -240,7 +261,18 @@ public class ControllerHidService : IDisposable
                 if (read <= 0) continue;
 
                 var status = ParseInputReport(od.Device, buffer, read);
-                if (status != null) results.Add(status);
+                if (status != null)
+                {
+                    results.Add(status);
+                    // Bridges touch position across to InputDeviceManager's separate DirectInput
+                    // poll thread, which is what ProcessInputPolling actually reads button 13
+                    // (touchpad click) from - see MainWindowViewModel.ProcessInputPolling's
+                    // multi-zone touchpad disambiguation.
+                    lock (_lock)
+                    {
+                        _latestTouchByProductId[status.ProductId] = new TouchSnapshot(status.TouchActive, status.TouchX, status.TouchY);
+                    }
+                }
             }
             catch
             {

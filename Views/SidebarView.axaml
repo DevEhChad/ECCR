@@ -56,6 +56,7 @@
                                     <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="19" Width="30" VerticalAlignment="Center"
                                                IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
                                     <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14.5" VerticalAlignment="Center" Margin="10,0,0,0"
+                                               TextTrimming="CharacterEllipsis"
                                                IsVisible="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).IsSidebarCollapsed, Converter={x:Static avc:BoolConverters.Not}}"/>
                                 </Grid>
                             </Button>
@@ -80,6 +81,7 @@
                                     <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="19" Width="30" VerticalAlignment="Center"
                                                IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
                                     <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14.5" VerticalAlignment="Center" Margin="10,0,0,0"
+                                               TextTrimming="CharacterEllipsis"
                                                IsVisible="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).IsSidebarCollapsed, Converter={x:Static avc:BoolConverters.Not}}"/>
                                 </Grid>
                             </Button>

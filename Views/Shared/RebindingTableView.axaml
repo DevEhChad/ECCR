@@ -14,6 +14,7 @@
              xmlns:vm="using:ECCR.ViewModels"
              xmlns:models="using:ECCR.Models"
              xmlns:converters="using:ECCR.Converters"
+             xmlns:dataConverters="using:Avalonia.Data.Converters"
              x:Class="ECCR.Views.Shared.RebindingTableView"
              x:Name="PanelRoot"
              x:DataType="vm:ViewModelBase">
@@ -25,16 +26,52 @@
     </UserControl.Resources>
 
     <UserControl.Styles>
+        <Style Selector="Grid.rebindRow">
+            <Setter Property="MinHeight" Value="44"/>
+        </Style>
         <Style Selector="Grid.rebindRow:pointerover">
             <Setter Property="Background" Value="#161C2A"/>
         </Style>
+        <!-- Currently armed for capture (StartListening'd), from either this table or a Visual Binder hotspot - see MainWindowViewModel.ListeningEntry. -->
+        <Style Selector="Grid.rebindRowArmed">
+            <Setter Property="Background" Value="#241B3A"/>
+        </Style>
+        <!-- Physical button held down right now - overrides the armed tint above while active. -->
+        <Style Selector="Grid.rebindRowPressed">
+            <Setter Property="Background" Value="#3000E599"/>
+        </Style>
+
+        <!-- Expanded mode: set on this UserControl (RebindingTableView.IsExpandedLayout, see code-behind)
+             when the visual binder diagram is hidden and this table has the full page width to
+             itself - slightly larger font/padding/hitboxes to make better use of the space. -->
+        <Style Selector="UserControl.expanded Grid.rebindRow">
+            <Setter Property="MinHeight" Value="56"/>
+        </Style>
+        <Style Selector="UserControl.expanded TextBlock.rowLabel">
+            <Setter Property="FontSize" Value="15"/>
+        </Style>
+        <Style Selector="UserControl.expanded Button.rowDetectedInput">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
+        <Style Selector="UserControl.expanded Border.rowTarget">
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
+        <Style Selector="UserControl.expanded TextBlock.rowTargetLabel">
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+        <Style Selector="UserControl.expanded Button.rowIconButton">
+            <Setter Property="Width" Value="38"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="FontSize" Value="16"/>
+        </Style>
     </UserControl.Styles>
 
-    <Border Classes="card">
+    <Border Classes="card" Padding="18">
         <Grid RowDefinitions="Auto, Auto, Auto, Auto, *">
             <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,10">
                 <TextBlock Grid.Column="0" Text="REBINDING TABLE" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="+ Add Input" FontSize="11" Padding="10,6" CornerRadius="6"
+                <Button Grid.Column="1" Content="+ Add Input" FontSize="12" Padding="12,7" CornerRadius="6"
                         Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddMappingToDeviceCommand}"
                         CommandParameter="{Binding #PanelRoot.DeviceName}"
@@ -45,27 +82,30 @@
                      Text="{Binding #PanelRoot.SearchText}"
                      Watermark="Search inputs…"
                      Margin="0,0,0,10"
-                     Padding="10,7"
+                     Padding="10,8"
                      CornerRadius="6"
                      Background="#121622"
                      BorderBrush="#20283C"
-                     FontSize="12"/>
+                     FontSize="13"/>
 
             <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="0,0,0,10">
-                <Button Content="Select All" FontSize="11" Padding="8,5" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                <Button Content="Select All" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                        IsEnabled="{Binding #PanelRoot.DeviceMappingGroup, Converter={x:Static dataConverters:ObjectConverters.IsNotNull}}"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectAllInGroupCommand}"
                         CommandParameter="{Binding #PanelRoot.DeviceMappingGroup}"/>
-                <Button Content="Deselect All" FontSize="11" Padding="8,5" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                <Button Content="Deselect All" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                        IsEnabled="{Binding #PanelRoot.DeviceMappingGroup, Converter={x:Static dataConverters:ObjectConverters.IsNotNull}}"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeselectAllInGroupCommand}"
                         CommandParameter="{Binding #PanelRoot.DeviceMappingGroup}"/>
-                <Button Content="🗑 Remove Selected" FontSize="11" Padding="8,5" CornerRadius="5" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA"
+                <Button Content="🗑 Remove Selected" FontSize="12" Padding="10,7" CornerRadius="5" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA"
+                        IsEnabled="{Binding #PanelRoot.DeviceMappingGroup, Converter={x:Static dataConverters:ObjectConverters.IsNotNull}}"
                         Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveSelectedInGroupCommand}"
                         CommandParameter="{Binding #PanelRoot.DeviceMappingGroup}"/>
-                <Button Content="Restore Hidden Inputs" FontSize="11" Padding="8,5" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                <Button Content="Restore Hidden Inputs" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
                         IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).HasHiddenInputs}"
                         Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).RestoreHiddenInputsCommand}"
                         ToolTip.Tip="Bring back every unbound row you've dismissed with its ✕ button"/>
-                <ToggleButton Content="Show All Inputs" FontSize="11" Padding="8,5" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                <ToggleButton Content="Show All Inputs" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
                         IsChecked="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsShowAllInputsEnabled, Mode=TwoWay}"
                         ToolTip.Tip="List every physical input this device reports, bound or not - off by default so the table only shows what's actually bound"/>
             </StackPanel>
@@ -74,12 +114,14 @@
                        IsVisible="{Binding !#PanelRoot.HasEntries}" Margin="4,8"/>
 
             <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding #PanelRoot.FilteredEntries}">
+            <ItemsControl x:Name="EntriesItemsControl" ItemsSource="{Binding #PanelRoot.FilteredEntries}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="models:MappingEntry">
                         <Grid Classes="rebindRow"
-                              ColumnDefinitions="24, 36, 1.6*, 1.2*, 1.2*, Auto, Auto"
-                              Margin="0,4"
+                              Classes.rebindRowArmed="{Binding IsArmed}"
+                              Classes.rebindRowPressed="{Binding IsLivePressed}"
+                              ColumnDefinitions="28, 38, 1.6*, 1.2*, 1.2*, Auto, Auto"
+                              Margin="0,6"
                               Background="Transparent">
 
                             <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsVisible="{Binding !IsPlaceholder}"
@@ -93,14 +135,14 @@
                                     BorderBrush="{Binding Border}"
                                     BorderThickness="1"
                                     CornerRadius="10"
-                                    Width="24" Height="24"
+                                    Width="26" Height="26"
                                     VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Glyph}" Foreground="{Binding Foreground}" FontSize="12" FontWeight="Bold"
+                                <TextBlock Text="{Binding Glyph}" Foreground="{Binding Foreground}" FontSize="13" FontWeight="Bold"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
 
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0">
-                                <TextBlock FontWeight="SemiBold" FontSize="12.5" Foreground="White"
+                                <TextBlock Classes="rowLabel" FontWeight="SemiBold" FontSize="13.5" Foreground="White"
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
                                     <TextBlock.Text>
                                         <MultiBinding Converter="{StaticResource SemanticInputNameConverter}">
@@ -112,22 +154,23 @@
                                 </TextBlock>
                             </StackPanel>
 
-                            <Button Grid.Column="3"
-                                    Content="{Binding SourceDisplayName}"
+                            <Button Grid.Column="3" Classes="rowDetectedInput"
                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).StartListeningCommand}"
                                     CommandParameter="{Binding}"
-                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                    Margin="4,0" Padding="8,5"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalContentAlignment="Center"
+                                    Margin="4,0" Padding="10,8"
                                     Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="1" CornerRadius="6"
-                                    Foreground="#D0D0E0" FontSize="11.5"
-                                    ToolTip.Tip="Click, then press the physical button or move the axis you want to bind"/>
+                                    Foreground="#D0D0E0" FontSize="12.5"
+                                    ToolTip.Tip="Click, then press the physical button or move the axis you want to bind">
+                                <TextBlock Text="{Binding SourceDisplayName}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                            </Button>
 
-                            <Border Grid.Column="4" Margin="4,0" Padding="8,5" CornerRadius="6"
+                            <Border Grid.Column="4" Classes="rowTarget" Margin="4,0" Padding="10,8" CornerRadius="6"
                                     Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding TargetOutputDisplay}" FontSize="11.5" Foreground="#D0D0E0" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Classes="rowTargetLabel" Text="{Binding TargetOutputDisplay}" FontSize="12.5" Foreground="#D0D0E0" TextTrimming="CharacterEllipsis"/>
                             </Border>
 
-                            <Button Grid.Column="5" Classes="primary" Content="Rebind" FontSize="11.5" Padding="12,7" Margin="8,0,4,0">
+                            <Button Grid.Column="5" Classes="primary" Content="Rebind" FontSize="12.5" Padding="14,9" Margin="8,0,4,0">
                                 <Button.Flyout>
                                     <Flyout Placement="Bottom" Opened="OnRebindFlyoutOpened">
                                         <StackPanel Width="260" Spacing="8" Margin="4">
@@ -135,6 +178,7 @@
                                                        FontWeight="Bold" FontSize="12" Foreground="White" TextWrapping="Wrap"/>
                                             <TextBlock Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MappingStatus}"
                                                        FontSize="11" Foreground="{DynamicResource AccentPurpleTextBrush}"
+                                                       TextWrapping="Wrap" HorizontalAlignment="Left"
                                                        IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsPickingKeyboardKey}"/>
                                             <Button Content="⌨ Press a Key" Click="OnPressKeyToggleClick"
                                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
@@ -151,7 +195,7 @@
                                 </Button.Flyout>
                             </Button>
 
-                            <Button Grid.Column="6" Content="✕" Width="30" Height="30" Padding="0" FontSize="13"
+                            <Button Grid.Column="6" Classes="rowIconButton" Content="✕" Width="32" Height="32" Padding="0" FontSize="14"
                                     IsVisible="{Binding IsPlaceholder}"
                                     Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).HidePlaceholderInputCommand}"
                                     CommandParameter="{Binding}"
@@ -159,7 +203,7 @@
                                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center"
                                     ToolTip.Tip="Dismiss this input from the table - it's not bound to anything, this just hides the row. Restore it from 'Restore Hidden Inputs' above."/>
 
-                            <Button Grid.Column="6" Content="⚙" Width="30" Height="30" Padding="0" FontSize="13"
+                            <Button Grid.Column="6" Classes="rowIconButton" Content="⚙" Width="32" Height="32" Padding="0" FontSize="14"
                                     IsVisible="{Binding !IsPlaceholder}"
                                     Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="1" Foreground="#BAC2DE" CornerRadius="6"
                                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center">

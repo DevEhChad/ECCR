@@ -161,6 +161,16 @@
                             <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowChangelogOnUpdate}" OnContent="Enabled" OffContent="Disabled"/>
                         </Grid>
 
+                        <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Profile Switch Notifications" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
+                                <TextBlock Text="Show a floating toast when auto-switching changes the active profile for a launched game." FontSize="11" Foreground="#888899"/>
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableProfileSwitchNotifications}" OnContent="Enabled" OffContent="Disabled"/>
+                        </Grid>
+
                         <Border Background="#10141E" CornerRadius="6" Padding="12" Margin="0,4,0,0" BorderBrush="#1F283C" BorderThickness="1">
                             <Grid ColumnDefinitions="*, Auto">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">

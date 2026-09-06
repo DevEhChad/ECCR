@@ -27,6 +27,12 @@
     <UserControl.Resources>
         <converters:CategoryToGlyphConverter x:Key="CategoryToGlyphConverter"/>
         <converters:DeviceRowStateConverter x:Key="DeviceRowStateConverter"/>
+        <converters:BoolToBinderColumnsConverter x:Key="BoolToBinderColumnsConverter"/>
+        <converters:PedalColorConverter x:Key="PedalColorConverter"/>
+        <converters:PedalFillHeightConverter x:Key="PedalFillHeightConverter"/>
+        <converters:SteeringAngleConverter x:Key="SteeringAngleConverter"/>
+        <converters:BoolToScrollBarVisibilityConverter x:Key="BoolToScrollBarVisibilityConverter"/>
+        <converters:TouchpadClickModeToMultiZoneVisibleConverter x:Key="TouchpadClickModeToMultiZoneVisibleConverter"/>
     </UserControl.Resources>
 
     <Design.DataContext>
@@ -105,7 +111,7 @@
                 <!-- Device sub-header -->
                 <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,10">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding SelectedDeviceDisplayName}" FontWeight="Bold" FontSize="16" Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectedDeviceDisplayName}" FontWeight="Bold" FontSize="16" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
                         <Border Background="#1A202E" CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
                             <TextBlock Text="{Binding SelectedDeviceCategory}" FontSize="11" Foreground="#8B95A5"/>
                         </Border>
@@ -131,12 +137,18 @@
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsCalibrationTabSelected}"
                             Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Calibration}"
                             Content="Calibration" IsVisible="{Binding IsSelectedDeviceWheel}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsPedalSettingsTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.PedalSettings}"
+                            Content="Pedal Settings" IsVisible="{Binding IsSelectedDeviceWheel}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsDeadzonesTabSelected}"
                             Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Deadzones}"
                             Content="Deadzones" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsSticksTabSelected}"
                             Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Sticks}"
                             Content="Sticks" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsTriggersTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Triggers}"
+                            Content="Triggers" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsMotionTabSelected}"
                             Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Motion}"
                             Content="Motion" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
@@ -148,6 +160,18 @@
                             Content="More Options" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                 </StackPanel>
 
+                <!-- Disconnected banner: shown when the selected device's last-known bindings are
+                     still on screen but the physical hardware isn't currently reporting in
+                     (unplugged, or not yet re-enumerated). Clears itself automatically the
+                     instant InputDeviceManager's hotplug watcher reacquires the same device. -->
+                <Border Grid.Row="2" Background="#2A1F16" BorderBrush="#5C4326" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,10"
+                        IsVisible="{Binding !HasSelectedDeviceStatus}">
+                    <TextBlock FontSize="11" Foreground="#E0B77A" TextWrapping="Wrap">
+                        <Run Text="⚠"/>
+                        <Run Text=" This device is currently disconnected - showing its last known bindings. Plug it back in to resume live input and testing."/>
+                    </TextBlock>
+                </Border>
+
                 <!-- Tab content -->
                 <Panel Grid.Row="3">
 
@@ -155,19 +179,40 @@
                          side by side; wheels use the Rebinding Table exclusively (the generic
                          wheel diagram/hotspot flow is superseded by every physical input already
                          listed in the table, see BinderPageViewModel.RebuildDisplayRows). -->
-                    <Panel IsVisible="{Binding IsBindingsTabSelected}">
-                        <Grid ColumnDefinitions="1.15*, 16, *" IsVisible="{Binding IsSelectedDeviceGamepad}">
-                            <views:BinderDiagramView Grid.Column="0" DataContext="{Binding Diagram}"/>
-                            <shared:RebindingTableView Grid.Column="2"
-                                                        ItemsSource="{Binding DisplayRows}"
-                                                        DeviceMappingGroup="{Binding SelectedDeviceGroup}"
-                                                        DeviceName="{Binding SelectedDeviceName}"/>
-                        </Grid>
+                    <DockPanel IsVisible="{Binding IsBindingsTabSelected}" LastChildFill="True">
+                        <Button DockPanel.Dock="Top" IsVisible="{Binding IsSelectedDeviceGamepad}"
+                                HorizontalAlignment="Right" Margin="0,0,0,8" Padding="10,6" CornerRadius="6"
+                                Background="Transparent" BorderBrush="#2B354C" Foreground="#8B95A5"
+                                Command="{Binding ToggleVisualBinderHiddenCommand}"
+                                ToolTip.Tip="Show/hide this device's controller visualizer so the Rebinding Table can use the full width - remembered per device">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="🖵 Hide Visualizer" IsVisible="{Binding !IsVisualBinderHidden}"/>
+                                <TextBlock Text="🖵 Show Visualizer" IsVisible="{Binding IsVisualBinderHidden}"/>
+                            </StackPanel>
+                        </Button>
+                        <ScrollViewer IsVisible="{Binding IsSelectedDeviceGamepad}"
+                                      HorizontalScrollBarVisibility="{Binding IsVisualBinderHidden, Converter={StaticResource BoolToScrollBarVisibilityConverter}}"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="{Binding !IsVisualBinderHidden, Converter={StaticResource BoolToBinderColumnsConverter}, ConverterParameter=Diagram}"/>
+                                    <ColumnDefinition Width="{Binding !IsVisualBinderHidden, Converter={StaticResource BoolToBinderColumnsConverter}, ConverterParameter=Gutter}"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <views:BinderDiagramView Grid.Column="0" MinWidth="480" DataContext="{Binding Diagram}" IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsVisualBinderHidden, Converter={x:Static avc:BoolConverters.Not}}"/>
+                                <shared:RebindingTableView Grid.Column="2" MinWidth="480"
+                                                            IsExpandedLayout="{Binding IsVisualBinderHidden}"
+                                                            ItemsSource="{Binding DisplayRows}"
+                                                            DeviceMappingGroup="{Binding SelectedDeviceGroup}"
+                                                            DeviceName="{Binding SelectedDeviceName}"/>
+                            </Grid>
+                        </ScrollViewer>
                         <shared:RebindingTableView IsVisible="{Binding IsSelectedDeviceWheel}"
+                                                    IsExpandedLayout="True"
                                                     ItemsSource="{Binding DisplayRows}"
                                                     DeviceMappingGroup="{Binding SelectedDeviceGroup}"
                                                     DeviceName="{Binding SelectedDeviceName}"/>
-                    </Panel>
+                    </DockPanel>
 
                     <!-- Wheel Settings: rotation + force feedback tuning, wheel only. -->
                     <ScrollViewer IsVisible="{Binding IsWheelSettingsTabSelected}">
@@ -180,11 +225,14 @@
                             <Border Classes="card">
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="Rotation" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
-                                    <TextBlock Text="Degrees of physical lock-to-lock rotation this wheel is configured for (set on the wheel's own firmware/driver - this doesn't change that, only how ECCR scales spring-effect torque near the limits)." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Degrees of physical lock-to-lock rotation this wheel is configured for (set on the wheel's own firmware/driver - this doesn't change that, only how ECCR scales spring-effect torque near the limits). Up to 2700° for direct-drive bases." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
                                     <Grid ColumnDefinitions="*, 56">
-                                        <Slider Grid.Column="0" Minimum="90" Maximum="1080" TickFrequency="90" IsSnapToTickEnabled="True" Value="{Binding RotationDegrees}" VerticalAlignment="Center"/>
+                                        <Slider Grid.Column="0" Minimum="180" Maximum="2700" TickFrequency="90" IsSnapToTickEnabled="True" Value="{Binding RotationDegrees}" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="{Binding RotationDegrees, StringFormat='{}{0}°'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                     </Grid>
+                                    <NumericUpDown Value="{Binding RotationDegrees}" Minimum="180" Maximum="2700" Increment="1"
+                                                   FormatString="0" ShowButtonSpinner="True" FontSize="12" Width="130" HorizontalAlignment="Left"
+                                                   ToolTip.Tip="Manual entry for an exact value beyond the slider's 90° steps"/>
                                 </StackPanel>
                             </Border>
 
@@ -310,6 +358,26 @@
                                                 </Grid>
                                                 <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
 
+                                                <!-- Live rotation gauge: steering axis only. Same SteeringAngleConverter/RotateTransform
+                                                     pattern as the per-entry Calibration dialog's dial, embedded directly here so it's
+                                                     visible while tuning every wheel axis at once rather than one at a time. -->
+                                                <Image IsVisible="{Binding IsSteeringAxis}" Width="130" Height="130" Margin="0,2"
+                                                       HorizontalAlignment="Center" Stretch="Uniform"
+                                                       RenderOptions.BitmapInterpolationMode="HighQuality"
+                                                       RenderTransformOrigin="50%, 50.2%"
+                                                       Source="avares://ECCR/Assets/UILogos/Full-WheelLogo.png">
+                                                    <Image.RenderTransform>
+                                                        <RotateTransform>
+                                                            <RotateTransform.Angle>
+                                                                <MultiBinding Converter="{StaticResource SteeringAngleConverter}">
+                                                                    <Binding Path="LiveOutputPercentage"/>
+                                                                    <Binding ElementName="PageRoot" Path="((vm:BinderPageViewModel)DataContext).SelectedWheelSettings.RotationDegrees"/>
+                                                                </MultiBinding>
+                                                            </RotateTransform.Angle>
+                                                        </RotateTransform>
+                                                    </Image.RenderTransform>
+                                                </Image>
+
                                                 <Grid ColumnDefinitions="*, *, *" Margin="0,4,0,0">
                                                     <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,4,0">
                                                         <Border Background="#10141E" CornerRadius="6" Padding="6,3">
@@ -322,6 +390,8 @@
                                                             <TextBlock Text="{Binding RawCenter, StringFormat='Center: {0}'}" FontSize="11" Foreground="White" HorizontalAlignment="Center"/>
                                                         </Border>
                                                         <Button Content="Set Center" Click="OnCalSetCenterClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#1F283C" Foreground="White" FontSize="11" Padding="6,4" CornerRadius="5"/>
+                                                        <TextBlock Text="{Binding CenterOffset, StringFormat='Offset: {0:+#;-#;0}'}" FontSize="10" Foreground="#8B95A5" HorizontalAlignment="Center"
+                                                                   ToolTip.Tip="How far the calibrated center point sits from the raw min/max midpoint - 0 means the wheel rests exactly between its extremes"/>
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="2" Spacing="4" Margin="4,0,0,0">
                                                         <Border Background="#10141E" CornerRadius="6" Padding="6,3">
@@ -358,6 +428,166 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Pedal Settings: dedicated Throttle/Brake/Clutch cards, wheel only. Splits
+                         pedal axes out of the generic Calibration tab's flat axis list, reusing
+                         its exact per-axis card layout (raw/output bars, Set Min/Center/Max,
+                         inner/outer deadzone, gamma/linearity, invert) plus a color accent and
+                         vertical pedal-bar visual matching CalibrationDialog's pedal view. -->
+                    <ScrollViewer IsVisible="{Binding IsPedalSettingsTabSelected}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="No pedals bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                                       IsVisible="{Binding ThrottlePedalEntry, Converter={x:Static avc:ObjectConverters.IsNull}}"
+                                       Margin="4,8"/>
+                            <ContentControl Content="{Binding ThrottlePedalEntry}">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <Grid ColumnDefinitions="Auto, *">
+                                                <Border Grid.Column="0" Width="56" Height="90" Margin="0,0,14,0" Background="#10141E" BorderBrush="#20283C" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                                                    <Border VerticalAlignment="Bottom" Opacity="0.85" Background="{Binding TargetOutput, Converter={StaticResource PedalColorConverter}}"
+                                                            Height="{Binding LiveOutputPercentage, Converter={StaticResource PedalFillHeightConverter}}"/>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Spacing="10">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Grid.Column="0" Text="Throttle" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding SourceDisplayName}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+                                                    <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                        <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.3" Value="{Binding DeadzoneOuter}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Sensitivity (Gamma)" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LinearityExponent, StringFormat='{}{0:0.00}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.3" Maximum="3.0" Value="{Binding LinearityExponent}"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Invert Axis" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
+                            <ContentControl Content="{Binding BrakePedalEntry}">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <Grid ColumnDefinitions="Auto, *">
+                                                <Border Grid.Column="0" Width="56" Height="90" Margin="0,0,14,0" Background="#10141E" BorderBrush="#20283C" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                                                    <Border VerticalAlignment="Bottom" Opacity="0.85" Background="{Binding TargetOutput, Converter={StaticResource PedalColorConverter}}"
+                                                            Height="{Binding LiveOutputPercentage, Converter={StaticResource PedalFillHeightConverter}}"/>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Spacing="10">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Grid.Column="0" Text="Brake" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding SourceDisplayName}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+                                                    <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                        <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.3" Value="{Binding DeadzoneOuter}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Sensitivity (Gamma)" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LinearityExponent, StringFormat='{}{0:0.00}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.3" Maximum="3.0" Value="{Binding LinearityExponent}"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Invert Axis" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
+                            <ContentControl Content="{Binding ClutchPedalEntry}">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <Grid ColumnDefinitions="Auto, *">
+                                                <Border Grid.Column="0" Width="56" Height="90" Margin="0,0,14,0" Background="#10141E" BorderBrush="#20283C" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                                                    <Border VerticalAlignment="Bottom" Opacity="0.85" Background="{Binding TargetOutput, Converter={StaticResource PedalColorConverter}}"
+                                                            Height="{Binding LiveOutputPercentage, Converter={StaticResource PedalFillHeightConverter}}"/>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Spacing="10">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Grid.Column="0" Text="Clutch" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding SourceDisplayName}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+                                                    <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                        <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.3" Value="{Binding DeadzoneOuter}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Sensitivity (Gamma)" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LinearityExponent, StringFormat='{}{0:0.00}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.3" Maximum="3.0" Value="{Binding LinearityExponent}"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Invert Axis" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
                         </StackPanel>
                     </ScrollViewer>
 
@@ -448,6 +678,96 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Triggers: per-trigger inner/outer deadzone + hair-trigger mode, gamepad only.
+                         The deadzone/outer/linearity math is already fully generic on MappingEntry
+                         (works for any axis) - this tab is UI-only, mirroring the wheel Calibration
+                         tab's per-axis card layout. -->
+                    <ScrollViewer IsVisible="{Binding IsTriggersTabSelected}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="No triggers bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                                       IsVisible="{Binding LeftTriggerEntry, Converter={x:Static avc:ObjectConverters.IsNull}}"
+                                       Margin="4,8"/>
+                            <ContentControl Content="{Binding LeftTriggerEntry}">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <StackPanel Spacing="10">
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Grid.Column="0" Text="Left Trigger (LT / L2)" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SourceDisplayName}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                </Grid>
+                                                <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                </Grid>
+                                                <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+                                                <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                    <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+                                                <Grid ColumnDefinitions="*, 44">
+                                                    <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.0" Maximum="0.5" Value="{Binding DeadzoneOuter}"/>
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Hair-Trigger Mode" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsHairTriggerMode}" OnContent="" OffContent=""
+                                                                  ToolTip.Tip="Snaps straight to 100% output the instant travel clears the inner deadzone - digital microswitch behavior"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
+                            <ContentControl Content="{Binding RightTriggerEntry}">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <StackPanel Spacing="10">
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Grid.Column="0" Text="Right Trigger (RT / R2)" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SourceDisplayName}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                </Grid>
+                                                <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                </Grid>
+                                                <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+                                                <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                    <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+                                                <Grid ColumnDefinitions="*, 44">
+                                                    <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Slider Minimum="0.0" Maximum="0.5" Value="{Binding DeadzoneOuter}"/>
+                                                <Grid ColumnDefinitions="*, Auto">
+                                                    <TextBlock Text="Hair-Trigger Mode" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsHairTriggerMode}" OnContent="" OffContent=""
+                                                                  ToolTip.Tip="Snaps straight to 100% output the instant travel clears the inner deadzone - digital microswitch behavior"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
                         </StackPanel>
                     </ScrollViewer>
 
@@ -554,12 +874,40 @@
                                             <ToggleSwitch Grid.Column="1" IsChecked="{Binding RumbleEnabled}" OnContent="Enabled" OffContent="Disabled"/>
                                         </Grid>
                                         <StackPanel Spacing="4" IsEnabled="{Binding RumbleEnabled}">
-                                            <TextBlock Text="Intensity" FontSize="11" Foreground="#8B95A5"/>
+                                            <TextBlock Text="Heavy Motor (Low-Frequency)" FontSize="11" Foreground="#8B95A5"/>
                                             <Grid ColumnDefinitions="*, 50">
-                                                <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding RumbleIntensityPercent}" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding RumbleIntensityPercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding HeavyMotorIntensityPercent}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding HeavyMotorIntensityPercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                             </Grid>
                                         </StackPanel>
+                                        <StackPanel Spacing="4" IsEnabled="{Binding RumbleEnabled}">
+                                            <TextBlock Text="Light Motor (High-Frequency)" FontSize="11" Foreground="#8B95A5"/>
+                                            <Grid ColumnDefinitions="*, 50">
+                                                <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding LightMotorIntensityPercent}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding LightMotorIntensityPercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </StackPanel>
+                                        <Button Content="🔨 Test Vibration" IsEnabled="{Binding RumbleEnabled}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                Classes="neutral" Padding="10,7" FontSize="12"
+                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestVibrationCommand}"
+                                                ToolTip.Tip="Pulses both motors at their configured intensities for a moment, without needing a game running"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" IsVisible="{Binding IsSelectedDeviceTouchpadCapable}">
+                                <StackPanel Spacing="10" DataContext="{Binding SelectedGamepadSettings}" x:DataType="models:GamepadDeviceSettings">
+                                    <TextBlock Text="Touchpad Click Mode" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="Disambiguates the single physical click switch using finger touch position at the moment of the click. A click with no valid touch data (gloved hand, edge contact) always falls back to Full Panel." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <ComboBox HorizontalAlignment="Stretch" CornerRadius="6" Background="#161B26"
+                                              ItemsSource="{x:Static vm:BinderPageViewModel.TouchpadClickModes}"
+                                              SelectedItem="{Binding TouchpadClickMode}"/>
+                                    <StackPanel Spacing="4" IsVisible="{Binding TouchpadClickMode, Converter={StaticResource TouchpadClickModeToMultiZoneVisibleConverter}}">
+                                        <Grid ColumnDefinitions="*, 44">
+                                            <TextBlock Text="Top Band Height" FontSize="11" Foreground="#8B95A5"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding TouchpadTopSplitFraction, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider Minimum="0.20" Maximum="0.40" Value="{Binding TouchpadTopSplitFraction}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
