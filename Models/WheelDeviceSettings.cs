@@ -71,6 +71,45 @@ public partial class WheelDeviceSettings : ObservableObject
     [ObservableProperty]
     private int _minimumForcePercent = 0;
 
+    /// <summary>0-100: soft ceiling every effect magnitude is clamped to before it reaches the wheel, as a fraction of DirectInput's own -10000..10000 range - 100 (default) applies no extra cap beyond that native range.</summary>
+    [ObservableProperty]
+    private int _maxTorquePercent = 100;
+
+    /// <summary>0 (off, default) to 5: how aggressively <see cref="ECCR.Services.WheelForceFeedbackService"/> interpolates a constant/periodic effect's magnitude toward each newly-decoded value instead of snapping to it, smoothing coarse ~60Hz game telemetry steps into a more continuous feel. 0 reproduces today's exact instant-snap behavior with no added overhead.</summary>
+    [ObservableProperty]
+    private int _reconstructionFilterLevel = 0;
+
+    /// <summary>Runs a synthetic, always-on centering spring independent of anything the game sends - for titles with no native self-aligning torque, and as the baseline "doesn't go limp" feel under <see cref="SynthesizeFfbFromRumbleEnabled"/>.</summary>
+    [ObservableProperty]
+    private bool _standaloneCenterSpringEnabled = false;
+
+    /// <summary>0-100: stiffness of the standalone center spring above.</summary>
+    [ObservableProperty]
+    private int _standaloneCenterSpringStrengthPercent = 50;
+
+    /// <summary>Injects a synthetic high-resistance spring wall (a "bump stop") at <see cref="SoftLockRotationDegrees"/>, narrower than the wheel's actual configured <see cref="RotationDegrees"/> - lets a wide-rotation direct-drive base emulate a narrower wheel's lock-to-lock feel.</summary>
+    [ObservableProperty]
+    private bool _softLockEnabled = false;
+
+    /// <summary>Degrees of rotation the soft-lock wall engages at - must be less than <see cref="RotationDegrees"/> to have any effect; defaults to matching it (i.e. no-op) until the user narrows it.</summary>
+    [ObservableProperty]
+    private int _softLockRotationDegrees = 900;
+
+    /// <summary>0-100: how hard the soft-lock wall resists rotation past <see cref="SoftLockRotationDegrees"/>.</summary>
+    [ObservableProperty]
+    private int _softLockStrengthPercent = 100;
+
+    /// <summary>
+    /// Opt-in for Mode B: when this wheel's steering axis is routed to an "[Xbox]"/"[DS4]" target
+    /// instead of the vJoy "[Wheel] Steering" target (so the game only ever sends simple
+    /// XInput/DS4 rumble, never real DirectInput FFB effects), synthesizes wheel forces from that
+    /// rumble signal instead of leaving the wheel with no feedback at all. Off by default so a
+    /// user who deliberately wants a limp wheel in gamepad-output mode isn't surprised by it, and
+    /// so it never fights <see cref="ForceFeedbackEnabled"/>'s Mode A passthrough.
+    /// </summary>
+    [ObservableProperty]
+    private bool _synthesizeFfbFromRumbleEnabled = false;
+
     /// <summary>
     /// Live clipping-meter telemetry for the Wheel Settings tab, written by
     /// <see cref="ECCR.Services.WheelForceFeedbackService"/> on every effect rebuild - not

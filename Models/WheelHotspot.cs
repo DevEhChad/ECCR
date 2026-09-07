@@ -3,30 +3,23 @@ using Avalonia;
 namespace ECCR.Models;
 
 /// <summary>
-/// One clickable region on the Binder page's generic wheel+pedal diagram, named by physical
-/// position/function (not by any one brand's legend) so the same hotspot works across Moza,
-/// Logitech, Fanatec, Thrustmaster, Simagic, and generic wheels via
-/// <see cref="ECCR.Services.WheelHotspotService.GetWheelSemanticIndex"/>. Unlike
-/// <see cref="SemanticButton"/> (gamepad, buttons only), this also names the wheel's analog
-/// axes (steering, pedals, handbrake) since those - not digital buttons - are the primary
-/// bindable elements on a wheel.
+/// One clickable region on the Binder page's generic wheel+pedal diagram, limited to the
+/// handful of inputs whose raw index is actually brand-independent (see
+/// <see cref="ECCR.Services.WheelHotspotService.GetWheelSemanticIndex"/>): the analog
+/// axes (steering, pedals, handbrake) - not digital buttons - are the primary bindable
+/// elements on a wheel, plus the D-Pad, whose 4-direction numbering is a structural fact of
+/// the POV hat rather than a functional guess. Deliberately has no face-button/paddle/bumper/
+/// menu entries - which raw button index is a paddle vs. a rotary click vs. a menu button
+/// shifts every time a rim is swapped, so this diagram no longer guesses a position for them;
+/// the Rebinding Table's Identify Input flow (press the physical control, watch which row
+/// lights up) is how a user finds those instead.
 /// </summary>
 public enum WheelSemanticInput
 {
-    FaceNorth,
-    FaceEast,
-    FaceSouth,
-    FaceWest,
     DPadUp,
     DPadDown,
     DPadLeft,
     DPadRight,
-    PaddleLeft,
-    PaddleRight,
-    BumperLeft,
-    BumperRight,
-    ShareView,
-    OptionsMenu,
     SteeringAxis,
     ThrottlePedal,
     BrakePedal,

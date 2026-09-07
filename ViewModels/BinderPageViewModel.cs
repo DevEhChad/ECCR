@@ -492,6 +492,12 @@ public partial class BinderPageViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Gates the "Synthesize FFB from Rumble" (Mode B) toggle's practical relevance - true when this device's steering axis is routed to an "[Xbox]"/"[DS4]" target rather than vJoy's "[Wheel] Steering", which Mode A's real DirectInput passthrough already covers.</summary>
+    public bool IsSelectedDeviceRoutedToGamepadOutput =>
+        SelectedDeviceGroup?.Entries.Any(e =>
+            e.TargetOutput.StartsWith("[Xbox] Left Stick X", System.StringComparison.OrdinalIgnoreCase) ||
+            e.TargetOutput.StartsWith("[DS4] Left Stick X", System.StringComparison.OrdinalIgnoreCase)) ?? false;
+
     // --- Calibration tab (wheel) ---
 
     /// <summary>Every bound wheel axis for the selected device - one live calibration card per entry on the Calibration tab.</summary>
@@ -517,5 +523,29 @@ public partial class BinderPageViewModel : ViewModelBase
     private void TestVibration()
     {
         if (SelectedDeviceName != null) _host.TestVibration(SelectedDeviceName);
+    }
+
+    [RelayCommand]
+    private void TestFfbLeft()
+    {
+        if (SelectedDeviceName != null) _host.TestFfbDirectionalPulse(SelectedDeviceName, right: false);
+    }
+
+    [RelayCommand]
+    private void TestFfbRight()
+    {
+        if (SelectedDeviceName != null) _host.TestFfbDirectionalPulse(SelectedDeviceName, right: true);
+    }
+
+    [RelayCommand]
+    private void TestFfbTexture()
+    {
+        if (SelectedDeviceName != null) _host.TestFfbTexturePulse(SelectedDeviceName);
+    }
+
+    [RelayCommand]
+    private void TestFfbSoftLock()
+    {
+        if (SelectedDeviceName != null) _host.TestFfbSoftLock(SelectedDeviceName);
     }
 }

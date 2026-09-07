@@ -33,6 +33,7 @@
         <converters:SteeringAngleConverter x:Key="SteeringAngleConverter"/>
         <converters:BoolToScrollBarVisibilityConverter x:Key="BoolToScrollBarVisibilityConverter"/>
         <converters:TouchpadClickModeToMultiZoneVisibleConverter x:Key="TouchpadClickModeToMultiZoneVisibleConverter"/>
+        <converters:ForceMeterColorConverter x:Key="ForceMeterColorConverter"/>
     </UserControl.Resources>
 
     <Design.DataContext>
@@ -251,7 +252,8 @@
                                                 <TextBlock Grid.Column="1" Text="Clipping!" FontSize="10.5" FontWeight="Bold" Foreground="#FF7088" IsVisible="{Binding IsClipping}"/>
                                             </Grid>
                                             <ProgressBar Minimum="0" Maximum="1.5" Value="{Binding LiveOutputForcePercent}"
-                                                         Height="6" CornerRadius="3" Background="#0D1119" Foreground="#00E599"/>
+                                                         Height="6" CornerRadius="3" Background="#0D1119"
+                                                         Foreground="{Binding LiveOutputForcePercent, Converter={StaticResource ForceMeterColorConverter}}"/>
                                         </StackPanel>
                                     </Border>
 
@@ -270,6 +272,15 @@
                                             <Grid ColumnDefinitions="*, 50">
                                                 <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding MinimumForcePercent}" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding MinimumForcePercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="Max Torque Cap" FontSize="11" Foreground="#8B95A5"/>
+                                            <TextBlock Text="Soft ceiling every effect is clamped to before it reaches the wheel - lower this to keep a high-Nm direct-drive base from clipping/slamming at full strength." FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                            <Grid ColumnDefinitions="*, 50">
+                                                <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding MaxTorquePercent}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding MaxTorquePercent, StringFormat='{}{0}%'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                             </Grid>
                                         </StackPanel>
 
@@ -314,6 +325,70 @@
                                             <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertForce}" OnContent="" OffContent=""/>
                                         </Grid>
                                     </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Advanced Force Feedback" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Standalone Center Spring" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding StandaloneCenterSpringEnabled}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                    <TextBlock Text="Runs a synthetic centering spring independent of anything the game sends - for titles with no native self-aligning torque." FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <Grid ColumnDefinitions="*, 50" IsEnabled="{Binding StandaloneCenterSpringEnabled}" Margin="0,0,0,4">
+                                        <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding StandaloneCenterSpringStrengthPercent}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding StandaloneCenterSpringStrengthPercent, StringFormat='{}{0}%'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Soft-Lock Bump Stops" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding SoftLockEnabled}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                    <TextBlock Text="Injects a hard resistance wall at a narrower rotation than the base's own Rotation setting above - lets a wide-rotation direct-drive base emulate a narrower wheel's lock-to-lock feel." FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                    <StackPanel Spacing="8" IsEnabled="{Binding SoftLockEnabled}" Margin="0,0,0,4">
+                                        <Grid ColumnDefinitions="*, 56">
+                                            <Slider Grid.Column="0" Minimum="90" Maximum="2700" TickFrequency="90" IsSnapToTickEnabled="True" Value="{Binding SoftLockRotationDegrees}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding SoftLockRotationDegrees, StringFormat='{}{0}°'}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*, 50">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding SoftLockStrengthPercent}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding SoftLockStrengthPercent, StringFormat='{}{0}%'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Reconstruction / Smoothing Filter" FontSize="11" Foreground="#8B95A5"/>
+                                        <TextBlock Text="Smooths coarse ~60Hz game telemetry steps into a more continuous feel. 0 = off (passes each update through instantly, today's default behavior)." FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap"/>
+                                        <Grid ColumnDefinitions="*, 50">
+                                            <Slider Grid.Column="0" Minimum="0" Maximum="5" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding ReconstructionFilterLevel}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding ReconstructionFilterLevel}" FontSize="12" Foreground="#D0D0E0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <Grid ColumnDefinitions="*, Auto" IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsSelectedDeviceRoutedToGamepadOutput}">
+                                        <TextBlock Grid.Column="0" Text="Synthesize FFB from Rumble" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding SynthesizeFfbFromRumbleEnabled}" OnContent="" OffContent=""/>
+                                    </Grid>
+                                    <TextBlock Text="This wheel's steering is routed to an Xbox/DS4 target, so games only ever send simple rumble, never real force-feedback. Turn this on to translate that rumble into wheel forces instead of leaving the wheel with no feedback."
+                                               FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap" IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsSelectedDeviceRoutedToGamepadOutput}"/>
+
+                                    <TextBlock Text="Test FFB Pulse" FontWeight="SemiBold" FontSize="11" Foreground="#8B95A5" Margin="0,4,0,0"/>
+                                    <Grid ColumnDefinitions="*, *, *, *" >
+                                        <Button Grid.Column="0" Content="◀ Left" Classes="neutral" Padding="8,7" FontSize="12" Margin="0,0,4,0"
+                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbLeftCommand}"
+                                                ToolTip.Tip="Fires a brief leftward constant-force pulse to verify torque delivery and polarity"/>
+                                        <Button Grid.Column="1" Content="Right ▶" Classes="neutral" Padding="8,7" FontSize="12" Margin="0,0,4,0"
+                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbRightCommand}"
+                                                ToolTip.Tip="Fires a brief rightward constant-force pulse to verify torque delivery and polarity"/>
+                                        <Button Grid.Column="2" Content="Texture" Classes="neutral" Padding="8,7" FontSize="12" Margin="0,0,4,0"
+                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbTextureCommand}"
+                                                ToolTip.Tip="Fires a 1-second periodic buzz to verify motor oscillation"/>
+                                        <Button Grid.Column="3" Content="Soft-Lock" Classes="neutral" Padding="8,7" FontSize="12"
+                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbSoftLockCommand}"
+                                                ToolTip.Tip="Briefly engages a full-strength spring wall to verify resistance engagement"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
 

@@ -276,8 +276,6 @@ public partial class BinderDiagramViewModel : ViewModelBase
                 WheelSemanticInput.BrakePedal => "[Wheel] Brake (Axis Z)",
                 WheelSemanticInput.ClutchPedal => "[Wheel] Clutch (Axis Rx)",
                 WheelSemanticInput.HandbrakeAxis => "[Wheel] Handbrake (Axis Ry)",
-                WheelSemanticInput.PaddleLeft => "[Wheel] Paddle Down (Left Shift)",
-                WheelSemanticInput.PaddleRight => "[Wheel] Paddle Up (Right Shift)",
                 _ => "[Wheel] Button 1"
             };
 

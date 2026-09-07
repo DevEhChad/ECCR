@@ -137,7 +137,9 @@ public partial class AutoBindWizardViewModel : ViewModelBase
             // Pre-selects the wizard's Wheel vs. Xbox Gamepad output to match the device's
             // detected hardware family, so the common case needs no manual toggle. DS4 is never
             // auto-selected - it's an explicit user choice only.
-            var cat = DevicePresetService.DetectCategory(WizardSelectedDevice);
+            var connectedInfo = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
+            var vidPid = connectedInfo != null ? (connectedInfo.VendorId, connectedInfo.ProductId) : ((int, int)?)null;
+            var cat = DevicePresetService.ResolveCategory(WizardSelectedDevice, vidPid);
             WizardOutputCategory = DevicePresetService.IsWheelOrPedalCategory(cat) ? OutputCategory.Wheel : OutputCategory.Xbox;
         }
 
@@ -154,8 +156,9 @@ public partial class AutoBindWizardViewModel : ViewModelBase
         int buttonCount = connectedInfo?.ButtonCount ?? 32;
         int axisCount = connectedInfo?.AxisCount ?? 8;
         bool hasPov = connectedInfo?.HasPov ?? true;
+        var vidPid = connectedInfo != null ? (connectedInfo.VendorId, connectedInfo.ProductId) : ((int, int)?)null;
 
-        var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardOutputCategory, hasPov);
+        var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardOutputCategory, hasPov, vidPid);
         foreach (var item in presets)
         {
             WizardBindings.Add(item);

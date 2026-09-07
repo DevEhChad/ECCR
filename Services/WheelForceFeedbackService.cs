@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using ECCR.Models;
 using SharpDX.DirectInput;
 using vJoyInterfaceWrap;
@@ -54,6 +56,18 @@ public class WheelForceFeedbackService : IDisposable
         public vJoy.FFB_EFF_ENVLP? Envelope;
         public Effect? Live;
         public bool IsPlaying;
+
+        // Reconstruction-filter state (see WheelDeviceSettings.ReconstructionFilterLevel):
+        // Target* is the freshly-decoded, scaled value from the latest packet; Applied* is what
+        // was actually last sent to the device, nudged toward Target* by ReconstructionTick
+        // instead of snapping straight to it. Only meaningful for ET_CONST/periodic types.
+        public double? TargetConstMag;
+        public double? AppliedConstMag;
+        public double? TargetPeriodMag;
+        public double? AppliedPeriodMag;
+
+        /// <summary>The scaled+signed Offset RebuildEffect computed for the current periodic packet - cached so ReconstructionTick's magnitude-only updates can reuse it without needing RebuildEffect's local scale/sign.</summary>
+        public double ScaledPeriodOffset;
     }
 
     private sealed class WheelTarget
@@ -65,6 +79,29 @@ public class WheelForceFeedbackService : IDisposable
         public bool FfbStarted;
         public int DeviceGainByte = 255;
         public readonly Dictionary<byte, EffectState> Effects = new();
+
+        // Synthetic, packet-independent effects - see EnsureStandaloneEffects.
+        public Effect? CenterSpring;
+        public Effect? SoftLock;
+    }
+
+    /// <summary>
+    /// Mode B: a physical wheel whose steering axis is routed to an "[Xbox]"/"[DS4]" target
+    /// instead of vJoy's "[Wheel] Steering" - see <see cref="OnSynthRumble"/>. Keyed directly by
+    /// the physical device's own DirectInput instance GUID (no vJoy device is involved at all in
+    /// this path, unlike <see cref="WheelTarget"/> which is keyed by vJoy device ID).
+    /// </summary>
+    private sealed class SynthTarget
+    {
+        public required Guid InstanceGuid;
+        public required WheelDeviceSettings Settings;
+        public Joystick? PhysicalDevice;
+        public bool Started;
+        public Effect? LowTexture;
+        public Effect? HighTexture;
+        public Effect? Damper;
+        public Effect? CenterSpring;
+        public Effect? SoftLock;
     }
 
     private const int Infinite = -1;
@@ -72,11 +109,14 @@ public class WheelForceFeedbackService : IDisposable
     private readonly DirectInput _directInput = new();
     private readonly vJoy _vJoy = new();
     private readonly Dictionary<uint, WheelTarget> _targets = new();
+    private readonly Dictionary<Guid, SynthTarget> _synthTargets = new();
     private readonly object _lock = new();
     private readonly vJoy.FfbCbFunc _callback;
     private bool _isActive = true;
     private bool _disposed;
     private IntPtr _windowHandle = IntPtr.Zero;
+    private Timer? _reconstructionTimer;
+    private const int ReconstructionTickMs = 8;
 
     private static readonly string LogFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "ffb-debug.log");
@@ -115,6 +155,7 @@ public class WheelForceFeedbackService : IDisposable
             _windowHandle = handle;
             if (handle == IntPtr.Zero) return;
             foreach (var target in _targets.Values.Where(t => !t.FfbStarted)) EnsureStarted(target);
+            foreach (var target in _synthTargets.Values.Where(t => !t.Started)) EnsureSynthStarted(target);
         }
     }
 
@@ -123,7 +164,11 @@ public class WheelForceFeedbackService : IDisposable
         lock (_lock)
         {
             _isActive = active;
-            if (!active) foreach (var target in _targets.Values) ReleaseTarget(target);
+            if (!active)
+            {
+                foreach (var target in _targets.Values) ReleaseTarget(target);
+                foreach (var target in _synthTargets.Values) ReleaseSynthTarget(target);
+            }
         }
     }
 
@@ -162,6 +207,7 @@ public class WheelForceFeedbackService : IDisposable
             }
 
             EnsureStarted(target);
+            if (target.PhysicalDevice != null) EnsureStandaloneEffects(target.PhysicalDevice, target.Settings, ref target.CenterSpring, ref target.SoftLock);
         }
     }
 
@@ -175,6 +221,65 @@ public class WheelForceFeedbackService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Mode B registration - see <see cref="SynthTarget"/> and <see cref="OnSynthRumble"/>. Called
+    /// from <c>MainWindowViewModel.SyncXInputFfbSynthesisMappings</c> whenever a wheel/pedal
+    /// device's steering axis is routed to an "[Xbox]"/"[DS4]" target and the user has opted in
+    /// via <see cref="WheelDeviceSettings.SynthesizeFfbFromRumbleEnabled"/>. Idempotent, safe to
+    /// call every time mappings/settings are recalculated even when nothing changed.
+    /// </summary>
+    public void UpdateSynthMapping(Guid instanceGuid, WheelDeviceSettings settings)
+    {
+        lock (_lock)
+        {
+            if (!_synthTargets.TryGetValue(instanceGuid, out var target))
+            {
+                target = new SynthTarget { InstanceGuid = instanceGuid, Settings = settings };
+                _synthTargets[instanceGuid] = target;
+            }
+
+            EnsureSynthStarted(target);
+            if (target.PhysicalDevice != null) EnsureStandaloneEffects(target.PhysicalDevice, target.Settings, ref target.CenterSpring, ref target.SoftLock);
+        }
+    }
+
+    public void RemoveSynthMapping(Guid instanceGuid)
+    {
+        lock (_lock)
+        {
+            if (!_synthTargets.TryGetValue(instanceGuid, out var target)) return;
+            ReleaseSynthTarget(target);
+            _synthTargets.Remove(instanceGuid);
+        }
+    }
+
+    /// <summary>
+    /// Opens and exclusively acquires (<c>CooperativeLevel.Exclusive | CooperativeLevel.Background</c>)
+    /// a fresh <see cref="Joystick"/> handle on a physical device, with autocentering disabled so
+    /// it doesn't fight whatever effects get played on it. Shared by <see cref="EnsureStarted"/>
+    /// (Mode A), <see cref="EnsureSynthStarted"/> (Mode B), and the one-shot test-pulse methods.
+    /// Requires <see cref="_windowHandle"/> to already be set (a real HWND, not available until
+    /// the main window opens) - returns null otherwise or on any acquisition failure (most often
+    /// because the device isn't HidHide-cloaked from whatever else might also have it open).
+    /// </summary>
+    private Joystick? AcquireExclusive(Guid instanceGuid)
+    {
+        if (_windowHandle == IntPtr.Zero) return null;
+        try
+        {
+            var joystick = new Joystick(_directInput, instanceGuid);
+            joystick.SetCooperativeLevel(_windowHandle, CooperativeLevel.Exclusive | CooperativeLevel.Background);
+            joystick.Acquire();
+            try { joystick.Properties.AutoCenter = false; } catch { }
+            return joystick;
+        }
+        catch (Exception ex)
+        {
+            LogDebug($"AcquireExclusive({instanceGuid}) failed: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
     private void EnsureStarted(WheelTarget target)
     {
         if (!_isActive || !target.Settings.ForceFeedbackEnabled || _windowHandle == IntPtr.Zero)
@@ -185,17 +290,14 @@ public class WheelForceFeedbackService : IDisposable
 
         if (target.FfbStarted) return;
 
+        if (target.PhysicalDevice == null)
+        {
+            target.PhysicalDevice = AcquireExclusive(target.InstanceGuid);
+            if (target.PhysicalDevice == null) return;
+        }
+
         try
         {
-            if (target.PhysicalDevice == null)
-            {
-                var joystick = new Joystick(_directInput, target.InstanceGuid);
-                joystick.SetCooperativeLevel(_windowHandle, CooperativeLevel.Exclusive | CooperativeLevel.Background);
-                joystick.Acquire();
-                try { joystick.Properties.AutoCenter = false; } catch { }
-                target.PhysicalDevice = joystick;
-            }
-
             if (!_vJoy.IsDeviceFfb(target.TargetDeviceId))
             {
                 LogDebug($"Target {target.TargetDeviceId}: vJoy device does not report FFB support - enable it for this device in the vJoy Configuration utility.");
@@ -212,6 +314,27 @@ public class WheelForceFeedbackService : IDisposable
         }
     }
 
+    /// <summary>Mode B equivalent of <see cref="EnsureStarted"/> - gated on both the master <see cref="WheelDeviceSettings.ForceFeedbackEnabled"/> switch and the opt-in <see cref="WheelDeviceSettings.SynthesizeFfbFromRumbleEnabled"/>, since Mode B is still "force feedback," just via a different signal path.</summary>
+    private void EnsureSynthStarted(SynthTarget target)
+    {
+        if (!_isActive || !target.Settings.ForceFeedbackEnabled || !target.Settings.SynthesizeFfbFromRumbleEnabled || _windowHandle == IntPtr.Zero)
+        {
+            ReleaseSynthTarget(target);
+            return;
+        }
+
+        if (target.Started) return;
+
+        if (target.PhysicalDevice == null)
+        {
+            target.PhysicalDevice = AcquireExclusive(target.InstanceGuid);
+            if (target.PhysicalDevice == null) return;
+        }
+
+        target.Started = true;
+        LogDebug($"Synth target {target.InstanceGuid}: rumble-synthesis relay started.");
+    }
+
     private void ReleaseTarget(WheelTarget target)
     {
         target.FfbStarted = false;
@@ -224,12 +347,42 @@ public class WheelForceFeedbackService : IDisposable
         }
         target.Effects.Clear();
 
+        DisposeEffect(ref target.CenterSpring);
+        DisposeEffect(ref target.SoftLock);
+
         if (target.PhysicalDevice != null)
         {
             try { target.PhysicalDevice.Unacquire(); } catch { }
             try { target.PhysicalDevice.Dispose(); } catch { }
             target.PhysicalDevice = null;
         }
+    }
+
+    private void ReleaseSynthTarget(SynthTarget target)
+    {
+        target.Started = false;
+
+        DisposeEffect(ref target.LowTexture);
+        DisposeEffect(ref target.HighTexture);
+        DisposeEffect(ref target.Damper);
+        DisposeEffect(ref target.CenterSpring);
+        DisposeEffect(ref target.SoftLock);
+
+        if (target.PhysicalDevice != null)
+        {
+            try { target.PhysicalDevice.Unacquire(); } catch { }
+            try { target.PhysicalDevice.Dispose(); } catch { }
+            target.PhysicalDevice = null;
+        }
+    }
+
+    private static void DisposeEffect(ref Effect? effect)
+    {
+        if (effect == null) return;
+        try { effect.Stop(); } catch { }
+        try { effect.Unload(); } catch { }
+        try { effect.Dispose(); } catch { }
+        effect = null;
     }
 
     // --- vJoy FFB callback: fires on vJoy's own thread whenever a game writes a PID report to
@@ -452,6 +605,9 @@ public class WheelForceFeedbackService : IDisposable
 
     private static int Clamp(double v, int min, int max) => Math.Clamp((int)Math.Round(v), min, max);
 
+    /// <summary>Force-magnitude ceiling in DirectInput's native 0-10000 units, from <see cref="WheelDeviceSettings.MaxTorquePercent"/> (100 = no extra cap beyond DirectInput's own native range).</summary>
+    private static int TorqueCapUnits(WheelDeviceSettings s) => Clamp(Math.Clamp(s.MaxTorquePercent, 0, 100) / 100.0 * 10000, 0, 10000);
+
     /// <summary>
     /// (Re)creates or updates the real SharpDX effect for one vJoy effect block from whatever
     /// pieces of it have been decoded so far, applying <see cref="WheelDeviceSettings"/>
@@ -484,6 +640,7 @@ public class WheelForceFeedbackService : IDisposable
 
         double scale = Math.Clamp(settings.ForceFeedbackStrengthPercent / 100.0, 0.0, 2.0) * (target.DeviceGainByte / 255.0) * GetEffectGain(state.Type, settings);
         int sign = settings.InvertForce ? -1 : 1;
+        int cap = TorqueCapUnits(settings);
 
         double peakMagnitude = 0;
         bool clipped = false;
@@ -509,10 +666,16 @@ public class WheelForceFeedbackService : IDisposable
         switch (state.Type)
         {
             case FFBEType.ET_CONST:
-                double constMag = ApplyMinForceFloor(state.ConstantMagnitude.GetValueOrDefault() * scale * sign, settings);
-                Track(constMag);
-                parameters.Parameters = new ConstantForce { Magnitude = Clamp(constMag, -10000, 10000) };
+            {
+                double target1 = ApplyMinForceFloor(state.ConstantMagnitude.GetValueOrDefault() * scale * sign, settings);
+                state.TargetConstMag = target1;
+                double applied = settings.ReconstructionFilterLevel > 0 && state.AppliedConstMag.HasValue ? state.AppliedConstMag.Value : target1;
+                state.AppliedConstMag = applied;
+                Track(applied);
+                parameters.Parameters = new ConstantForce { Magnitude = Clamp(applied, -cap, cap) };
+                if (settings.ReconstructionFilterLevel > 0) EnsureReconstructionTimer();
                 break;
+            }
 
             case FFBEType.ET_RAMP:
                 double rampStart = state.RampStart.GetValueOrDefault() * scale * sign;
@@ -521,8 +684,8 @@ public class WheelForceFeedbackService : IDisposable
                 Track(rampEnd);
                 parameters.Parameters = new RampForce
                 {
-                    Start = Clamp(rampStart, -10000, 10000),
-                    End = Clamp(rampEnd, -10000, 10000)
+                    Start = Clamp(rampStart, -cap, cap),
+                    End = Clamp(rampEnd, -cap, cap)
                 };
                 break;
 
@@ -531,16 +694,23 @@ public class WheelForceFeedbackService : IDisposable
             case FFBEType.ET_TRNGL:
             case FFBEType.ET_STUP:
             case FFBEType.ET_STDN:
-                double periodMag = ApplyMinForceFloor(state.PeriodMagnitude.GetValueOrDefault() * scale, settings);
-                Track(periodMag);
+            {
+                double target1 = ApplyMinForceFloor(state.PeriodMagnitude.GetValueOrDefault() * scale, settings);
+                state.TargetPeriodMag = target1;
+                double applied = settings.ReconstructionFilterLevel > 0 && state.AppliedPeriodMag.HasValue ? state.AppliedPeriodMag.Value : target1;
+                state.AppliedPeriodMag = applied;
+                state.ScaledPeriodOffset = state.PeriodOffset.GetValueOrDefault() * scale * sign;
+                Track(applied);
                 parameters.Parameters = new PeriodicForce
                 {
-                    Magnitude = Clamp(periodMag, 0, 10000),
-                    Offset = Clamp(state.PeriodOffset.GetValueOrDefault() * scale * sign, -10000, 10000),
+                    Magnitude = Clamp(applied, 0, cap),
+                    Offset = Clamp(state.ScaledPeriodOffset, -cap, cap),
                     Phase = state.PeriodPhase.GetValueOrDefault(),
                     Period = (int)state.PeriodPeriod.GetValueOrDefault()
                 };
+                if (settings.ReconstructionFilterLevel > 0) EnsureReconstructionTimer();
                 break;
+            }
 
             case FFBEType.ET_SPRNG:
             case FFBEType.ET_DMPR:
@@ -558,12 +728,12 @@ public class WheelForceFeedbackService : IDisposable
                     [
                         new Condition
                         {
-                            Offset = Clamp(cond.CenterPointOffset * sign, -10000, 10000),
-                            PositiveCoefficient = Clamp(posCoeff, -10000, 10000),
-                            NegativeCoefficient = Clamp(negCoeff, -10000, 10000),
-                            PositiveSaturation = Clamp(cond.PosSatur * scale, 0, 10000),
-                            NegativeSaturation = Clamp(cond.NegSatur * scale, 0, 10000),
-                            DeadBand = Clamp(cond.DeadBand, 0, 10000)
+                            Offset = Clamp(cond.CenterPointOffset * sign, -cap, cap),
+                            PositiveCoefficient = Clamp(posCoeff, -cap, cap),
+                            NegativeCoefficient = Clamp(negCoeff, -cap, cap),
+                            PositiveSaturation = Clamp(cond.PosSatur * scale, 0, cap),
+                            NegativeSaturation = Clamp(cond.NegSatur * scale, 0, cap),
+                            DeadBand = Clamp(cond.DeadBand, 0, 10000) // a positional dead-zone, not a force magnitude - not subject to the torque cap
                         }
                     ]
                 };
@@ -578,9 +748,9 @@ public class WheelForceFeedbackService : IDisposable
             var env = state.Envelope.Value;
             parameters.Envelope = new Envelope
             {
-                AttackLevel = Clamp(env.AttackLevel * scale, 0, 10000),
+                AttackLevel = Clamp(env.AttackLevel * scale, 0, cap),
                 AttackTime = (int)env.AttackTime,
-                FadeLevel = Clamp(env.FadeLevel * scale, 0, 10000),
+                FadeLevel = Clamp(env.FadeLevel * scale, 0, cap),
                 FadeTime = (int)env.FadeTime
             };
         }
@@ -601,6 +771,384 @@ public class WheelForceFeedbackService : IDisposable
         }
     }
 
+    // --- Standalone effects: a synthetic center spring and/or soft-lock bump-stop wall, built
+    // and maintained independent of any PID packet or rumble signal - shared by Mode A
+    // (WheelTarget) and Mode B (SynthTarget) via ref parameters into whichever holds them. ---
+
+    /// <summary>
+    /// (Re)builds up to two persistent, packet-independent <see cref="Effect"/>s on
+    /// <paramref name="device"/>: a symmetric centering <c>Spring</c> from
+    /// <see cref="WheelDeviceSettings.StandaloneCenterSpringEnabled"/>, and a narrow-deadband
+    /// <c>Spring</c> "bump stop" from <see cref="WheelDeviceSettings.SoftLockEnabled"/>. Safe to
+    /// call repeatedly (e.g. every settings change) - creates on first call, updates parameters
+    /// thereafter, tears down if a toggle is switched off. DirectInput sums concurrent effects on
+    /// one device, so the center spring safely layers under a real in-game spring rather than
+    /// needing "is the game already sending one" detection (documented trade-off: slightly
+    /// stiffer center when both are active). The soft-lock wall deliberately ignores
+    /// <see cref="WheelDeviceSettings.MaxTorquePercent"/> - it needs full authority to actually
+    /// stop the wheel; capping it would make it an unreliable wall.
+    /// </summary>
+    private void EnsureStandaloneEffects(Joystick device, WheelDeviceSettings settings, ref Effect? centerSpring, ref Effect? softLock)
+    {
+        if (settings.StandaloneCenterSpringEnabled)
+        {
+            int cap = TorqueCapUnits(settings);
+            int strength = Clamp(Math.Clamp(settings.StandaloneCenterSpringStrengthPercent, 0, 100) / 100.0 * cap, 0, 10000);
+            var parameters = new EffectParameters
+            {
+                Axes = [(int)JoystickOffset.X],
+                Directions = [0],
+                Duration = Infinite,
+                Gain = 10000,
+                SamplePeriod = 0,
+                StartDelay = 0,
+                TriggerButton = Infinite,
+                TriggerRepeatInterval = Infinite,
+                Parameters = new ConditionSet
+                {
+                    Conditions =
+                    [
+                        new Condition { Offset = 0, PositiveCoefficient = strength, NegativeCoefficient = strength, PositiveSaturation = cap, NegativeSaturation = cap, DeadBand = 0 }
+                    ]
+                }
+            };
+            try
+            {
+                if (centerSpring == null) { centerSpring = new Effect(device, EffectGuid.Spring, parameters); centerSpring.Start(); }
+                else centerSpring.SetParameters(parameters);
+            }
+            catch (Exception ex) { LogDebug($"Standalone center spring failed: {ex.GetType().Name}: {ex.Message}"); }
+        }
+        else
+        {
+            DisposeEffect(ref centerSpring);
+        }
+
+        if (settings.SoftLockEnabled && settings.RotationDegrees > 0)
+        {
+            double fraction = Math.Clamp((double)settings.SoftLockRotationDegrees / settings.RotationDegrees, 0.0, 1.0);
+            int deadBand = Clamp(fraction * 10000, 0, 10000);
+            int strength = Clamp(Math.Clamp(settings.SoftLockStrengthPercent, 0, 100) / 100.0 * 10000, 0, 10000);
+            var parameters = new EffectParameters
+            {
+                Axes = [(int)JoystickOffset.X],
+                Directions = [0],
+                Duration = Infinite,
+                Gain = 10000,
+                SamplePeriod = 0,
+                StartDelay = 0,
+                TriggerButton = Infinite,
+                TriggerRepeatInterval = Infinite,
+                Parameters = new ConditionSet
+                {
+                    Conditions =
+                    [
+                        new Condition { Offset = 0, PositiveCoefficient = strength, NegativeCoefficient = strength, PositiveSaturation = 10000, NegativeSaturation = 10000, DeadBand = deadBand }
+                    ]
+                }
+            };
+            try
+            {
+                if (softLock == null) { softLock = new Effect(device, EffectGuid.Spring, parameters); softLock.Start(); }
+                else softLock.SetParameters(parameters);
+            }
+            catch (Exception ex) { LogDebug($"Soft-lock effect failed: {ex.GetType().Name}: {ex.Message}"); }
+        }
+        else
+        {
+            DisposeEffect(ref softLock);
+        }
+    }
+
+    // --- Reconstruction filter: see WheelDeviceSettings.ReconstructionFilterLevel and
+    // EffectState's Target*/Applied* fields. A single shared timer, started lazily only once
+    // something needs smoothing and stopped again once nothing does. ---
+
+    private static double ReconstructionAlpha(int level) => level switch
+    {
+        1 => 0.50,
+        2 => 0.32,
+        3 => 0.20,
+        4 => 0.12,
+        5 => 0.06,
+        _ => 1.0 // level 0 never reaches here (callers gate on > 0), 1.0 = instant as a safe fallback
+    };
+
+    private static bool IsPeriodicType(FFBEType t) =>
+        t is FFBEType.ET_SQR or FFBEType.ET_SINE or FFBEType.ET_TRNGL or FFBEType.ET_STUP or FFBEType.ET_STDN;
+
+    private void EnsureReconstructionTimer()
+    {
+        _reconstructionTimer ??= new Timer(ReconstructionTick, null, ReconstructionTickMs, ReconstructionTickMs);
+    }
+
+    private void ReconstructionTick(object? _)
+    {
+        lock (_lock)
+        {
+            if (_disposed) return;
+
+            bool anyEnabled = false;
+            foreach (var target in _targets.Values)
+            {
+                var settings = target.Settings;
+                if (settings.ReconstructionFilterLevel <= 0) continue;
+                anyEnabled = true;
+
+                double alpha = ReconstructionAlpha(settings.ReconstructionFilterLevel);
+                int cap = TorqueCapUnits(settings);
+
+                foreach (var state in target.Effects.Values)
+                {
+                    if (state.Live == null || !state.IsPlaying) continue;
+
+                    if (state.Type == FFBEType.ET_CONST && state.TargetConstMag.HasValue && state.AppliedConstMag.HasValue)
+                    {
+                        double next = state.AppliedConstMag.Value + (state.TargetConstMag.Value - state.AppliedConstMag.Value) * alpha;
+                        state.AppliedConstMag = next;
+                        try
+                        {
+                            state.Live.SetParameters(new EffectParameters { Parameters = new ConstantForce { Magnitude = Clamp(next, -cap, cap) } }, EffectParameterFlags.TypeSpecificParameters);
+                        }
+                        catch { }
+                    }
+                    else if (IsPeriodicType(state.Type) && state.TargetPeriodMag.HasValue && state.AppliedPeriodMag.HasValue)
+                    {
+                        double next = state.AppliedPeriodMag.Value + (state.TargetPeriodMag.Value - state.AppliedPeriodMag.Value) * alpha;
+                        state.AppliedPeriodMag = next;
+                        try
+                        {
+                            state.Live.SetParameters(new EffectParameters
+                            {
+                                Parameters = new PeriodicForce
+                                {
+                                    Magnitude = Clamp(next, 0, cap),
+                                    Offset = Clamp(state.ScaledPeriodOffset, -cap, cap),
+                                    Phase = state.PeriodPhase.GetValueOrDefault(),
+                                    Period = (int)state.PeriodPeriod.GetValueOrDefault()
+                                }
+                            }, EffectParameterFlags.TypeSpecificParameters);
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            if (!anyEnabled)
+            {
+                _reconstructionTimer?.Dispose();
+                _reconstructionTimer = null;
+            }
+        }
+    }
+
+    // --- Mode B: XInput/DS4 rumble -> synthesized wheel forces. See SynthTarget's doc comment. ---
+
+    private const int LowTexturePeriodUs = 90_000;  // ~11Hz - road/curb texture, driven by the "heavy" motor
+    private const int HighTexturePeriodUs = 35_000; // ~28Hz - shudder/ABS-style buzz, driven by the "light" motor
+
+    /// <summary>
+    /// Called from <c>MainWindowViewModel</c>'s <c>RumbleReceived</c> handler for every physical
+    /// device mapped to a ViGEm target - no-ops immediately unless <paramref name="instanceGuid"/>
+    /// is a registered, started Mode B target (see <see cref="UpdateSynthMapping"/>). Updates two
+    /// periodic "texture" effects from the two motor bytes, plus a modest always-on damper
+    /// (reusing <see cref="WheelDeviceSettings.DamperGainPercent"/>/<see cref="WheelDeviceSettings.DamperEffectEnabled"/>
+    /// rather than inventing a separate Mode B setting) so the wheel has *some* resistance while
+    /// turning even though Mode B has no real velocity/torque telemetry from the game - the
+    /// standalone center spring (if enabled) is what actually keeps it from feeling "limp."
+    /// </summary>
+    public void OnSynthRumble(Guid instanceGuid, byte largeMotor, byte smallMotor)
+    {
+        lock (_lock)
+        {
+            if (!_synthTargets.TryGetValue(instanceGuid, out var target) || !target.Started || target.PhysicalDevice == null) return;
+
+            var settings = target.Settings;
+            double scale = Math.Clamp(settings.ForceFeedbackStrengthPercent / 100.0, 0.0, 2.0);
+            int cap = TorqueCapUnits(settings);
+
+            UpdateSynthPeriodic(target, ref target.LowTexture, largeMotor, LowTexturePeriodUs, scale, cap, settings);
+            UpdateSynthPeriodic(target, ref target.HighTexture, smallMotor, HighTexturePeriodUs, scale, cap, settings);
+
+            if (settings.DamperEffectEnabled)
+            {
+                // 0.3 is a deliberately modest constant, not a user-facing setting - Mode B has no
+                // real velocity telemetry, so this is just "some" weight rather than an attempt at
+                // an accurately-tuned damper. DirectInput's own Damper condition effect reacts to
+                // the device's own reported velocity once uploaded, same mechanism Mode A's
+                // game-driven damper already relies on - only the coefficient here is synthetic.
+                int damperStrength = Clamp(GetEffectGain(FFBEType.ET_DMPR, settings) * cap * 0.3, 0, 10000);
+                var parameters = new EffectParameters
+                {
+                    Axes = [(int)JoystickOffset.X],
+                    Directions = [0],
+                    Duration = Infinite,
+                    Gain = 10000,
+                    SamplePeriod = 0,
+                    StartDelay = 0,
+                    TriggerButton = Infinite,
+                    TriggerRepeatInterval = Infinite,
+                    Parameters = new ConditionSet
+                    {
+                        Conditions =
+                        [
+                            new Condition { Offset = 0, PositiveCoefficient = damperStrength, NegativeCoefficient = damperStrength, PositiveSaturation = cap, NegativeSaturation = cap, DeadBand = 0 }
+                        ]
+                    }
+                };
+                try
+                {
+                    if (target.Damper == null) { target.Damper = new Effect(target.PhysicalDevice, EffectGuid.Damper, parameters); target.Damper.Start(); }
+                    else target.Damper.SetParameters(parameters);
+                }
+                catch (Exception ex) { LogDebug($"Synth damper failed: {ex.GetType().Name}: {ex.Message}"); }
+            }
+            else
+            {
+                DisposeEffect(ref target.Damper);
+            }
+        }
+    }
+
+    private void UpdateSynthPeriodic(SynthTarget target, ref Effect? effect, byte motorByte, int periodUs, double scale, int cap, WheelDeviceSettings settings)
+    {
+        bool playing = motorByte > 0;
+        double magnitude = ApplyMinForceFloor(motorByte / 255.0 * cap * scale, settings);
+
+        var parameters = new EffectParameters
+        {
+            Axes = [(int)JoystickOffset.X],
+            Directions = [0],
+            Duration = Infinite,
+            Gain = 10000,
+            SamplePeriod = 0,
+            StartDelay = 0,
+            TriggerButton = Infinite,
+            TriggerRepeatInterval = Infinite,
+            Parameters = new PeriodicForce { Magnitude = Clamp(magnitude, 0, cap), Offset = 0, Phase = 0, Period = periodUs }
+        };
+
+        try
+        {
+            if (effect == null)
+            {
+                if (!playing) return; // nothing to create yet if this motor is already at rest
+                effect = new Effect(target.PhysicalDevice!, EffectGuid.Sine, parameters);
+                effect.Start();
+            }
+            else
+            {
+                effect.SetParameters(parameters);
+                if (playing) effect.Start(); else effect.Stop();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogDebug($"Synth periodic update failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // --- "Test FFB Pulse" UI actions: fire a brief one-shot effect directly, bypassing any
+    // packet/rumble driving - mirrors MainWindowViewModel.TestVibration's fire-then-auto-stop
+    // shape. Reuses whichever exclusive handle Mode A/B already has open for this device if one
+    // is active, otherwise briefly acquires (and releases) its own. ---
+
+    public void TestDirectionalPulse(Guid instanceGuid, bool right)
+    {
+        var parameters = new EffectParameters
+        {
+            Axes = [(int)JoystickOffset.X],
+            Directions = [0],
+            Duration = Infinite,
+            Gain = 10000,
+            SamplePeriod = 0,
+            StartDelay = 0,
+            TriggerButton = Infinite,
+            TriggerRepeatInterval = Infinite,
+            Parameters = new ConstantForce { Magnitude = right ? 6000 : -6000 }
+        };
+        PlayOneShot(instanceGuid, EffectGuid.ConstantForce, parameters, TimeSpan.FromMilliseconds(300));
+    }
+
+    public void TestTexturePulse(Guid instanceGuid)
+    {
+        var parameters = new EffectParameters
+        {
+            Axes = [(int)JoystickOffset.X],
+            Directions = [0],
+            Duration = Infinite,
+            Gain = 10000,
+            SamplePeriod = 0,
+            StartDelay = 0,
+            TriggerButton = Infinite,
+            TriggerRepeatInterval = Infinite,
+            Parameters = new PeriodicForce { Magnitude = 7000, Offset = 0, Phase = 0, Period = 40_000 }
+        };
+        PlayOneShot(instanceGuid, EffectGuid.Sine, parameters, TimeSpan.FromSeconds(1));
+    }
+
+    public void TestSoftLock(Guid instanceGuid)
+    {
+        var parameters = new EffectParameters
+        {
+            Axes = [(int)JoystickOffset.X],
+            Directions = [0],
+            Duration = Infinite,
+            Gain = 10000,
+            SamplePeriod = 0,
+            StartDelay = 0,
+            TriggerButton = Infinite,
+            TriggerRepeatInterval = Infinite,
+            Parameters = new ConditionSet
+            {
+                Conditions = [ new Condition { Offset = 0, PositiveCoefficient = 10000, NegativeCoefficient = 10000, PositiveSaturation = 10000, NegativeSaturation = 10000, DeadBand = 0 } ]
+            }
+        };
+        PlayOneShot(instanceGuid, EffectGuid.Spring, parameters, TimeSpan.FromMilliseconds(500));
+    }
+
+    private Joystick? ResolveActiveDevice(Guid instanceGuid)
+    {
+        foreach (var t in _targets.Values) if (t.InstanceGuid == instanceGuid && t.PhysicalDevice != null) return t.PhysicalDevice;
+        foreach (var t in _synthTargets.Values) if (t.InstanceGuid == instanceGuid && t.PhysicalDevice != null) return t.PhysicalDevice;
+        return null;
+    }
+
+    private void PlayOneShot(Guid instanceGuid, Guid effectGuid, EffectParameters parameters, TimeSpan duration)
+    {
+        Joystick? device;
+        bool transient;
+        lock (_lock)
+        {
+            device = ResolveActiveDevice(instanceGuid);
+            transient = device == null;
+            if (device == null) device = AcquireExclusive(instanceGuid);
+        }
+        if (device == null) return;
+
+        Effect effect;
+        try
+        {
+            effect = new Effect(device, effectGuid, parameters);
+            effect.Start();
+        }
+        catch (Exception ex)
+        {
+            LogDebug($"PlayOneShot({effectGuid}) failed: {ex.GetType().Name}: {ex.Message}");
+            if (transient) { try { device.Unacquire(); } catch { } try { device.Dispose(); } catch { } }
+            return;
+        }
+
+        var capturedDevice = device;
+        _ = Task.Delay(duration).ContinueWith(_ =>
+        {
+            try { effect.Stop(); } catch { }
+            try { effect.Unload(); } catch { }
+            try { effect.Dispose(); } catch { }
+            if (transient) { try { capturedDevice.Unacquire(); } catch { } try { capturedDevice.Dispose(); } catch { } }
+        });
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -610,6 +1158,10 @@ public class WheelForceFeedbackService : IDisposable
         {
             foreach (var target in _targets.Values) ReleaseTarget(target);
             _targets.Clear();
+            foreach (var target in _synthTargets.Values) ReleaseSynthTarget(target);
+            _synthTargets.Clear();
+            _reconstructionTimer?.Dispose();
+            _reconstructionTimer = null;
         }
 
         try { _directInput.Dispose(); } catch { }

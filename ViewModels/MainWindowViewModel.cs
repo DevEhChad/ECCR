@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -8,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -44,6 +46,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly DependencyManager _dependencyManager = new();
     private readonly IVirtualFeeder _feeder = new CompositeFeederService();
     private readonly WheelForceFeedbackService _wheelForceFeedback = new();
+
+    /// <summary>Physical device GUIDs currently registered for Mode B rumble-synthesis (see <see cref="SyncXInputFfbSynthesisMappings"/>) - tracked here since <see cref="WheelForceFeedbackService"/> doesn't expose its internal registration set, only add/remove calls.</summary>
+    private readonly HashSet<Guid> _synthesizedWheelGuids = new();
     private readonly UpdateService _updateService = new();
     private readonly Stopwatch _pollStopwatch = new();
     private IDisposable? _highResTimerHandle;
@@ -343,6 +348,31 @@ public partial class MainWindowViewModel : ViewModelBase
     private DispatcherTimer? _listenTimeoutTimer;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
 
+    /// <summary>Per-device snapshot of every button's held/released state taken on the same first post-arm poll tick as <see cref="_axisBaselines"/> - lets capture require a down-EDGE (see <see cref="ProcessInputPolling"/>) instead of sustained state, so a button already held when listening starts is ignored until released and pressed again.</summary>
+    private readonly Dictionary<Guid, bool[]> _buttonBaselines = new();
+
+    /// <summary>USB VID/PID per connected device instance, refreshed alongside <see cref="ConnectedDevices"/> by <see cref="InputDeviceManager.OnDevicesRefreshed"/> - a <see cref="ConcurrentDictionary{TKey,TValue}"/> since it's written from the hotplug-refresh timer thread and read from the ~4ms poll thread in <see cref="ProcessInputPolling"/>. Lets live capture pass a VID/PID into <see cref="DevicePresetService.GetButtonDisplayName"/>/<see cref="DevicePresetService.GetAxisDisplayName"/> for more reliable naming than the device-name-substring fallback.</summary>
+    private readonly ConcurrentDictionary<Guid, (int VendorId, int ProductId)> _deviceVidPidByGuid = new();
+
+    /// <summary>
+    /// Guards against the background poll loop (~4ms interval) enqueueing more than one
+    /// capture/save for the same "Click to Bind" session: <see cref="ProcessInputPolling"/>
+    /// clears <see cref="ListeningEntry"/> only inside an async <c>Dispatcher.UIThread.Post</c>
+    /// continuation (see <see cref="AssignDetectedInput"/>), so several poll ticks can still see
+    /// it non-null and re-detect the same held input before that continuation runs. Claimed with
+    /// <see cref="Interlocked.CompareExchange(ref int, int, int)"/> the instant a match is found,
+    /// *before* dispatching; reset in <see cref="StopListening"/>.
+    /// </summary>
+    private int _captureClaimed;
+
+    /// <summary>
+    /// Set by <see cref="ProcessInputPolling"/> when a captured input is already bound to a
+    /// different row: holds the physical input so a second press of the *same* input confirms
+    /// the swap (clearing the other row), while a different input, Esc, Backspace, or the 7s
+    /// timeout leaves both bindings untouched. Reset in <see cref="StopListening"/>.
+    /// </summary>
+    private (Guid DeviceGuid, string DeviceName, InputType Type, int Index)? _pendingConflict;
+
     /// <summary>
     /// Rotation/force-feedback tuning per wheel device name, keyed and persisted the same way
     /// as <see cref="UserProfile.WheelSettings"/> (round-tripped in <see cref="SaveProfileToDisk"/>/
@@ -381,6 +411,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (e.PropertyName is nameof(WheelDeviceSettings.LiveOutputForcePercent) or nameof(WheelDeviceSettings.IsClipping)) return;
 
         SyncWheelForceFeedbackMappings();
+        SyncXInputFfbSynthesisMappings();
         AutoSaveCurrentProfile();
     }
 
@@ -458,6 +489,47 @@ public partial class MainWindowViewModel : ViewModelBase
             var settings = GetOrCreateWheelSettings(steeringEntry.SourceDeviceName);
             _wheelForceFeedback.UpdateWheelMapping(targetDeviceId, steeringEntry.SourceDeviceGuid, settings);
         }
+    }
+
+    /// <summary>
+    /// Mode B counterpart to <see cref="SyncWheelForceFeedbackMappings"/>: for every wheel/pedal
+    /// device whose steering axis is routed to an "[Xbox]"/"[DS4]" target instead of vJoy's
+    /// "[Wheel] Steering" (so the game only ever sends simple rumble, never real DirectInput FFB)
+    /// and who has opted in via <see cref="WheelDeviceSettings.SynthesizeFfbFromRumbleEnabled"/>,
+    /// registers it with <see cref="_wheelForceFeedback"/> so the <c>RumbleReceived</c> handler
+    /// below can synthesize wheel forces from that rumble. Called alongside
+    /// <see cref="SyncWheelForceFeedbackMappings"/> everywhere that's already called.
+    /// </summary>
+    private void SyncXInputFfbSynthesisMappings()
+    {
+        var steeringByDevice = Mappings
+            .Where(m => m.SourceDeviceGuid != Guid.Empty &&
+                (m.TargetOutput.StartsWith("[Xbox] Left Stick X", StringComparison.OrdinalIgnoreCase) ||
+                 m.TargetOutput.StartsWith("[DS4] Left Stick X", StringComparison.OrdinalIgnoreCase)))
+            .GroupBy(m => m.SourceDeviceGuid)
+            .Select(g => g.First())
+            .ToList();
+
+        var activeGuids = new HashSet<Guid>();
+
+        foreach (var entry in steeringByDevice)
+        {
+            if (!DevicePresetService.IsWheelOrPedalCategory(DevicePresetService.DetectCategory(entry.SourceDeviceName))) continue;
+
+            var settings = GetOrCreateWheelSettings(entry.SourceDeviceName);
+            if (!settings.SynthesizeFfbFromRumbleEnabled) continue;
+
+            activeGuids.Add(entry.SourceDeviceGuid);
+            _wheelForceFeedback.UpdateSynthMapping(entry.SourceDeviceGuid, settings);
+        }
+
+        foreach (var guid in _synthesizedWheelGuids.Where(g => !activeGuids.Contains(g)).ToList())
+        {
+            _wheelForceFeedback.RemoveSynthMapping(guid);
+        }
+
+        _synthesizedWheelGuids.Clear();
+        foreach (var guid in activeGuids) _synthesizedWheelGuids.Add(guid);
     }
 
     /// <summary>Forwarded from <c>MainWindow.OnOpened</c> once a real platform window handle exists - see <see cref="WheelForceFeedbackService.SetWindowHandle"/>.</summary>
@@ -587,6 +659,19 @@ public partial class MainWindowViewModel : ViewModelBase
         _deviceManager = new InputDeviceManager();
         _deviceManager.OnDevicesRefreshed += devices =>
         {
+            // Off the UI thread (this event can fire from the hotplug-refresh timer), but
+            // ConcurrentDictionary is safe to write here while ProcessInputPolling reads it on
+            // the separate poll thread - see _deviceVidPidByGuid's doc comment.
+            var currentGuids = new HashSet<Guid>(devices.Select(d => d.InstanceGuid));
+            foreach (var guid in _deviceVidPidByGuid.Keys.Where(g => !currentGuids.Contains(g)).ToList())
+            {
+                _deviceVidPidByGuid.TryRemove(guid, out _);
+            }
+            foreach (var d in devices)
+            {
+                _deviceVidPidByGuid[d.InstanceGuid] = (d.VendorId, d.ProductId);
+            }
+
             Dispatcher.UIThread.Post(() =>
             {
                 // Diff instead of unconditional Clear()+re-add: a name that's still present
@@ -655,6 +740,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
             foreach (var (guid, deviceName) in sources)
             {
+                // Mode B: this physical wheel's steering is routed to this Xbox/DS4 slot instead
+                // of vJoy's "[Wheel] Steering", and the user opted in to synthesizing wheel forces
+                // from the game's rumble signal (see SyncXInputFfbSynthesisMappings) - a wheel has
+                // no rumble motors of its own, so route there instead of the gamepad-rumble sinks.
+                if (_synthesizedWheelGuids.Contains(guid))
+                {
+                    _wheelForceFeedback.OnSynthRumble(guid, largeMotor, smallMotor);
+                    continue;
+                }
+
                 var (vendorId, productId) = ControllerHidService.GetVidPid(guid);
                 var settings = GetOrCreateGamepadSettings(deviceName);
 
@@ -1112,8 +1207,9 @@ public partial class MainWindowViewModel : ViewModelBase
         int axisCount = info?.AxisCount ?? 8;
         bool hasPov = info?.HasPov ?? true;
         Guid deviceGuid = info?.InstanceGuid ?? Guid.Empty;
+        var vidPid = info != null ? (info.VendorId, info.ProductId) : ((int, int)?)null;
 
-        var preset = DevicePresetService.GeneratePreset(deviceName, buttonCount, axisCount, category, hasPov);
+        var preset = DevicePresetService.GeneratePreset(deviceName, buttonCount, axisCount, category, hasPov, vidPid);
         DevicePresetService.ApplyPreset(Mappings, deviceName, deviceGuid, preset, targetDeviceId);
 
         RebuildGroupedMappings();
@@ -1153,6 +1249,30 @@ public partial class MainWindowViewModel : ViewModelBase
             _controllerHidService.SetRumble(vendorId, productId, 0, 0);
             XInputRumbleService.SetRumble(vendorId, productId, 0, 0);
         });
+    }
+
+    /// <summary>"Test Left/Right Force" button - fires a brief directional constant-force pulse directly at the named wheel, bypassing any game/rumble signal, to verify torque delivery and polarity.</summary>
+    public void TestFfbDirectionalPulse(string deviceName, bool right)
+    {
+        var info = GetDeviceHardwareInfo(deviceName);
+        if (info == null) return;
+        _wheelForceFeedback.TestDirectionalPulse(info.InstanceGuid, right);
+    }
+
+    /// <summary>"Test Rumble/Texture" button - fires a 1-second periodic buzz to verify motor oscillation.</summary>
+    public void TestFfbTexturePulse(string deviceName)
+    {
+        var info = GetDeviceHardwareInfo(deviceName);
+        if (info == null) return;
+        _wheelForceFeedback.TestTexturePulse(info.InstanceGuid);
+    }
+
+    /// <summary>"Test Soft-Lock" button - briefly engages a full-strength spring wall to verify resistance engagement.</summary>
+    public void TestFfbSoftLock(string deviceName)
+    {
+        var info = GetDeviceHardwareInfo(deviceName);
+        if (info == null) return;
+        _wheelForceFeedback.TestSoftLock(info.InstanceGuid);
     }
 
     /// <summary>Fired (on the UI thread) whenever <see cref="OnForegroundExecutableChanged"/> actually switches the active profile for a recognized, auto-switch-enabled game - <see cref="Views.ProfileSwitchToastWindow"/> subscribes to this to show its notification.</summary>
@@ -1374,41 +1494,110 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        // Capture mode: the first poll after StartListening just records each axis's
-        // current resting value as a baseline (rather than binding on it), since without a
-        // baseline any already-off-zero axis would immediately "trigger" a bind the instant
-        // listening starts.
-        if (!_axisBaselines.TryGetValue(state.InstanceGuid, out var baselines))
+        // Capture mode: the first poll after StartListening just records each axis's current
+        // resting value and each button's current held/released state as a baseline (rather than
+        // binding on either), since without a baseline an already-off-zero axis - or an
+        // already-held button - would immediately "trigger" a bind the instant listening starts.
+        if (!_axisBaselines.TryGetValue(state.InstanceGuid, out var baselines) || !_buttonBaselines.TryGetValue(state.InstanceGuid, out var buttonBaselines))
         {
             _axisBaselines[state.InstanceGuid] = (int[])state.Axes.Clone();
+            _buttonBaselines[state.InstanceGuid] = (bool[])buttons.Clone();
             return;
         }
+
+        _deviceVidPidByGuid.TryGetValue(state.InstanceGuid, out var vidPidTuple);
+        (int VendorId, int ProductId)? vidPid = vidPidTuple == default ? null : vidPidTuple;
 
         // Buttons are checked before axes: a firm button press is an unambiguous signal,
         // while a wheel/pedal can drift enough on its own to cross the axis threshold below,
         // so preferring buttons avoids accidentally capturing axis noise when the user meant
-        // to press a button that happens to share a poll tick with it.
+        // to press a button that happens to share a poll tick with it. Requires a down-EDGE
+        // (false at the arm-time baseline, true now) rather than sustained state, so a button
+        // already held down the moment listening starts is ignored until released and pressed
+        // again - see _buttonBaselines' doc comment.
         for (int i = 0; i < buttons.Length; i++)
         {
-            if (buttons[i])
-            {
-                string btnLabel = DevicePresetService.GetButtonDisplayName(state.DeviceName, i);
-                AssignDetectedInput(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i, btnLabel);
-                return;
-            }
+            bool wasDownAtBaseline = i < buttonBaselines.Length && buttonBaselines[i];
+            if (!buttons[i] || wasDownAtBaseline) continue;
+
+            if (TryFlagOrResolveConflict(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i)) return;
+
+            if (Interlocked.CompareExchange(ref _captureClaimed, 1, 0) != 0) return;
+            string btnLabel = DevicePresetService.GetButtonDisplayName(state.DeviceName, i, vidPid);
+            AssignDetectedInput(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Button, i, btnLabel);
+            return;
         }
 
         // 10000 out of a 0-65535 raw range (~15%) is the movement threshold for "the user is
         // actually moving this axis" vs. normal jitter on an unmoved one.
         for (int i = 0; i < state.Axes.Length; i++)
         {
-            if (Math.Abs(state.Axes[i] - baselines[i]) > 10000)
-            {
-                string axisLabel = DevicePresetService.GetAxisDisplayName(state.DeviceName, i);
-                AssignDetectedInput(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i, axisLabel);
-                return;
-            }
+            if (Math.Abs(state.Axes[i] - baselines[i]) <= 10000) continue;
+
+            if (TryFlagOrResolveConflict(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i)) return;
+
+            if (Interlocked.CompareExchange(ref _captureClaimed, 1, 0) != 0) return;
+            string axisLabel = DevicePresetService.GetAxisDisplayName(state.DeviceName, i, vidPid);
+            AssignDetectedInput(ListeningEntry, state.InstanceGuid, state.DeviceName, InputType.Axis, i, axisLabel);
+            return;
         }
+    }
+
+    /// <summary>
+    /// Autobind duplicate-conflict protection: called from <see cref="ProcessInputPolling"/> the
+    /// instant a candidate physical input passes its edge/threshold check, before it's actually
+    /// assigned. If no other row already uses this exact device+type+index, clears any stale
+    /// <see cref="_pendingConflict"/> and returns false so the caller proceeds to assign normally.
+    /// Otherwise:
+    /// <list type="bullet">
+    /// <item>Axes never auto-confirm (a re-crossing threshold has no natural "press again" edge
+    /// like a button does) - always blocks and reports the conflict, returning true.</item>
+    /// <item>Buttons/POV get a two-step confirm: the first press on a conflicting input just
+    /// flags <see cref="_pendingConflict"/> and warns in the row's status text, returning true
+    /// (stay armed, nothing assigned yet); a second press of that *same* input clears the other
+    /// row's binding (<see cref="ClearMapping"/>) and returns false so the caller proceeds to
+    /// assign the armed entry this same tick.</item>
+    /// </list>
+    /// Any other outcome - Esc, Backspace, the 7s timeout, or the user instead pressing a
+    /// different input - leaves both bindings untouched, since only a matching second press ever
+    /// reaches the confirm branch.
+    /// </summary>
+    private bool TryFlagOrResolveConflict(MappingEntry listeningEntry, Guid deviceGuid, string deviceName, InputType type, int index)
+    {
+        var conflict = Mappings.FirstOrDefault(m => !ReferenceEquals(m, listeningEntry) && m.SourceType == type && m.SourceIndex == index &&
+            (m.SourceDeviceGuid == deviceGuid || string.Equals(m.SourceDeviceName, deviceName, StringComparison.OrdinalIgnoreCase)));
+
+        if (conflict == null)
+        {
+            _pendingConflict = null;
+            return false;
+        }
+
+        if (type == InputType.Button && _pendingConflict is { } pending && pending.DeviceGuid == deviceGuid && pending.Type == type && pending.Index == index)
+        {
+            _pendingConflict = null;
+            Dispatcher.UIThread.Post(() => ClearMapping(conflict));
+            return false;
+        }
+
+        if (type == InputType.Button)
+        {
+            _pendingConflict = (deviceGuid, deviceName, type, index);
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            listeningEntry.SourceDisplayName = type == InputType.Button
+                ? $"Already bound to '{conflict.TargetOutput}' - press again to confirm swap, Esc to cancel"
+                : $"Already bound to '{conflict.TargetOutput}' - move a different axis, or Esc/Backspace to cancel";
+            MappingStatus = $"Conflict: '{conflict.TargetOutput}' already uses this input";
+
+            _listenTimeoutTimer?.Stop();
+            _listenTimeoutTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
+            _listenTimeoutTimer.Tick += (_, _) => CancelListening();
+            _listenTimeoutTimer.Start();
+        });
+        return true;
     }
 
     private void AssignDetectedInput(MappingEntry entry, Guid deviceGuid, string deviceName, InputType type, int index, string displayName)
@@ -1508,47 +1697,15 @@ public partial class MainWindowViewModel : ViewModelBase
             };
         }
 
-        bool isMoza = category == DeviceHardwareCategory.MozaWheel;
-
-        if (isMoza)
-        {
-            if (type == InputType.Axis)
-            {
-                return index switch
-                {
-                    0 => "[Xbox] Left Stick X (Steer / Horizontal)",
-                    1 => "[Xbox] Right Trigger (RT / Gas Axis)",
-                    2 => "[Xbox] Left Trigger (LT / Brake Axis)",
-                    3 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
-                    4 => "[Xbox] Xbox A (Cross / South / Handbrake)",
-                    _ => "[Xbox] Left Stick X (Steer / Horizontal)"
-                };
-            }
-
-            return index switch
-            {
-                0 => "[Xbox] Xbox A (Cross / South / Handbrake)",
-                1 => "[Xbox] Xbox B (Circle / East)",
-                2 => "[Xbox] Xbox X (Square / West / Shift Down)",
-                3 => "[Xbox] Xbox Y (Triangle / North / Shift Up)",
-                4 => "[Xbox] Xbox View (Back / Map / Share)",
-                5 => "[Xbox] Xbox Menu (Start / Options)",
-                6 => "[Xbox] Xbox LB (Left Bumper / L1 / Clutch)",
-                7 => "[Xbox] Xbox RB (Right Bumper / R1)",
-                8 => "[Xbox] Xbox LSB (Left Stick Click / L3)",
-                9 => "[Xbox] Xbox RSB (Right Stick Click / R3)",
-                10 => "[Xbox] Xbox Guide (Home / Guide)",
-                128 => "[Xbox] D-Pad Up",
-                129 => "[Xbox] D-Pad Right",
-                130 => "[Xbox] D-Pad Down",
-                131 => "[Xbox] D-Pad Left",
-                _ => $"[Xbox] Xbox A (Cross / South / Handbrake)"
-            };
-        }
-
-        bool isSimHardware = DevicePresetService.IsWheelOrPedalCategory(category);
-
-        if (isSimHardware)
+        // Wheel/rig categories: no per-brand button table. Which raw index is a paddle, a
+        // rotary click, or a menu button shifts every time a rim is swapped, so guessing a
+        // vehicle function from the index is wrong as often as it's right - every button
+        // defaults to its own identity slot instead, and the user reassigns it explicitly (see
+        // the Identify Input flow: press the physical control and watch which Rebinding Table
+        // row lights up). The five wheel/pedal axes keep their brand-independent identity guess
+        // (steering is always DirectInput axis X on a device DirectInput classifies as a wheel;
+        // the further axes are this app's own virtual-wheel axis contract, not a brand guess).
+        if (DevicePresetService.IsWheelOrPedalCategory(category))
         {
             if (type == InputType.Axis)
             {
@@ -1563,19 +1720,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 };
             }
 
-            return index switch
-            {
-                4 => "[Wheel] Paddle Down (Left Shift)",
-                5 => "[Wheel] Paddle Up (Right Shift)",
-                12 => "[Wheel] 1st Gear",
-                13 => "[Wheel] 2nd Gear",
-                14 => "[Wheel] 3rd Gear",
-                15 => "[Wheel] 4th Gear",
-                16 => "[Wheel] 5th Gear",
-                17 => "[Wheel] 6th Gear",
-                18 => "[Wheel] Reverse Gear",
-                _ => $"[Wheel] Button {index + 1}"
-            };
+            return $"[Wheel] Button {index + 1}";
         }
 
         if (type == InputType.Axis)
@@ -1638,6 +1783,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         _preListenDisplayName = entry.SourceDisplayName;
         _axisBaselines.Clear();
+        _buttonBaselines.Clear();
+        _pendingConflict = null;
+        Interlocked.Exchange(ref _captureClaimed, 0);
         entry.SourceDisplayName = "Listening... (Esc to cancel, Backspace to clear, 7s timeout)";
         MappingStatus = $"Listening ({entry.TargetOutput})";
         ListeningEntry = entry;
@@ -1697,6 +1845,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _listenTimeoutTimer = null;
         ListeningEntry = null;
         _axisBaselines.Clear();
+        _buttonBaselines.Clear();
+        _pendingConflict = null;
+        Interlocked.Exchange(ref _captureClaimed, 0);
         MappingStatus = IsVirtualOutputActive ? "Active" : "Standby (Disabled)";
     }
 
@@ -2141,6 +2292,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         if (e.OldItems != null) foreach (MappingEntry item in e.OldItems) item.PropertyChanged -= OnMappingEntryPropertyChanged;
         SyncWheelForceFeedbackMappings();
+        SyncXInputFfbSynthesisMappings();
     }
 
     private void OnMappingEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -2157,6 +2309,7 @@ public partial class MainWindowViewModel : ViewModelBase
             or nameof(MappingEntry.SourceDeviceGuid) or nameof(MappingEntry.SourceDeviceName))
         {
             SyncWheelForceFeedbackMappings();
+            SyncXInputFfbSynthesisMappings();
         }
 
         // A device becoming a mapping source is exactly when it needs to stop being visible to
@@ -2463,6 +2616,7 @@ public partial class MainWindowViewModel : ViewModelBase
         foreach (var entry in WheelSettings.Values) entry.PropertyChanged += OnWheelSettingsPropertyChanged;
 
         SyncWheelForceFeedbackMappings();
+        SyncXInputFfbSynthesisMappings();
     }
 
     /// <summary>

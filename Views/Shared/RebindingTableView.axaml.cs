@@ -7,6 +7,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -203,16 +204,61 @@ public partial class RebindingTableView : UserControl
     private static readonly List<string> AllBindableTargets =
         MainWindowViewModel.AvailableVirtualOutputs.Where(o => o != MainWindowViewModel.KeyboardTargetSentinel).ToList();
 
+    /// <summary>
+    /// The currently-open Rebind flyout (captured in <see cref="OnRebindFlyoutOpened"/>) and the
+    /// entry it's rebinding. Only one row's flyout can ever be open at a time in this UI, so a
+    /// single field is safe despite every row's Flyout being a separate instance (one per
+    /// DataTemplate-realized row). Closing it always goes through <see cref="FlyoutBase.Hide"/>
+    /// rather than hunting for its hosting <see cref="Popup"/> via <c>FindAncestorOfType</c> -
+    /// that used to silently no-op, since a Flyout's content is hosted in a separate
+    /// <c>PopupRoot</c> disconnected from the main window's VISUAL tree (only the LOGICAL tree is
+    /// bridged across that boundary), so <c>FindAncestorOfType&lt;Popup&gt;()</c> (a visual-tree
+    /// walk) starting from a button inside the flyout's content never actually found it - Cancel
+    /// and Accept looked like they did nothing.
+    /// </summary>
+    private Flyout? _openRebindFlyout;
+    private MappingEntry? _rebindEntry;
+
+    /// <summary>Staged-but-not-yet-committed target selection from the searchable list - see <see cref="OnKeyListSelectionChanged"/>/<see cref="CommitPendingRebind"/>. Selecting an item no longer commits instantly; only Accept/Enter does, and Cancel (or dismissing the flyout any other way) discards it untouched.</summary>
+    private string? _pendingTargetOutput;
+
     /// <summary>Populates/resets the Rebind popup's searchable target list each time it opens.</summary>
     private void OnRebindFlyoutOpened(object? sender, EventArgs e)
     {
-        if (sender is not Flyout { Content: Control content }) return;
+        if (sender is not Flyout { Content: Control content } flyout) return;
+
+        _openRebindFlyout = flyout;
+        _rebindEntry = content.DataContext as MappingEntry;
+        _pendingTargetOutput = null;
 
         var listBox = content.FindDescendantOfType<ListBox>();
-        if (listBox != null) listBox.ItemsSource = AllBindableTargets;
+        if (listBox != null)
+        {
+            listBox.ItemsSource = AllBindableTargets;
+            listBox.SelectedItem = null;
+        }
 
         var searchBox = content.FindDescendantOfType<TextBox>();
         if (searchBox != null) searchBox.Text = string.Empty;
+    }
+
+    /// <summary>
+    /// Fires no matter how the flyout closed - Cancel, Accept, Escape, or clicking outside the
+    /// popup (Avalonia's built-in light-dismiss closes it directly, without routing through
+    /// either button's click handler) - so an in-progress keyboard-key capture is always aborted
+    /// and any staged-but-unapplied target selection is always discarded, regardless of how the
+    /// dialog was dismissed.
+    /// </summary>
+    private void OnRebindFlyoutClosed(object? sender, EventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm } && vm.IsPickingKeyboardKey)
+        {
+            vm.CancelKeyPick();
+        }
+
+        _openRebindFlyout = null;
+        _rebindEntry = null;
+        _pendingTargetOutput = null;
     }
 
     private void OnKeySearchTextChanged(object? sender, TextChangedEventArgs e)
@@ -227,51 +273,56 @@ public partial class RebindingTableView : UserControl
             : AllBindableTargets.Where(k => k.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
-    /// <summary>Selecting any target (Xbox/DS4/Wheel/Keyboard) from the searchable list assigns it directly - the list items are already fully-prefixed target strings, not bare key names.</summary>
+    /// <summary>Selecting a target (Xbox/DS4/Wheel) from the searchable list stages it as a preview (the ListBox's own highlight) rather than committing immediately - see <see cref="CommitPendingRebind"/> for the actual commit (Accept button or Enter), <see cref="OnRebindCancelClick"/>/<see cref="OnRebindFlyoutClosed"/> for discarding it.</summary>
     private void OnKeyListSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (sender is not ListBox lb || lb.SelectedItem is not string targetOutput) return;
-        if (lb.DataContext is not MappingEntry entry) return;
-
-        if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm })
-        {
-            vm.EnsureMappingRegistered(entry);
-        }
-
-        entry.TargetOutput = targetOutput;
-
-        var popup = lb.FindAncestorOfType<Popup>();
-        if (popup != null) popup.IsOpen = false;
+        _pendingTargetOutput = targetOutput;
     }
 
-    /// <summary>"Press a Key" inside the Rebind popup - closes the flyout and arms the same live-capture path the searchable list selection does.</summary>
+    /// <summary>"Press a Key" inside the Rebind popup - closes the flyout and arms the same live-capture path the searchable list selection does. Not staged like the list (see <see cref="OnKeyListSelectionChanged"/>): it hands off to the same always-auto-commits-on-detect keyboard capture pipeline as every other "press a key" affordance in the app (status text, Esc-to-cancel, 7s timeout), which stays authoritative once this flyout is gone.</summary>
     private void OnPressKeyToggleClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.DataContext is not MappingEntry entry) return;
 
         if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm })
         {
+            vm.EnsureMappingRegistered(entry);
             vm.StartKeyPick(entry);
         }
 
-        var popup = btn.FindAncestorOfType<Popup>();
-        if (popup != null) popup.IsOpen = false;
+        _openRebindFlyout?.Hide();
     }
 
+    /// <summary>Discards any staged target selection and aborts an in-progress keyboard capture without committing anything, then dismisses the flyout - the Cancel button's routine, also triggered by Escape (Avalonia's built-in light-dismiss) via <see cref="OnRebindFlyoutClosed"/>.</summary>
     private void OnRebindCancelClick(object? sender, RoutedEventArgs e)
     {
-        if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm } && vm.IsPickingKeyboardKey)
-        {
-            vm.CancelKeyPick();
-        }
-
-        var popup = (sender as Button)?.FindAncestorOfType<Popup>();
-        if (popup != null) popup.IsOpen = false;
+        _pendingTargetOutput = null;
+        _openRebindFlyout?.Hide();
     }
 
-    private void OnRebindAcceptClick(object? sender, RoutedEventArgs e)
+    private void OnRebindAcceptClick(object? sender, RoutedEventArgs e) => CommitPendingRebind();
+
+    /// <summary>Enter commits the staged selection exactly like Accept, but only while not actively capturing a keyboard key (Enter is itself a legitimate key someone might be trying to bind at that moment).</summary>
+    private void OnRebindFlyoutKeyDown(object? sender, KeyEventArgs e)
     {
-        var popup = (sender as Button)?.FindAncestorOfType<Popup>();
-        if (popup != null) popup.IsOpen = false;
+        if (e.Key != Key.Enter) return;
+        if (TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm } && vm.IsPickingKeyboardKey) return;
+
+        CommitPendingRebind();
+        e.Handled = true;
+    }
+
+    /// <summary>Commits whatever target is currently staged in the searchable list (if any) to the row being rebound, then closes the flyout - the Accept/Enter path. A no-op close if nothing was ever selected.</summary>
+    private void CommitPendingRebind()
+    {
+        if (_pendingTargetOutput != null && _rebindEntry != null &&
+            TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm })
+        {
+            vm.EnsureMappingRegistered(_rebindEntry);
+            _rebindEntry.TargetOutput = _pendingTargetOutput;
+        }
+
+        _openRebindFlyout?.Hide();
     }
 }

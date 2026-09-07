@@ -1,0 +1,36 @@
+// wheel_profiles.json - optional overrides for wheel/button-box naming, keyed by USB
+// VID/PID. Loaded by Services/WheelProfileService.cs. Ships empty by default: nothing in
+// this file is required for a wheel to work, it only lets you correct or add a friendly
+// label without waiting for a code change and recompile.
+//
+// To add your own overrides without editing this bundled copy, create
+// %AppData%/ECCR/wheel_profiles.json with the same shape - entries there win over anything
+// with the same vendorId/productId in this file.
+//
+// Fields per entry:
+//   vendorId   (required) - USB VID as a decimal integer (e.g. 0x346E = 13422).
+//   productId  (optional) - USB PID as a decimal integer. Omit to match every product from
+//                            this vendor.
+//   name       (optional) - a friendly label for your own reference; not shown in the UI yet.
+//   category   (optional) - one of: MozaWheel, LogitechRig, FanatecRig, ThrustmasterRig,
+//                            SimagicRig, GenericWheelOrPedals, PlayStationController,
+//                            NintendoController, XboxGamepad, GenericGamepad.
+//                            Picks which hardcoded button/axis table this device falls back
+//                            to for any index not covered below.
+//   buttons    (optional) - map of raw button/POV index (as a string) -> display label.
+//                            Indices 128/129/130/131 are the synthetic D-Pad Up/Right/Down/Left.
+//   axes       (optional) - map of raw axis index 0-7 (X, Y, Z, RotationX, RotationY,
+//                            RotationZ, Slider0, Slider1) -> display label.
+//
+// Example (copy into your %AppData%/ECCR/wheel_profiles.json and edit to use):
+// [
+//   {
+//     "vendorId": 13422,
+//     "productId": 5,
+//     "name": "Moza R9",
+//     "category": "MozaWheel",
+//     "buttons": { "0": "Wheel Button 1 (A / Cross)" },
+//     "axes": { "0": "Steering" }
+//   }
+// ]
+[]

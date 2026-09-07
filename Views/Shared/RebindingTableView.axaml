@@ -36,6 +36,22 @@
         <Style Selector="Grid.rebindRowArmed">
             <Setter Property="Background" Value="#241B3A"/>
         </Style>
+        <!-- "Press any button or move an axis..." feedback while armed - a slow opacity pulse on the Detected Input button itself, which already shows the "Listening..." label (see MainWindowViewModel.StartListening). -->
+        <Style Selector="Grid.rebindRowArmed Button.rowDetectedInput">
+            <Style.Animations>
+                <Animation Duration="0:0:1.2" IterationCount="INFINITE" Easing="SineEaseInOut">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="1.0"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="50%">
+                        <Setter Property="Opacity" Value="0.55"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1.0"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
         <!-- Physical button held down right now - overrides the armed tint above while active. -->
         <Style Selector="Grid.rebindRowPressed">
             <Setter Property="Background" Value="#3000E599"/>
@@ -172,8 +188,8 @@
 
                             <Button Grid.Column="5" Classes="primary" Content="Rebind" FontSize="12.5" Padding="14,9" Margin="8,0,4,0">
                                 <Button.Flyout>
-                                    <Flyout Placement="Bottom" Opened="OnRebindFlyoutOpened">
-                                        <StackPanel Width="260" Spacing="8" Margin="4">
+                                    <Flyout Placement="Bottom" Opened="OnRebindFlyoutOpened" Closed="OnRebindFlyoutClosed">
+                                        <StackPanel Width="260" Spacing="8" Margin="4" KeyDown="OnRebindFlyoutKeyDown">
                                             <TextBlock Text="{Binding Converter={StaticResource RebindTitleConverter}}"
                                                        FontWeight="Bold" FontSize="12" Foreground="White" TextWrapping="Wrap"/>
                                             <TextBlock Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MappingStatus}"
