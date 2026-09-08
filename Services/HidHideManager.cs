@@ -20,6 +20,17 @@ public partial class HidDeviceItem : ObservableObject
 
     [ObservableProperty]
     private bool _isHidden;
+
+    /// <summary>
+    /// False when <see cref="DeviceInstanceId"/> is the synthesized <c>HID\VID_xxxx&amp;PID_xxxx</c>
+    /// fallback <see cref="HidHideManager.GetConnectedHidDevices"/> builds when it can't recover a
+    /// real Windows device instance path - that string doesn't match anything in HidHide's actual
+    /// device tree, so sending it to <c>AddBlockedInstanceId</c> would silently no-op (the checkbox
+    /// would show "hidden" while the device stays fully visible). <see cref="HidHideManager.ToggleDeviceHiding"/>
+    /// refuses to hide (not un-hide) a device with this false, and surfaces <see cref="HidHideManager.LastError"/> instead.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isIdentifierReliable = true;
 }
 
 /// <summary>
@@ -41,6 +52,18 @@ public class HidHideManager
     private System.Threading.Timer? _cycleDebounceTimer;
     private readonly object _cycleDebounceLock = new();
 
+    /// <summary>
+    /// Serializes every call into the driver client (<see cref="_hidHide"/>) and DirectInput -
+    /// these methods used to only ever run one-at-a-time by accident, because every caller sat
+    /// on the UI thread. Now that <see cref="EnsureDeviceCloaked"/> and friends are called from
+    /// background threads (see <c>ViewModels.HidHideViewModel.EnsureDeviceCloaked</c>'s doc
+    /// comment for why), a concurrent read-modify-write against the driver's blocklist - e.g. two
+    /// mappings capturing/cloaking at nearly the same moment - could otherwise race and silently
+    /// drop one device's cloak. None of these calls are hot-path/high-frequency (only ever
+    /// user-triggered), so a single coarse lock costs nothing in practice.
+    /// </summary>
+    private readonly object _driverLock = new();
+
     private static readonly string LogFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "hid-debug.log");
 
@@ -57,6 +80,37 @@ public class HidHideManager
             File.AppendAllText(LogFilePath, $"[{DateTime.Now:HH:mm:ss.fff}] [HidHide] {message}\n");
         }
         catch { }
+    }
+
+    /// <summary>
+    /// User-facing explanation of the most recent failure from a user-triggered cloaking action
+    /// (<see cref="ToggleDeviceHiding"/>, <see cref="SetGlobalHidingState"/>, <see cref="EnsureDeviceCloaked"/>) -
+    /// null when the last such action succeeded. This is the "fail soft with a notification"
+    /// half of this class: every driver call already degrades to a safe no-op on failure, but
+    /// before this that failure was completely invisible (bare <c>catch { }</c>) instead of just
+    /// non-fatal. <see cref="ViewModels.HidHideViewModel"/> surfaces this in the HidHide page.
+    /// </summary>
+    public string? LastError { get; private set; }
+
+    /// <summary>
+    /// Classifies the Nefarius driver's own exception hierarchy (as exposed by the
+    /// Nefarius.Drivers.HidHide 2.0.0 package this app references - it predates the newer
+    /// HidHideMultipleDeviceNodesFoundException/HidHideHandleInvalidException types some later
+    /// versions add) into a short, specific message instead of one generic failure string, logs
+    /// the real type+message to <c>hid-debug.log</c> either way, and records the result in
+    /// <see cref="LastError"/> for the UI.
+    /// </summary>
+    private void HandleHidHideException(string context, Exception ex)
+    {
+        LastError = ex switch
+        {
+            HidHideDriverNotFoundException => "HidHide driver isn't installed or isn't running.",
+            HidHideDriverAccessFailedException => "Windows denied access to the HidHide driver - try running as administrator.",
+            HidHideDetectionFailedException => "HidHide couldn't determine this device's identity - it may have multiple ambiguous device nodes.",
+            _ => $"HidHide error during {context}: {ex.Message}"
+        };
+
+        LogDebug($"{context} threw: {ex.GetType().Name}: {ex.Message}");
     }
 
     public bool IsInstalled
@@ -266,9 +320,13 @@ public class HidHideManager
                 {
                     EnsureSelfWhitelisted();
                 }
+                LastError = null;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            HandleHidHideException(active ? "enabling cloaking" : "disabling cloaking", ex);
+        }
     }
 
     /// <summary>
@@ -300,7 +358,7 @@ public class HidHideManager
 
     /// <summary>
     /// Debounced version of <see cref="CycleGlobalHidingIfActive"/> for <see cref="EnsureDeviceCloaked"/>,
-    /// which can fire many times in a tight burst (e.g. once per binding while Auto-Bind Apply
+    /// which can fire many times in a tight burst (e.g. once per mapping while Auto-Map Apply
     /// adds ~15-20 mapping entries for one device) - coalesces a burst into a single cycle
     /// ~150ms after the last call, instead of visibly flickering cloaking once per binding.
     /// </summary>
@@ -319,13 +377,16 @@ public class HidHideManager
     public List<string> GetBlockedInstanceIds()
     {
         if (_hidHide == null || !IsInstalled) return new List<string>();
-        try
+        lock (_driverLock)
         {
-            return _hidHide.BlockedInstanceIds
-                .Where(id => !IsVirtualDevice(string.Empty, id))
-                .ToList();
+            try
+            {
+                return _hidHide.BlockedInstanceIds
+                    .Where(id => !IsVirtualDevice(string.Empty, id))
+                    .ToList();
+            }
+            catch { return new List<string>(); }
         }
-        catch { return new List<string>(); }
     }
 
     /// <summary>
@@ -386,9 +447,15 @@ public class HidHideManager
                 }
                 catch { }
 
+                // A real instance path always has at least one more segment after VID_xxxx&PID_xxxx
+                // (the device's enumeration/serial suffix) - this bare fallback never matches
+                // anything in HidHide's actual device tree, so it's flagged unreliable rather than
+                // presented as a normal cloakable entry (see HidDeviceItem.IsIdentifierReliable).
+                bool identifierReliable = !string.IsNullOrWhiteSpace(instanceId);
                 if (string.IsNullOrWhiteSpace(instanceId))
                 {
                     instanceId = $"HID\\VID_{vid:X4}&PID_{pid:X4}";
+                    LogDebug($"DirectInput pass: '{devName}' - could not resolve a real instance path, using unreliable fallback '{instanceId}'");
                 }
 
                 if (IsVirtualDevice(devName, instanceId, prodName, vid, pid))
@@ -407,6 +474,7 @@ public class HidHideManager
                     {
                         DeviceInstanceId = instanceId,
                         FriendlyName = friendlyName,
+                        IsIdentifierReliable = identifierReliable,
                         IsHidden = blockedInstances.Contains(instanceId) ||
                                    blockedInstances.Any(b => string.Equals(b, instanceId, StringComparison.OrdinalIgnoreCase))
                     });
@@ -538,21 +606,29 @@ public class HidHideManager
         if (_hidHide == null || !IsInstalled || directInputGuid == Guid.Empty) return null;
         if (IsVirtualDevice(deviceName, null)) return null;
 
-        string? instanceId = ResolveInstanceId(directInputGuid);
-        if (string.IsNullOrWhiteSpace(instanceId) || IsVirtualDevice(deviceName, instanceId)) return null;
-
-        try
+        lock (_driverLock)
         {
-            var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
-            if (!blocked.Contains(instanceId))
+            string? instanceId = ResolveInstanceId(directInputGuid);
+            if (string.IsNullOrWhiteSpace(instanceId) || IsVirtualDevice(deviceName, instanceId)) return null;
+
+            try
             {
-                _hidHide.AddBlockedInstanceId(instanceId);
-                LogDebug($"EnsureDeviceCloaked: auto-cloaked '{deviceName}' ({instanceId}) - now a mapping source.");
-                ScheduleCycleDebounced();
+                var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
+                if (!blocked.Contains(instanceId))
+                {
+                    _hidHide.AddBlockedInstanceId(instanceId);
+                    LogDebug($"EnsureDeviceCloaked: auto-cloaked '{deviceName}' ({instanceId}) - now a mapping source.");
+                    ScheduleCycleDebounced();
+                }
+                LastError = null;
+                return instanceId;
             }
-            return instanceId;
+            catch (Exception ex)
+            {
+                HandleHidHideException($"auto-cloaking '{deviceName}'", ex);
+                return null;
+            }
         }
-        catch { return null; }
     }
 
     private static bool IsNonGamingPeripheral(string name, string deviceId)
@@ -645,27 +721,44 @@ public class HidHideManager
         if (_hidHide == null || !IsInstalled) return;
         if (IsVirtualDevice(device.FriendlyName, device.DeviceInstanceId)) return;
 
-        try
+        // See HidDeviceItem.IsIdentifierReliable's doc comment - a fabricated ID can't actually
+        // cloak anything, so refuse rather than flip the checkbox on a hide that silently did
+        // nothing. Un-hiding is always allowed - there's nothing destructive about it either way.
+        if (hide && !device.IsIdentifierReliable)
         {
-            var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
-
-            if (hide)
-            {
-                if (!blocked.Contains(device.DeviceInstanceId))
-                {
-                    _hidHide.AddBlockedInstanceId(device.DeviceInstanceId);
-                }
-            }
-            else
-            {
-                if (blocked.Contains(device.DeviceInstanceId))
-                {
-                    _hidHide.RemoveBlockedInstanceId(device.DeviceInstanceId);
-                }
-            }
-            device.IsHidden = hide;
+            LastError = $"Couldn't determine a reliable device identifier for '{device.FriendlyName}' - it can't be cloaked.";
+            LogDebug($"ToggleDeviceHiding: refused to hide '{device.FriendlyName}' ({device.DeviceInstanceId}) - unreliable identifier.");
+            return;
         }
-        catch { }
+
+        lock (_driverLock)
+        {
+            try
+            {
+                var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
+
+                if (hide)
+                {
+                    if (!blocked.Contains(device.DeviceInstanceId))
+                    {
+                        _hidHide.AddBlockedInstanceId(device.DeviceInstanceId);
+                    }
+                }
+                else
+                {
+                    if (blocked.Contains(device.DeviceInstanceId))
+                    {
+                        _hidHide.RemoveBlockedInstanceId(device.DeviceInstanceId);
+                    }
+                }
+                device.IsHidden = hide;
+                LastError = null;
+            }
+            catch (Exception ex)
+            {
+                HandleHidHideException($"{(hide ? "hiding" : "un-hiding")} '{device.FriendlyName}'", ex);
+            }
+        }
     }
 
     /// <summary>

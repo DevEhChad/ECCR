@@ -152,7 +152,7 @@ public class VirtualFeederService : IVirtualFeeder
             }
             else
             {
-                // Nothing analog matched - this is an axis (e.g. an auto-bound wheel's analog
+                // Nothing analog matched - this is an axis (e.g. an auto-mapped wheel's analog
                 // clutch/handbrake pedal) whose default target is really a digital Xbox 360
                 // button such as LB or A (Xbox 360 has no free analog input left for it once
                 // both sticks and both triggers are spoken for). Without this fallback the

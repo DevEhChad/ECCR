@@ -32,7 +32,7 @@
                     <StackPanel Spacing="4">
                         <TextBlock FontSize="12" Foreground="#8B95A5" TextWrapping="Wrap">
                             <Run Text="💡"/>
-                            <Run Text=" A profile is one device's full set of bindings, deadzones, and LED settings. Bind a game to a profile from the "/>
+                            <Run Text=" A profile is one device's full set of mappings, deadzones, and LED settings. Assign a game to a profile from the "/>
                             <Run Text="Games" FontWeight="Bold" Foreground="#D0D0E0"/>
                             <Run Text=" page so the two stay linked. The profile marked "/>
                             <Run Text="Default" FontWeight="Bold" Foreground="#5CFFBE"/>

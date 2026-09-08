@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ECCR.Models;
@@ -57,6 +58,17 @@ public partial class HidHideViewModel : ViewModelBase
 
     /// <summary>True when the HidHide driver/service is present on this machine.</summary>
     public bool IsDriverInstalled => _hidHideManager?.IsInstalled ?? false;
+
+    /// <summary>User-facing explanation of the most recent cloaking failure (driver not installed, access denied, ambiguous device, unreliable identifier), or null after a successful action - see <see cref="HidHideManager.LastError"/>.</summary>
+    public string? LastHidHideError => _hidHideManager?.LastError;
+    public bool HasHidHideError => !string.IsNullOrEmpty(LastHidHideError);
+
+    /// <summary>Every method below that touches the driver calls this right after, so the HidHide page's warning banner reflects whatever <see cref="HidHideManager.LastError"/> just became (or was cleared to).</summary>
+    private void RefreshErrorState()
+    {
+        OnPropertyChanged(nameof(LastHidHideError));
+        OnPropertyChanged(nameof(HasHidHideError));
+    }
 
     /// <summary>
     /// Fallback resolver for the hosting TopLevel's storage provider, supplied by
@@ -183,24 +195,52 @@ public partial class HidHideViewModel : ViewModelBase
     /// driver's blocklist and settings.json drifting out of sync (e.g. the driver was reset
     /// externally, or settings were restored from an old backup) without silently unblocking
     /// something the user previously chose to hide.
+    ///
+    /// <para>
+    /// <see cref="HidHideManager.GetConnectedHidDevices"/> does a synchronous WMI query plus a
+    /// DirectInput probe per attached device - the WMI call alone commonly takes several hundred
+    /// ms to a couple of seconds (COM/WMI service spin-up on first use). This used to run
+    /// straight on the UI thread every time the HidHide page was opened (see
+    /// <c>MainWindowViewModel.NavigateTo</c>), which is exactly what made navigating there freeze
+    /// the whole app for a few seconds. The scan (and the per-device driver sync it drives) now
+    /// runs on a background thread; only the final <see cref="HidDevices"/> population - which
+    /// must run on the UI thread since it's bound - hops back via the implicit continuation.
+    /// </para>
     /// </summary>
-    public void RefreshHidDevices()
+    public async void RefreshHidDevices()
     {
-        if (_hidHideManager == null) return;
+        var manager = _hidHideManager;
+        if (manager == null) return;
 
-        HidDevices.Clear();
-        var devices = _hidHideManager.GetConnectedHidDevices();
-        var currentDriverBlocked = new HashSet<string>(_hidHideManager.GetBlockedInstanceIds(), StringComparer.OrdinalIgnoreCase);
-        var savedBlocked = new HashSet<string>(_settingsAccessor().BlockedInstanceIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-
-        foreach (var item in devices)
+        try
         {
-            if (currentDriverBlocked.Contains(item.DeviceInstanceId) || savedBlocked.Contains(item.DeviceInstanceId))
+            var savedBlocked = new HashSet<string>(_settingsAccessor().BlockedInstanceIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+            var devices = await Task.Run(() =>
             {
-                item.IsHidden = true;
-                _hidHideManager.ToggleDeviceHiding(item, true);
-            }
-            HidDevices.Add(item);
+                var list = manager.GetConnectedHidDevices();
+                var currentDriverBlocked = new HashSet<string>(manager.GetBlockedInstanceIds(), StringComparer.OrdinalIgnoreCase);
+
+                foreach (var item in list)
+                {
+                    if (currentDriverBlocked.Contains(item.DeviceInstanceId) || savedBlocked.Contains(item.DeviceInstanceId))
+                    {
+                        item.IsHidden = true;
+                        manager.ToggleDeviceHiding(item, true);
+                    }
+                }
+
+                return list;
+            });
+
+            HidDevices.Clear();
+            foreach (var item in devices) HidDevices.Add(item);
+            RefreshErrorState();
+        }
+        catch
+        {
+            // Swallowed, same tolerance every other best-effort HidHide scan in this app has -
+            // the page just shows whatever devices were already in HidDevices (or none).
         }
     }
 
@@ -212,6 +252,7 @@ public partial class HidHideViewModel : ViewModelBase
         _hidHideManager.SyncLiveNow();
         _settingsAccessor().BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         _saveSettings();
+        RefreshErrorState();
     }
 
     [RelayCommand]
@@ -229,6 +270,7 @@ public partial class HidHideViewModel : ViewModelBase
         _hidHideManager.SyncLiveNow();
         _settingsAccessor().BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
         _saveSettings();
+        RefreshErrorState();
     }
 
     [RelayCommand]
@@ -243,6 +285,7 @@ public partial class HidHideViewModel : ViewModelBase
         _settingsAccessor().BlockedInstanceIds = new List<string>();
         _hidHideManager.SyncBlockedInstances(new List<string>());
         _saveSettings();
+        RefreshErrorState();
     }
 
     partial void OnIsHidHideActiveChanged(bool value)
@@ -250,6 +293,7 @@ public partial class HidHideViewModel : ViewModelBase
         if (_isApplyingSettings || _hidHideManager == null) return;
         _hidHideManager.SetGlobalHidingState(value);
         _saveSettings();
+        RefreshErrorState();
     }
 
     partial void OnLinkCloakingToVirtualDevicesChanged(bool value)
@@ -288,20 +332,49 @@ public partial class HidHideViewModel : ViewModelBase
     /// <see cref="HidHideManager.EnsureDeviceCloaked"/> for why (prevents a game from seeing
     /// both the raw device and ECCR's virtual output at once). Called from
     /// <c>MainWindowViewModel.OnMappingEntryPropertyChanged</c> whenever a mapping's
-    /// <c>SourceDeviceGuid</c> resolves to a real device.
+    /// <c>SourceDeviceGuid</c> resolves to a real device - i.e. on every "Add Input" against an
+    /// already-connected device, and the instant a "Click to Map" capture resolves.
+    ///
+    /// <para>
+    /// This used to call straight into <see cref="HidHideManager.EnsureDeviceCloaked"/> on the UI
+    /// thread: that constructs a fresh DirectInput/Joystick COM object and makes several blocking
+    /// driver IOCTL calls (interface-path resolution, blocklist read, blocklist write) - real
+    /// device I/O, not something that belongs on the UI thread. That was the actual cause of the
+    /// app freezing on "Add Input" and on the button press that completes a capture (both paths
+    /// funnel through this method). The driver work now runs on a background thread
+    /// (<see cref="HidHideManager"/>'s own <c>_driverLock</c> serializes it against any other
+    /// concurrent call so two near-simultaneous captures can't race each other); only the final
+    /// <see cref="HidDevices"/>/settings update - which needs the UI thread since the collection
+    /// is bound - hops back.
+    /// </para>
     /// </summary>
     public void EnsureDeviceCloaked(Guid instanceGuid, string? deviceName)
     {
-        if (_hidHideManager == null) return;
+        var manager = _hidHideManager;
+        if (manager == null) return;
 
-        string? instanceId = _hidHideManager.EnsureDeviceCloaked(instanceGuid, deviceName);
-        if (string.IsNullOrWhiteSpace(instanceId)) return;
+        Task.Run(() =>
+        {
+            string? instanceId = manager.EnsureDeviceCloaked(instanceGuid, deviceName);
+            List<string>? blockedIds = string.IsNullOrWhiteSpace(instanceId) ? null : manager.GetBlockedInstanceIds();
+            return (instanceId, blockedIds);
+        }).ContinueWith(t =>
+        {
+            if (t.IsFaulted) return;
+            var (instanceId, blockedIds) = t.Result;
 
-        var openDialogEntry = HidDevices.FirstOrDefault(d => string.Equals(d.DeviceInstanceId, instanceId, StringComparison.OrdinalIgnoreCase));
-        if (openDialogEntry != null) openDialogEntry.IsHidden = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                RefreshErrorState();
+                if (string.IsNullOrWhiteSpace(instanceId) || blockedIds == null) return;
 
-        _settingsAccessor().BlockedInstanceIds = _hidHideManager.GetBlockedInstanceIds();
-        _saveSettings();
+                var openDialogEntry = HidDevices.FirstOrDefault(d => string.Equals(d.DeviceInstanceId, instanceId, StringComparison.OrdinalIgnoreCase));
+                if (openDialogEntry != null) openDialogEntry.IsHidden = true;
+
+                _settingsAccessor().BlockedInstanceIds = blockedIds;
+                _saveSettings();
+            });
+        }, TaskScheduler.Default);
     }
 
     /// <summary>

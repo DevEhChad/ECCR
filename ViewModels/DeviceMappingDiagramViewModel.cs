@@ -14,20 +14,21 @@ using ECCR.Services;
 namespace ECCR.ViewModels;
 
 /// <summary>
-/// Backs the Binder page's "Bindings" tab visual diagram: a clickable device image with one
+/// Backs the Device Mappings page's "Mappings" tab visual diagram: a clickable device image with one
 /// hotspot per semantic input, live press/stick/pedal highlighting, and capture-on-click -
-/// generalized from the old gamepad-only Visual Binder tab to also drive a hand-drawn generic
+/// generalized from the old gamepad-only Visual Device Mapping tab to also drive a hand-drawn generic
 /// wheel+pedal diagram for wheel/pedal devices (see <see cref="IsWheelDevice"/>). Scoped to
-/// whichever device <see cref="BinderPageViewModel.SelectedDeviceName"/> already picks, not a
+/// whichever device <see cref="DeviceMappingPageViewModel.SelectedDeviceName"/> already picks, not a
 /// second device selector of its own. Clicking a hotspot arms the exact same physical-press
-/// capture flow the Rebinding Table's rows use (<see cref="MainWindowViewModel.StartListeningCommand"/>),
+/// capture flow the Device Mapping Table's rows use (<see cref="MainWindowViewModel.StartListeningCommand"/>),
 /// so it works for any hardware rather than assuming a fixed physical-index-per-hotspot table.
 /// </summary>
-public partial class BinderDiagramViewModel : ViewModelBase
+public partial class DeviceMappingDiagramViewModel : ViewModelBase, INavigationAware
 {
     private readonly MainWindowViewModel _host;
-    private readonly BinderPageViewModel _parent;
+    private readonly DeviceMappingPageViewModel _parent;
     private readonly HashSet<MappingEntry> _trackedMappings = new();
+    private bool _isActive;
 
     public static readonly string[] AvailableSkins =
     [
@@ -77,7 +78,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
     public IRelayCommand<MappingEntry> StartListeningCommand => _host.StartListeningCommand;
     public IRelayCommand<MappingEntry> RemoveMappingCommand => _host.RemoveMappingCommand;
 
-    public BinderDiagramViewModel(MainWindowViewModel host, BinderPageViewModel parent)
+    public DeviceMappingDiagramViewModel(MainWindowViewModel host, DeviceMappingPageViewModel parent)
     {
         _host = host;
         _parent = parent;
@@ -92,7 +93,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
 
         _parent.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(BinderPageViewModel.SelectedDeviceName))
+            if (e.PropertyName == nameof(DeviceMappingPageViewModel.SelectedDeviceName))
             {
                 OnPropertyChanged(nameof(SelectedDeviceName));
                 OnPropertyChanged(nameof(IsWheelDevice));
@@ -104,7 +105,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
 
         // Per-entry PropertyChanged subscriptions (not just Mappings.CollectionChanged) so an
         // in-place mutation - ClearMapping's SourceDeviceName reassignment, a TargetOutput edit
-        // from the Rebind popup - refreshes the diagram immediately instead of only on the next
+        // from the Map Input popup - refreshes the diagram immediately instead of only on the next
         // unrelated add/remove. See OnMappingEntryPropertyChanged's doc comment for why only
         // identity-affecting properties trigger a full RefreshBoundEntries() pass here.
         foreach (var m in _host.Mappings) TrackMapping(m);
@@ -123,8 +124,6 @@ public partial class BinderDiagramViewModel : ViewModelBase
             }
             RefreshBoundEntries();
         };
-        _host.OnLiveDeviceStateUpdated += HandleLiveDeviceState;
-
         // ControllerSkin's real saved value isn't known yet at the point LoadSkinImage() just
         // ran above - this view model is constructed inside MainWindowViewModel.InitializeShellNavigation(),
         // which runs before MainWindowViewModel.LoadAppSettings() overwrites ControllerSkin from
@@ -140,6 +139,21 @@ public partial class BinderDiagramViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedSkin));
             }
         };
+    }
+
+    /// <summary>Starts the live-state subscription - only while the Device Mappings page is actually on screen, see <see cref="INavigationAware"/>.</summary>
+    public void OnNavigatedTo()
+    {
+        if (_isActive) return;
+        _isActive = true;
+        _host.OnLiveDeviceStateUpdated += HandleLiveDeviceState;
+    }
+
+    public void OnNavigatedFrom()
+    {
+        if (!_isActive) return;
+        _isActive = false;
+        _host.OnLiveDeviceStateUpdated -= HandleLiveDeviceState;
     }
 
     partial void OnSelectedHotspotEntryChanged(MappingEntry? value) => OnPropertyChanged(nameof(HasSelectedHotspot));
@@ -177,7 +191,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
     /// first (set only for entries created by clicking this diagram - see <see cref="ArmHotspot"/>/
     /// <see cref="ArmWheelHotspot"/>), falling back to a physical device+index match (the same
     /// reverse-index lookup <see cref="HandleLiveDeviceState"/> already uses for live press
-    /// highlighting) for entries created via the Rebinding Table, Auto-Bind, or a loaded profile
+    /// highlighting) for entries created via the Device Mapping Table, Auto-Map, or a loaded profile
     /// that predates any diagram click - those never get <see cref="MappingEntry.SemanticHotspot"/>
     /// set, so without this fallback they always looked "unbound" here despite being genuinely
     /// bound (per <see cref="MappingEntry.IsBound"/>, the table's own definition).
@@ -225,7 +239,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
 
     /// <summary>
     /// Finds (or creates) the <see cref="MappingEntry"/> for this hotspot on the selected
-    /// device, then arms the same physical-press capture the Rebinding Table's rows use. A
+    /// device, then arms the same physical-press capture the Device Mapping Table's rows use. A
     /// freshly created entry deliberately leaves <see cref="MappingEntry.SourceDeviceGuid"/> at
     /// its default <see cref="Guid.Empty"/> rather than resolving it upfront - <c>ProcessInputPolling</c>'s
     /// normal feed-through already pins the GUID by device name on the first poll tick it sees,
@@ -244,7 +258,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
             entry = new MappingEntry
             {
                 SourceDeviceName = deviceName,
-                SourceDisplayName = "Click to Bind",
+                SourceDisplayName = "Click to Map",
                 SemanticHotspot = semantic.ToString(),
                 TargetDeviceId = 1,
                 TargetOutput = "[Xbox] Xbox A (Cross / South / Handbrake)"
@@ -282,7 +296,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
             entry = new MappingEntry
             {
                 SourceDeviceName = deviceName,
-                SourceDisplayName = "Click to Bind",
+                SourceDisplayName = "Click to Map",
                 SemanticHotspot = semantic.ToString(),
                 TargetDeviceId = 1,
                 TargetOutput = defaultTarget
@@ -342,7 +356,7 @@ public partial class BinderDiagramViewModel : ViewModelBase
     }
 }
 
-/// <summary>One clickable/highlightable button region on the Binder diagram's gamepad skin image.</summary>
+/// <summary>One clickable/highlightable button region on the Device Mapping diagram's gamepad skin image.</summary>
 public partial class HotspotViewModel : ObservableObject
 {
     public ControllerHotspot Hotspot { get; }
@@ -365,7 +379,7 @@ public partial class HotspotViewModel : ObservableObject
     [ObservableProperty]
     private MappingEntry? _boundEntry;
 
-    /// <summary>Mirrors <see cref="BoundEntry"/>'s own <see cref="MappingEntry.IsArmed"/> - drives this hotspot's "armed" ring when it (or the matching Rebinding Table row) is currently being captured.</summary>
+    /// <summary>Mirrors <see cref="BoundEntry"/>'s own <see cref="MappingEntry.IsArmed"/> - drives this hotspot's "armed" ring when it (or the matching Device Mapping Table row) is currently being captured.</summary>
     [ObservableProperty]
     private bool _isArmed;
 
@@ -373,12 +387,12 @@ public partial class HotspotViewModel : ObservableObject
 
     public string TooltipText => BoundEntry != null
         ? $"{Hotspot.Label}\nBound to: {BoundEntry.TargetOutput}"
-        : $"{Hotspot.Label}\nNot bound - click to bind";
+        : $"{Hotspot.Label}\nNot mapped - click to map";
 
     /// <summary>Whichever entry <see cref="BoundEntry"/> was pointed at last, so <see cref="OnBoundEntryChanged"/> can unsubscribe from it - the generated single-argument partial method doesn't expose the old value.</summary>
     private MappingEntry? _subscribedEntry;
 
-    public HotspotViewModel(ControllerHotspot hotspot, BinderDiagramViewModel parent)
+    public HotspotViewModel(ControllerHotspot hotspot, DeviceMappingDiagramViewModel parent)
     {
         Hotspot = hotspot;
         ArmCommand = new RelayCommand(() => parent.ArmHotspot(hotspot.Semantic));
@@ -428,7 +442,7 @@ public partial class WheelHotspotViewModel : ObservableObject
     [ObservableProperty]
     private MappingEntry? _boundEntry;
 
-    /// <summary>Mirrors <see cref="BoundEntry"/>'s own <see cref="MappingEntry.IsArmed"/> - drives this hotspot's "armed" ring when it (or the matching Rebinding Table row) is currently being captured.</summary>
+    /// <summary>Mirrors <see cref="BoundEntry"/>'s own <see cref="MappingEntry.IsArmed"/> - drives this hotspot's "armed" ring when it (or the matching Device Mapping Table row) is currently being captured.</summary>
     [ObservableProperty]
     private bool _isArmed;
 
@@ -436,12 +450,12 @@ public partial class WheelHotspotViewModel : ObservableObject
 
     public string TooltipText => BoundEntry != null
         ? $"{Hotspot.Label}\nBound to: {BoundEntry.TargetOutput}"
-        : $"{Hotspot.Label}\nNot bound - click to bind";
+        : $"{Hotspot.Label}\nNot mapped - click to map";
 
     /// <summary>Whichever entry <see cref="BoundEntry"/> was pointed at last, so <see cref="OnBoundEntryChanged"/> can unsubscribe from it - the generated single-argument partial method doesn't expose the old value.</summary>
     private MappingEntry? _subscribedEntry;
 
-    public WheelHotspotViewModel(WheelHotspot hotspot, BinderDiagramViewModel parent)
+    public WheelHotspotViewModel(WheelHotspot hotspot, DeviceMappingDiagramViewModel parent)
     {
         Hotspot = hotspot;
         ArmCommand = new RelayCommand(() => parent.ArmWheelHotspot(hotspot.Semantic));

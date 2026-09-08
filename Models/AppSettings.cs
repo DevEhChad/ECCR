@@ -5,7 +5,7 @@ namespace ECCR.Models;
 /// <summary>
 /// Serialized as-is to <c>%AppData%/ECCR/settings.json</c> (see
 /// <see cref="ECCR.ViewModels.MainWindowViewModel.SaveAppSettings"/>). Holds app-wide
-/// preferences and HidHide state; per-mapping data (device bindings, calibration) lives in
+/// preferences and HidHide state; per-mapping data (device mappings, calibration) lives in
 /// separate profile files instead (<see cref="UserProfile"/>).
 /// </summary>
 public class AppSettings
@@ -16,9 +16,9 @@ public class AppSettings
     public string? DefaultProfileName { get; set; }
     public string LastRunVersion { get; set; } = string.Empty;
     public bool StartWithWindows { get; set; } = false;
-    public bool RunInSystemTray { get; set; } = true;
-    public bool MinimizeToTray { get; set; } = true;
-    public bool CloseMinimizesToTray { get; set; } = true;
+    public bool RunInSystemTray { get; set; } = false;
+    public bool MinimizeToTray { get; set; } = false;
+    public bool CloseMinimizesToTray { get; set; } = false;
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool ShowChangelogOnUpdate { get; set; } = true;
     public bool IsVirtualOutputActive { get; set; } = true;
@@ -35,7 +35,7 @@ public class AppSettings
     public bool LinkCloakingToVirtualDevices { get; set; } = true;
     public bool IsSidebarCollapsed { get; set; } = false;
 
-    /// <summary>Filename stem (no extension) of the Visual Binder's controller skin, under Assets/ControllerSkins/.</summary>
+    /// <summary>Filename stem (no extension) of the Visual Device Mapping's controller skin, under Assets/ControllerSkins/.</summary>
     public string ControllerSkin { get; set; } = "White-Red-Faced";
 
     // Gyro-aim / touch-aim: map a Sony device's motion sensor or touchpad to the Right Stick

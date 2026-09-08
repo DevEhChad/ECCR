@@ -4,9 +4,9 @@ using ECCR.Models;
 
 namespace ECCR.Views;
 
-public partial class BinderPageView : UserControl
+public partial class DeviceMappingPageView : UserControl
 {
-    public BinderPageView()
+    public DeviceMappingPageView()
     {
         InitializeComponent();
     }

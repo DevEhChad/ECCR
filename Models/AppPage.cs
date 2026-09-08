@@ -8,11 +8,11 @@ public enum AppPage
 {
     Home,
     ConnectedDevices,
-    Binder,
+    DeviceMapping,
     Profiles,
     Games,
     HidHide,
-    AutoBind,
+    AutoMap,
     About,
     Settings
 }

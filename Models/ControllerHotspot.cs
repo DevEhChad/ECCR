@@ -3,7 +3,7 @@ using Avalonia;
 namespace ECCR.Models;
 
 /// <summary>
-/// One clickable region on a Visual Binder controller skin, named by physical position
+/// One clickable region on a Visual Device Mapping controller skin, named by physical position
 /// (not by any one brand's button letters) so the same hotspot works across PlayStation,
 /// Xbox, Nintendo, and generic pads via <see cref="ECCR.Services.ControllerHotspotService.GetSemanticButtonIndex"/>.
 /// </summary>

@@ -28,13 +28,13 @@ namespace ECCR.ViewModels;
 
 /// <summary>
 /// The app's central view model and the hub everything else plugs into. Owns the live
-/// <see cref="Mappings"/> list (the single source of truth for every axis/button binding),
+/// <see cref="Mappings"/> list (the single source of truth for every axis/button mapping),
 /// drives the DirectInput poll loop via <see cref="InputDeviceManager"/> and feeds calibrated
 /// values to <see cref="IVirtualFeeder"/>, and hosts <see cref="HidHide"/> /
-/// <see cref="AutoBind"/> as sub-view-models that share this instance's device list and
+/// <see cref="AutoMap"/> as sub-view-models that share this instance's device list and
 /// mapping collection rather than owning their own. Persistence is split two ways: app-wide
 /// preferences live in <c>%AppData%/ECCR/settings.json</c> (<see cref="SaveAppSettings"/> /
-/// <see cref="LoadAppSettings"/>), while the actual bindings for the active profile live in
+/// <see cref="LoadAppSettings"/>), while the actual mappings for the active profile live in
 /// <c>%AppData%/ECCR/Profiles/{name}.json</c> (<see cref="SaveProfileToDisk"/> /
 /// <see cref="LoadSelectedProfile"/>) and are auto-saved on essentially every edit via
 /// <see cref="AutoSaveCurrentProfile"/>.
@@ -51,6 +51,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly HashSet<Guid> _synthesizedWheelGuids = new();
     private readonly UpdateService _updateService = new();
     private readonly Stopwatch _pollStopwatch = new();
+    private readonly Stopwatch _latencyDispatchStopwatch = Stopwatch.StartNew();
+
+    /// <summary>Last <see cref="LiveDeviceInputState"/> actually dispatched per device, keyed by <see cref="LiveDeviceInputState.InstanceGuid"/> - lets <see cref="ProcessInputPolling"/> skip the UI-thread dispatch entirely when nothing meaningfully changed since the last tick. Only ever touched from the single-threaded polling loop, so no locking needed.</summary>
+    private readonly Dictionary<Guid, LiveDeviceInputState> _lastDispatchedLiveState = new();
+
+    /// <summary>Below this raw delta (out of a 0-65535 axis range, ~0.15%) an axis move is treated as noise, not a real change worth an extra UI-thread dispatch.</summary>
+    private const int AxisDispatchDeadband = 96;
     private IDisposable? _highResTimerHandle;
     private readonly string _baseDirectory;
     private readonly string _profilesDirectory;
@@ -167,13 +174,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _startWithWindows = false;
 
     [ObservableProperty]
-    private bool _runInSystemTray = true;
+    private bool _runInSystemTray = false;
 
     [ObservableProperty]
-    private bool _minimizeToTray = true;
+    private bool _minimizeToTray = false;
 
     [ObservableProperty]
-    private bool _closeMinimizesToTray = true;
+    private bool _closeMinimizesToTray = false;
 
     [ObservableProperty]
     private bool _autoCheckForUpdates = true;
@@ -299,8 +306,8 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>All HidHide device-cloaking state, commands and UI logic.</summary>
     public HidHideViewModel HidHide { get; }
 
-    /// <summary>Auto-Bind wizard state and preset generation.</summary>
-    public AutoBindWizardViewModel AutoBind { get; }
+    /// <summary>Auto-Map wizard state and preset generation.</summary>
+    public AutoMapWizardViewModel AutoMap { get; }
 
     /// <summary>Persistent top device-status bar state (battery/connection for gamepad-class devices), visible on every page.</summary>
     public DeviceStatusBarViewModel StatusBar { get; } = new();
@@ -308,9 +315,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ControllerHidService _controllerHidService = new();
     private readonly Dictionary<AppPage, ViewModelBase> _pageViewModels = new();
     private ControllerLedViewModel? _controllerLedViewModel;
-    private BinderPageViewModel? _binderPageViewModel;
+    private DeviceMappingPageViewModel? _deviceMappingPageViewModel;
 
-    /// <summary>Controller LED state - embedded per-device in the Binder page's More Options tab (see <see cref="BinderPageViewModel.ControllerLed"/>) rather than a standalone nav page. Constructed eagerly in <see cref="InitializeShellNavigation"/> (before <see cref="LoadSelectedProfile"/> runs), same lifetime as before this became per-device - only the standalone page/nav registration was removed.</summary>
+    /// <summary>Controller LED state - embedded per-device in the Device Mappings page's More Options tab (see <see cref="DeviceMappingPageViewModel.ControllerLed"/>) rather than a standalone nav page. Constructed eagerly in <see cref="InitializeShellNavigation"/> (before <see cref="LoadSelectedProfile"/> runs), same lifetime as before this became per-device - only the standalone page/nav registration was removed.</summary>
     public ControllerLedViewModel ControllerLedViewModel => _controllerLedViewModel!;
 
     // Shell navigation
@@ -330,7 +337,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private MappingEntry? _listeningEntry;
 
-    /// <summary>Keeps <see cref="MappingEntry.IsArmed"/> in sync with whichever entry (if any) is currently being captured, regardless of whether it was armed from the Rebinding Table or a Visual Binder hotspot - both call through <see cref="StartListening"/>, which is the single writer of <see cref="ListeningEntry"/>.</summary>
+    /// <summary>Keeps <see cref="MappingEntry.IsArmed"/> in sync with whichever entry (if any) is currently being captured, regardless of whether it was armed from the Device Mapping Table or a Visual Device Mapping hotspot - both call through <see cref="StartListening"/>, which is the single writer of <see cref="ListeningEntry"/>.</summary>
     partial void OnListeningEntryChanged(MappingEntry? oldValue, MappingEntry? newValue)
     {
         if (oldValue != null) oldValue.IsArmed = false;
@@ -340,11 +347,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Fired once per physical device per poll tick with a live, calibration-independent
-    /// snapshot of its raw button/stick state - purely for UI animation (the Visual Binder's
+    /// snapshot of its raw button/stick state - purely for UI animation (the Visual Device Mapping's
     /// moving stick graphics and pressed-button highlights), not consumed by the feeder path.
     /// </summary>
     public event Action<LiveDeviceInputState>? OnLiveDeviceStateUpdated;
-    private string _preListenDisplayName = "Click to Bind";
+    private string _preListenDisplayName = "Click to Map";
     private DispatcherTimer? _listenTimeoutTimer;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
 
@@ -355,8 +362,20 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ConcurrentDictionary<Guid, (int VendorId, int ProductId)> _deviceVidPidByGuid = new();
 
     /// <summary>
+    /// Cached result of the last <see cref="InputDeviceManager.OnDevicesRefreshed"/> firing (startup,
+    /// then every 1.5s from the hotplug watcher) - what <see cref="GetDeviceHardwareInfo"/> reads
+    /// instead of calling <see cref="InputDeviceManager.GetConnectedDevices"/> fresh. That method
+    /// does a full DirectInput re-enumeration plus a per-device <c>Joystick</c> construction and
+    /// capability probe, which is too slow to call synchronously on the UI thread from as many
+    /// places as <see cref="GetDeviceHardwareInfo"/> is (see its own doc comment). Plain field, not
+    /// a <see cref="ConcurrentDictionary{TKey,TValue}"/>: always replaced wholesale by reference,
+    /// never mutated in place, so a reader on the UI thread can never observe a half-updated list.
+    /// </summary>
+    private List<DeviceHardwareInfo> _cachedDevices = new();
+
+    /// <summary>
     /// Guards against the background poll loop (~4ms interval) enqueueing more than one
-    /// capture/save for the same "Click to Bind" session: <see cref="ProcessInputPolling"/>
+    /// capture/save for the same "Click to Map" session: <see cref="ProcessInputPolling"/>
     /// clears <see cref="ListeningEntry"/> only inside an async <c>Dispatcher.UIThread.Post</c>
     /// continuation (see <see cref="AssignDetectedInput"/>), so several poll ticks can still see
     /// it non-null and re-detect the same held input before that continuation runs. Claimed with
@@ -366,10 +385,10 @@ public partial class MainWindowViewModel : ViewModelBase
     private int _captureClaimed;
 
     /// <summary>
-    /// Set by <see cref="ProcessInputPolling"/> when a captured input is already bound to a
+    /// Set by <see cref="ProcessInputPolling"/> when a captured input is already mapped to a
     /// different row: holds the physical input so a second press of the *same* input confirms
     /// the swap (clearing the other row), while a different input, Esc, Backspace, or the 7s
-    /// timeout leaves both bindings untouched. Reset in <see cref="StopListening"/>.
+    /// timeout leaves both mappings untouched. Reset in <see cref="StopListening"/>.
     /// </summary>
     private (Guid DeviceGuid, string DeviceName, InputType Type, int Index)? _pendingConflict;
 
@@ -377,7 +396,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// Rotation/force-feedback tuning per wheel device name, keyed and persisted the same way
     /// as <see cref="UserProfile.WheelSettings"/> (round-tripped in <see cref="SaveProfileToDisk"/>/
     /// <see cref="LoadSelectedProfile"/>). Entries are created lazily via
-    /// <see cref="GetOrCreateWheelSettings"/> - the Wheel Settings tab (<see cref="BinderPageViewModel"/>)
+    /// <see cref="GetOrCreateWheelSettings"/> - the Wheel Settings tab (<see cref="DeviceMappingPageViewModel"/>)
     /// is the only consumer today.
     /// </summary>
     public Dictionary<string, WheelDeviceSettings> WheelSettings { get; private set; } = new();
@@ -551,7 +570,7 @@ public partial class MainWindowViewModel : ViewModelBase
             WindowTitle = "EhChads Controller Remapper - ECCR";
             _deviceManager = null;
             HidHide = new HidHideViewModel();
-            AutoBind = new AutoBindWizardViewModel();
+            AutoMap = new AutoMapWizardViewModel();
             _profileService = new ProfileService();
             _gameLibraryService = new GameLibraryService();
             return;
@@ -601,6 +620,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     ApplyProfileLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
                     LoadWheelSettings(profile.WheelSettings);
                     LoadGamepadSettings(profile.GamepadSettings);
+                    HardwareProfileService.MigrateFromLegacyIfNeeded(profile.ProfileName, WheelSettings, GetDeviceHardwareInfo);
                     MigrateLegacyWheelRotationDegrees();
                     MigrateLegacyLedColor(profile.LedRed, profile.LedGreen, profile.LedBlue, profile.LedMode, profile.LedSpeed);
                     SyncHidHideCloakingForAllMappings();
@@ -629,9 +649,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _gameLibraryService.Load();
         _profileService.ProfileDeleted += id => _gameLibraryService.UnbindGamesForProfile(id);
 
-        AutoBind = new AutoBindWizardViewModel(
+        AutoMap = new AutoMapWizardViewModel(
             ConnectedDevices,
-            () => _deviceManager?.GetConnectedDevices() ?? new List<DeviceHardwareInfo>(),
+            () => _cachedDevices,
             Mappings,
             PlayerTargets,
             WheelSlots,
@@ -659,6 +679,11 @@ public partial class MainWindowViewModel : ViewModelBase
         _deviceManager = new InputDeviceManager();
         _deviceManager.OnDevicesRefreshed += devices =>
         {
+            // Plain reference swap - safe to read from the UI thread (GetDeviceHardwareInfo)
+            // while written here from the hotplug-refresh timer thread, same as every other
+            // cross-thread field in this handler; see _cachedDevices' own doc comment.
+            _cachedDevices = devices;
+
             // Off the UI thread (this event can fire from the hotplug-refresh timer), but
             // ConcurrentDictionary is safe to write here while ProcessInputPolling reads it on
             // the separate poll thread - see _deviceVidPidByGuid's doc comment.
@@ -670,13 +695,19 @@ public partial class MainWindowViewModel : ViewModelBase
             foreach (var d in devices)
             {
                 _deviceVidPidByGuid[d.InstanceGuid] = (d.VendorId, d.ProductId);
+
+                // Fire-and-forget Tier 1 (online registry) lookup - a no-op today (see
+                // DeviceMetadataLookupService's doc comment) until a registry URL is configured,
+                // and self-deduplicating per VID/PID even once one is, so this is safe to call
+                // on every hotplug refresh.
+                if (d.VendorId != 0) _ = DeviceMetadataLookupService.PrefetchAsync(d.VendorId, d.ProductId);
             }
 
             Dispatcher.UIThread.Post(() =>
             {
                 // Diff instead of unconditional Clear()+re-add: a name that's still present
                 // must never be removed-then-re-added within the same tick, since
-                // ConnectedDevices is two-way bound to AutoBind.WizardSelectedDevice (and other
+                // ConnectedDevices is two-way bound to AutoMap.WizardSelectedDevice (and other
                 // pages) - a momentary empty collection would otherwise snap the user's
                 // selection back to whatever ends up first in the rebuilt list.
                 var newNames = devices.Select(d => d.InstanceName).ToList();
@@ -689,9 +720,9 @@ public partial class MainWindowViewModel : ViewModelBase
                     if (!ConnectedDevices.Contains(name)) ConnectedDevices.Add(name);
                 }
 
-                if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(AutoBind.WizardSelectedDevice))
+                if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(AutoMap.WizardSelectedDevice))
                 {
-                    AutoBind.WizardSelectedDevice = ConnectedDevices[0];
+                    AutoMap.WizardSelectedDevice = ConnectedDevices[0];
                 }
 
                 StatusBar.SyncConnectedDevices(devices);
@@ -787,7 +818,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Builds every sidebar page view model (eagerly, once, so in-progress page state like
     /// HidHide's loaded device list survives navigating away and back - same lifetime pattern
-    /// as <see cref="HidHide"/>/<see cref="AutoBind"/> themselves), the primary/utility nav
+    /// as <see cref="HidHide"/>/<see cref="AutoMap"/> themselves), the primary/utility nav
     /// item lists, and selects Home as the initial page.
     /// </summary>
     private void InitializeShellNavigation()
@@ -801,23 +832,23 @@ public partial class MainWindowViewModel : ViewModelBase
 
         _pageViewModels[AppPage.Home] = new HomeViewModel(StatusBar, BuildQuickActionCards(devicesIcon, hidHideIcon), NavigateToCommand);
         _pageViewModels[AppPage.ConnectedDevices] = new ConnectedDevicesPageViewModel(this, StatusBar.AllDeviceStatuses);
-        _binderPageViewModel = new BinderPageViewModel(this, StatusBar.AllDeviceStatuses, GamepadGroupedMappings, WheelGroupedMappings);
-        _pageViewModels[AppPage.Binder] = _binderPageViewModel;
+        _deviceMappingPageViewModel = new DeviceMappingPageViewModel(this, StatusBar.AllDeviceStatuses, GamepadGroupedMappings, WheelGroupedMappings);
+        _pageViewModels[AppPage.DeviceMapping] = _deviceMappingPageViewModel;
         _pageViewModels[AppPage.Profiles] = new ProfilesViewModel(this, _gameLibraryService, _profileService);
         _pageViewModels[AppPage.Games] = new GamesPageViewModel(this, _gameLibraryService, _profileService);
         _pageViewModels[AppPage.HidHide] = HidHide;
-        _pageViewModels[AppPage.AutoBind] = AutoBind;
+        _pageViewModels[AppPage.AutoMap] = AutoMap;
         _pageViewModels[AppPage.About] = new AboutViewModel(AppVersion);
         _pageViewModels[AppPage.Settings] = new SettingsViewModel(this);
 
         PrimaryNavItems.Add(new NavItem(AppPage.Home, "Home", "🏠", iconImage: homeIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", iconImage: devicesIcon));
-        PrimaryNavItems.Add(new NavItem(AppPage.Binder, "Binder", "🧷", iconImage: controllerIcon));
+        PrimaryNavItems.Add(new NavItem(AppPage.DeviceMapping, "Device Mappings", "🧷", iconImage: controllerIcon));
         PrimaryNavItems.Add(new NavItem(AppPage.Profiles, "Profiles", "📄"));
         PrimaryNavItems.Add(new NavItem(AppPage.Games, "Games", "🎮"));
 
         UtilityNavItems.Add(new NavItem(AppPage.HidHide, "HidHide", "🛡", iconImage: hidHideIcon));
-        UtilityNavItems.Add(new NavItem(AppPage.AutoBind, "Auto Bind", "⚡"));
+        UtilityNavItems.Add(new NavItem(AppPage.AutoMap, "Auto Map", "⚡"));
         UtilityNavItems.Add(new NavItem(AppPage.About, "About", "ℹ️"));
         UtilityNavItems.Add(new NavItem(AppPage.Settings, "Settings", "⚙️"));
 
@@ -832,9 +863,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         new NavItem(AppPage.ConnectedDevices, "Connected Devices", "🕹️", "View connected controllers, wheels, and pedals.", devicesIcon),
         new NavItem(AppPage.Profiles, "Profiles", "📄", "Manage and switch profiles."),
-        new NavItem(AppPage.Games, "Games", "🎮", "Bind installed games to profiles."),
+        new NavItem(AppPage.Games, "Games", "🎮", "Assign installed games to profiles."),
         new NavItem(AppPage.HidHide, "HidHide", "🛡", "Hide physical devices from games.", hidHideIcon),
-        new NavItem(AppPage.AutoBind, "Auto Bind", "⚡", "Generate a starting set of bindings."),
+        new NavItem(AppPage.AutoMap, "Auto Map", "⚡", "Generate a starting set of mappings."),
         new NavItem(AppPage.Settings, "Settings", "⚙️", "Manage app settings."),
         new NavItem(AppPage.About, "About", "ℹ️", "Changelog and links.")
     };
@@ -842,22 +873,29 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void NavigateTo(AppPage page)
     {
+        if (_pageViewModels.TryGetValue(CurrentPage, out var leavingVm) && leavingVm is INavigationAware leavingAware)
+        {
+            leavingAware.OnNavigatedFrom();
+        }
+
         CurrentPage = page;
         CurrentPageViewModel = _pageViewModels[page];
+
+        if (CurrentPageViewModel is INavigationAware enteringAware) enteringAware.OnNavigatedTo();
 
         foreach (var item in PrimaryNavItems) item.IsSelected = item.Page == page;
         foreach (var item in UtilityNavItems) item.IsSelected = item.Page == page;
 
         // Replaces the old Open*Menu()-triggered refresh/preselect behavior now that HidHide
-        // and Auto-Bind are always-present pages instead of explicitly opened dialogs.
+        // and Auto-Map are always-present pages instead of explicitly opened dialogs.
         if (page == AppPage.HidHide)
         {
             HidHide.RefreshHidDevices();
             HidHide.RefreshHidApplications();
         }
-        else if (page == AppPage.AutoBind)
+        else if (page == AppPage.AutoMap)
         {
-            AutoBind.PrepareForNavigation();
+            AutoMap.PrepareForNavigation();
         }
     }
 
@@ -871,12 +909,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (string.IsNullOrEmpty(deviceName)) return;
 
-        if (_binderPageViewModel != null)
+        if (_deviceMappingPageViewModel != null)
         {
-            _binderPageViewModel.SelectedDeviceName = deviceName;
-            _binderPageViewModel.SelectTabCommand.Execute(BinderTab.Bindings);
+            _deviceMappingPageViewModel.SelectedDeviceName = deviceName;
+            _deviceMappingPageViewModel.SelectTabCommand.Execute(DeviceMappingTab.Mappings);
         }
-        NavigateTo(AppPage.Binder);
+        NavigateTo(AppPage.DeviceMapping);
     }
 
     [RelayCommand]
@@ -1042,7 +1080,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var outputs = new ObservableCollection<string>();
 
-        string[] xboxBinds = [
+        string[] xboxTargets = [
             "[Xbox] Left Stick X (Steer / Horizontal)",
             "[Xbox] Left Stick Y (Steer / Vertical)",
             "[Xbox] Right Stick X (Camera / Look Horizontal)",
@@ -1065,9 +1103,9 @@ public partial class MainWindowViewModel : ViewModelBase
             "[Xbox] Xbox View (Back / Map / Share)",
             "[Xbox] Xbox Guide (Home / Guide)"
         ];
-        foreach (var bind in xboxBinds) outputs.Add(bind);
+        foreach (var target in xboxTargets) outputs.Add(target);
 
-        string[] wheelBinds = [
+        string[] wheelTargets = [
             "[Wheel] Steering (Axis X)",
             "[Wheel] Gas / Throttle (Axis Y)",
             "[Wheel] Brake (Axis Z)",
@@ -1086,11 +1124,11 @@ public partial class MainWindowViewModel : ViewModelBase
             "[Wheel] 7th Gear",
             "[Wheel] Reverse Gear"
         ];
-        foreach (var bind in wheelBinds) outputs.Add(bind);
+        foreach (var target in wheelTargets) outputs.Add(target);
 
         for (int i = 1; i <= 32; i++) outputs.Add($"[Wheel] Button {i}");
 
-        string[] ds4Binds = [
+        string[] ds4Targets = [
             "[DS4] Left Stick X (Steer / Horizontal)",
             "[DS4] Left Stick Y (Steer / Vertical)",
             "[DS4] Right Stick X (Camera / Look Horizontal)",
@@ -1114,7 +1152,7 @@ public partial class MainWindowViewModel : ViewModelBase
             "[DS4] PS (Guide)",
             "[DS4] Touchpad Click"
         ];
-        foreach (var bind in ds4Binds) outputs.Add(bind);
+        foreach (var target in ds4Targets) outputs.Add(target);
 
         // Sentinel: selecting it from the row's Target combo reveals the Key Picker Flyout
         // button (see MappingEntry.IsKeyboardTarget) for actually choosing a key. Never
@@ -1192,10 +1230,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// The "Output As: Xbox / DS4 / Wheel" header switch's apply action - regenerates this
-    /// device's entire binding set as a fresh <see cref="DevicePresetService.GeneratePreset"/>
+    /// device's entire mapping set as a fresh <see cref="DevicePresetService.GeneratePreset"/>
     /// targeting <paramref name="category"/>, replacing whatever it had before. Destructive by
     /// design (the UI gates the call behind a confirmation Flyout); shares
-    /// <see cref="DevicePresetService.ApplyPreset"/> with <see cref="AutoBindWizardViewModel.ApplyWizardBindings"/>
+    /// <see cref="DevicePresetService.ApplyPreset"/> with <see cref="AutoMapWizardViewModel.ApplyWizardMappings"/>
     /// so the wizard page and this quick switch never drift into two different "apply" behaviors.
     /// </summary>
     public void ApplyOutputModeToDevice(string deviceName, OutputCategory category, uint targetDeviceId)
@@ -1217,9 +1255,89 @@ public partial class MainWindowViewModel : ViewModelBase
         AutoSaveCurrentProfile();
     }
 
-    /// <summary>Public wrapper around the same connected-device capability lookup <see cref="ApplyOutputModeToDevice"/>/the Auto-Bind wizard already do inline - lets <see cref="ViewModels.BinderPageViewModel"/> synthesize placeholder rows for every physical input a device reports (see <c>BinderPageViewModel.RebuildDisplayRows</c>).</summary>
+    /// <summary>
+    /// The Input Matrix tab's "Auto-Map (1:1)" action - strict index-for-index identity mapping
+    /// (physical button/POV/axis N -> virtual slot N) read directly from the device's own
+    /// reported capabilities, with no per-category guessing (unlike <see cref="ApplyOutputModeToDevice"/>'s
+    /// heuristic <see cref="DevicePresetService.GeneratePreset"/>). Reuses <see cref="DevicePresetService.ApplyPreset"/>'s
+    /// existing find-or-create-by-slot logic (preserves deadzone/calibration/<see cref="MappingEntry.SemanticHotspot"/>
+    /// on any slot whose physical index doesn't change), then additionally removes this device's
+    /// existing mappings that fall outside the new identity coverage - <see cref="DevicePresetService.ApplyPreset"/>
+    /// itself never removes anything, so without this second pass a device whose capabilities or
+    /// prior mappings changed would accumulate orphaned/stale entries. Nicknames need no special
+    /// handling here: they're keyed by (device, type, index) in <see cref="HardwareProfileService"/>,
+    /// independent of <see cref="MappingEntry"/> identity, and a strict 1:1 mapping by definition
+    /// never changes which physical index a slot represents.
+    /// </summary>
+    public void ApplyStrict1To1AutoMap(string deviceName, uint targetWheelSlot = 1)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName)) return;
+
+        var info = GetDeviceHardwareInfo(deviceName);
+        if (info == null) return;
+
+        var preset = DevicePresetService.GenerateStrict1To1Preset(deviceName, info.ButtonCount, info.AxisCount, info.HasPov, (info.VendorId, info.ProductId));
+        DevicePresetService.ApplyPreset(Mappings, deviceName, info.InstanceGuid, preset, targetWheelSlot);
+
+        var covered = preset.Select(p => (p.Type, p.PhysicalIndex)).ToHashSet();
+        var orphans = Mappings.Where(m => m.SourceDeviceName == deviceName && !covered.Contains((m.SourceType, m.SourceIndex))).ToList();
+        foreach (var orphan in orphans) Mappings.Remove(orphan);
+
+        RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
+        AutoSaveCurrentProfile();
+    }
+
+    /// <summary>Finds-or-creates the <see cref="MappingEntry"/> at one physical axis slot for a device and points it at <paramref name="targetOutput"/> - the Input Matrix axis gauge's click-to-quick-assign action. Lives here (not on <c>InputMatrixViewModel</c>) since it needs <see cref="AutoSaveCurrentProfile"/>, which is private.</summary>
+    public void QuickAssignAxis(string deviceName, int axisIndex, string targetOutput)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName)) return;
+
+        var entry = Mappings.FirstOrDefault(m =>
+            m.SourceDeviceName == deviceName && m.SourceType == InputType.Axis && m.SourceIndex == axisIndex);
+
+        if (entry == null)
+        {
+            var info = GetDeviceHardwareInfo(deviceName);
+            entry = new MappingEntry
+            {
+                SourceDeviceName = deviceName,
+                SourceDeviceGuid = info?.InstanceGuid ?? Guid.Empty,
+                SourceType = InputType.Axis,
+                SourceIndex = axisIndex,
+                SourceDisplayName = DevicePresetService.GetAxisDisplayName(deviceName, axisIndex, info != null ? (info.VendorId, info.ProductId) : null),
+                TargetDeviceId = 1,
+                Deadzone = 0.08,
+                RawMin = 0,
+                RawMax = 65535
+            };
+            Mappings.Add(entry);
+        }
+
+        entry.TargetOutput = targetOutput;
+        RebuildGroupedMappings();
+        UpdateVirtualDeviceSummary();
+        AutoSaveCurrentProfile();
+    }
+
+    /// <summary>
+    /// Public wrapper around the same connected-device capability lookup <see cref="ApplyOutputModeToDevice"/>/the Auto-Map wizard already do inline - lets <see cref="ViewModels.DeviceMappingPageViewModel"/> synthesize placeholder rows for every physical input a device reports (see <c>DeviceMappingPageViewModel.RebuildDisplayRows</c>).
+    ///
+    /// <para>
+    /// Reads <see cref="_cachedDevices"/> instead of calling <see cref="InputDeviceManager.GetConnectedDevices"/>
+    /// directly - that method does a full DirectInput re-enumeration plus a fresh <c>Joystick</c>
+    /// construction and capability probe for every attached device, all synchronous. This is the
+    /// single choke point nearly every hot user action in the Device Mappings page runs through
+    /// (selecting a device, opening the Input Matrix tab, "Add Input", quick-assign, test
+    /// vibration/FFB) - calling the real enumeration from here, on the UI thread, on every one of
+    /// those was the actual cause of the app freezing on "Add Input" and on selecting/clicking
+    /// into a device. <see cref="_cachedDevices"/> is kept fresh by <see cref="InputDeviceManager.OnDevicesRefreshed"/>
+    /// (already firing every 1.5s via the hotplug watcher, and once at startup), so this is now
+    /// just an in-memory lookup.
+    /// </para>
+    /// </summary>
     public DeviceHardwareInfo? GetDeviceHardwareInfo(string deviceName) =>
-        _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
+        _cachedDevices.FirstOrDefault(d => d.InstanceName == deviceName);
 
     /// <summary>
     /// Fires a short rumble pulse directly at the named device's real hardware, bypassing the
@@ -1315,11 +1433,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Adds <paramref name="entry"/> to <see cref="Mappings"/> if it isn't already there - a
-    /// no-op for every existing call path (an entry created via "+ Add Input", Auto-Bind, or a
+    /// no-op for every existing call path (an entry created via "+ Add Input", Auto-Map, or a
     /// diagram hotspot is already registered), and the promotion seam for a placeholder row
-    /// synthesized by <c>BinderPageViewModel.RebuildDisplayRows</c> (see <see cref="MappingEntry.IsPlaceholder"/>):
+    /// synthesized by <c>DeviceMappingPageViewModel.RebuildDisplayRows</c> (see <see cref="MappingEntry.IsPlaceholder"/>):
     /// called as the first step of both <see cref="StartListening"/> and <see cref="StartKeyPick"/>
-    /// so a placeholder becomes a real, persisted binding the instant the user starts
+    /// so a placeholder becomes a real, persisted mapping the instant the user starts
     /// interacting with it, before its <see cref="MappingEntry.TargetOutput"/>/capture result is
     /// even known.
     /// </summary>
@@ -1336,9 +1454,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// Fired once per physical device per DirectInput poll tick (every ~4ms, see
     /// <c>InputDeviceManager.StartPolling</c>). Runs in one of two mutually exclusive modes
     /// depending on <see cref="_listeningEntry"/>: normal feed-through (find every mapping
-    /// bound to this device and push calibrated values to <see cref="_feeder"/>), or capture
-    /// mode while the "Click to Bind" listener is armed (watch for the next button press or
-    /// large axis movement on any device and bind that to the listening entry). The two
+    /// mapped to this device and push calibrated values to <see cref="_feeder"/>), or capture
+    /// mode while the "Click to Map" listener is armed (watch for the next button press or
+    /// large axis movement on any device and map that to the listening entry). The two
     /// never run in the same tick so a listening session can't also be feeding stale output.
     /// </summary>
     /// <summary>
@@ -1415,6 +1533,28 @@ public partial class MainWindowViewModel : ViewModelBase
         return expanded;
     }
 
+    /// <summary>True if this device's buttons/POV differ at all, or any axis moved past <see cref="AxisDispatchDeadband"/>, since the last dispatched <see cref="LiveDeviceInputState"/> for it - see <see cref="_lastDispatchedLiveState"/>.</summary>
+    private bool HasLiveStateChangedSinceLastDispatch(ECCR.Services.RawDeviceInputState state, bool[] buttons)
+    {
+        if (!_lastDispatchedLiveState.TryGetValue(state.InstanceGuid, out var last)) return true;
+
+        if (last.PovAngleHundredths != state.PovAngleHundredths) return true;
+
+        if (last.Buttons.Length != buttons.Length) return true;
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (last.Buttons[i] != buttons[i]) return true;
+        }
+
+        if (last.RawAxes.Length != state.Axes.Length) return true;
+        for (int i = 0; i < state.Axes.Length; i++)
+        {
+            if (Math.Abs(last.RawAxes[i] - state.Axes[i]) > AxisDispatchDeadband) return true;
+        }
+
+        return false;
+    }
+
     private void ProcessInputPolling(ECCR.Services.RawDeviceInputState state)
     {
         if (IsShuttingDown) return;
@@ -1423,16 +1563,26 @@ public partial class MainWindowViewModel : ViewModelBase
         _pollStopwatch.Restart();
         double latencyMs = elapsedUs / 1000.0;
 
-        Dispatcher.UIThread.Post(() =>
+        // Throttled to ~10Hz - a per-tick dispatch here (potentially 250Hz+) would burn UI-thread
+        // time on a value nobody can read that fast anyway; the status bar only shows one decimal.
+        if (_latencyDispatchStopwatch.ElapsedMilliseconds >= 100)
         {
-            Latency = $"{latencyMs:F1}ms";
-        });
+            _latencyDispatchStopwatch.Restart();
+            Dispatcher.UIThread.Post(() =>
+            {
+                Latency = $"{latencyMs:F1}ms";
+            });
+        }
 
         bool[] buttons = ResolveTouchpadZones(state);
 
+        // Only the Device Mappings page (Diagram/InputMatrix/table row highlights) consumes this
+        // event - see OnLiveDeviceStateUpdated's subscribers, all gated by INavigationAware to
+        // only be attached while that page is active. Skipping the whole snapshot+dispatch while
+        // it isn't active avoids needless allocation and UI-thread traffic on every other page.
         if (ListeningEntry == null)
         {
-            if (OnLiveDeviceStateUpdated != null)
+            if (OnLiveDeviceStateUpdated != null && CurrentPage == AppPage.DeviceMapping && HasLiveStateChangedSinceLastDispatch(state, buttons))
             {
                 var (lx, ly, rx, ry) = DevicePresetService.GetStickAxisIndices(state.DeviceName);
                 var live = new LiveDeviceInputState
@@ -1441,12 +1591,15 @@ public partial class MainWindowViewModel : ViewModelBase
                     InstanceGuid = state.InstanceGuid,
                     Buttons = (bool[])buttons.Clone(),
                     NormalizedAxes = state.Axes.Select(a => a / 65535.0).ToArray(),
+                    RawAxes = (int[])state.Axes.Clone(),
+                    PovAngleHundredths = state.PovAngleHundredths,
                     HasSticks = lx >= 0,
                     LeftStickX = lx >= 0 ? state.Axes[lx] / 65535.0 : 0.5,
                     LeftStickY = ly >= 0 ? state.Axes[ly] / 65535.0 : 0.5,
                     RightStickX = rx >= 0 ? state.Axes[rx] / 65535.0 : 0.5,
                     RightStickY = ry >= 0 ? state.Axes[ry] / 65535.0 : 0.5,
                 };
+                _lastDispatchedLiveState[state.InstanceGuid] = live;
                 Dispatcher.UIThread.Post(() => OnLiveDeviceStateUpdated?.Invoke(live));
             }
 
@@ -1497,7 +1650,7 @@ public partial class MainWindowViewModel : ViewModelBase
         // Capture mode: the first poll after StartListening just records each axis's current
         // resting value and each button's current held/released state as a baseline (rather than
         // binding on either), since without a baseline an already-off-zero axis - or an
-        // already-held button - would immediately "trigger" a bind the instant listening starts.
+        // already-held button - would immediately "trigger" a mapping the instant listening starts.
         if (!_axisBaselines.TryGetValue(state.InstanceGuid, out var baselines) || !_buttonBaselines.TryGetValue(state.InstanceGuid, out var buttonBaselines))
         {
             _axisBaselines[state.InstanceGuid] = (int[])state.Axes.Clone();
@@ -1544,7 +1697,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Autobind duplicate-conflict protection: called from <see cref="ProcessInputPolling"/> the
+    /// AutoMap duplicate-conflict protection: called from <see cref="ProcessInputPolling"/> the
     /// instant a candidate physical input passes its edge/threshold check, before it's actually
     /// assigned. If no other row already uses this exact device+type+index, clears any stale
     /// <see cref="_pendingConflict"/> and returns false so the caller proceeds to assign normally.
@@ -1555,11 +1708,11 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <item>Buttons/POV get a two-step confirm: the first press on a conflicting input just
     /// flags <see cref="_pendingConflict"/> and warns in the row's status text, returning true
     /// (stay armed, nothing assigned yet); a second press of that *same* input clears the other
-    /// row's binding (<see cref="ClearMapping"/>) and returns false so the caller proceeds to
+    /// row's mapping (<see cref="ClearMapping"/>) and returns false so the caller proceeds to
     /// assign the armed entry this same tick.</item>
     /// </list>
     /// Any other outcome - Esc, Backspace, the 7s timeout, or the user instead pressing a
-    /// different input - leaves both bindings untouched, since only a matching second press ever
+    /// different input - leaves both mappings untouched, since only a matching second press ever
     /// reaches the confirm branch.
     /// </summary>
     private bool TryFlagOrResolveConflict(MappingEntry listeningEntry, Guid deviceGuid, string deviceName, InputType type, int index)
@@ -1588,8 +1741,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() =>
         {
             listeningEntry.SourceDisplayName = type == InputType.Button
-                ? $"Already bound to '{conflict.TargetOutput}' - press again to confirm swap, Esc to cancel"
-                : $"Already bound to '{conflict.TargetOutput}' - move a different axis, or Esc/Backspace to cancel";
+                ? $"Already mapped to '{conflict.TargetOutput}' - press again to confirm swap, Esc to cancel"
+                : $"Already mapped to '{conflict.TargetOutput}' - move a different axis, or Esc/Backspace to cancel";
             MappingStatus = $"Conflict: '{conflict.TargetOutput}' already uses this input";
 
             _listenTimeoutTimer?.Stop();
@@ -1614,11 +1767,11 @@ public partial class MainWindowViewModel : ViewModelBase
             entry.TargetOutput = guessedTarget;
             entry.IsInverted = (type == InputType.Axis && (displayName.Contains("Stick Y") || displayName.Contains("Vertical") || displayName.Contains("Brake") || displayName.Contains("Throttle")));
 
-            // Belt-and-suspenders: entries captured via the Rebinding Table/Auto-Bind never get
-            // SemanticHotspot set by anything else, which used to make the Binder diagram's
-            // exact-match lookup always call them "unbound" (see BinderDiagramViewModel.RefreshBoundEntries'
+            // Belt-and-suspenders: entries captured via the Device Mapping Table/Auto-Map never get
+            // SemanticHotspot set by anything else, which used to make the Device Mapping diagram's
+            // exact-match lookup always call them "unbound" (see DeviceMappingDiagramViewModel.RefreshBoundEntries'
             // physical-index fallback, the actual fix for already-saved profiles). Setting it here
-            // too just lets freshly-captured bindings hit the cheap exact-match path immediately.
+            // too just lets freshly-captured mappings hit the cheap exact-match path immediately.
             // Never overwrites an entry the diagram itself already armed.
             entry.SemanticHotspot ??= TryResolveSemanticHotspot(deviceName, type, index);
 
@@ -1650,10 +1803,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Picks a default target channel the instant an axis/button is captured via
-    /// "Click to Bind" (see <see cref="AssignDetectedInput"/>), so a new binding is never
+    /// "Click to Map" (see <see cref="AssignDetectedInput"/>), so a new mapping is never
     /// left pointed at nothing before the user gets a chance to change it. This is a
     /// separate, simpler per-index guess from the full <see cref="DevicePresetService.GeneratePreset"/>
-    /// table the Auto-Bind Wizard uses - it only needs one reasonable answer per index
+    /// table the Auto-Map Wizard uses - it only needs one reasonable answer per index
     /// rather than a complete preset for every input at once.
     /// </summary>
     private static string GuessBestTargetChannel(string deviceName, InputType type, int index)
@@ -1701,7 +1854,7 @@ public partial class MainWindowViewModel : ViewModelBase
         // rotary click, or a menu button shifts every time a rim is swapped, so guessing a
         // vehicle function from the index is wrong as often as it's right - every button
         // defaults to its own identity slot instead, and the user reassigns it explicitly (see
-        // the Identify Input flow: press the physical control and watch which Rebinding Table
+        // the Identify Input flow: press the physical control and watch which Device Mapping Table
         // row lights up). The five wheel/pedal axes keep their brand-independent identity guess
         // (steering is always DirectInput axis X on a device DirectInput classifies as a wheel;
         // the further axes are this app's own virtual-wheel axis contract, not a brand guess).
@@ -1757,15 +1910,15 @@ public partial class MainWindowViewModel : ViewModelBase
         };
     }
 
-    /// <summary>True while a "Click to Bind" capture is armed - drives Esc/Backspace routing in <c>MainWindow.OnKeyDown</c> and the hint banner's active state.</summary>
+    /// <summary>True while a "Click to Map" capture is armed - drives Esc/Backspace routing in <c>MainWindow.OnKeyDown</c> and the hint banner's active state.</summary>
     public bool IsListening => ListeningEntry != null;
 
     /// <summary>
     /// Arms (or, if already armed for this entry, cancels) capture mode - see
     /// <see cref="ProcessInputPolling"/> for what happens on the polling thread while armed.
-    /// Bound to each mapping row's physical-input button in the main grid. Auto-cancels after
+    /// Mapped to each mapping row's physical-input button in the main grid. Auto-cancels after
     /// 7 seconds of no input (<see cref="_listenTimeoutTimer"/>); Esc (<see cref="CancelListening"/>)
-    /// and Backspace (<see cref="ClearListeningBinding"/>) are routed in from <c>MainWindow.OnKeyDown</c>
+    /// and Backspace (<see cref="ClearListeningMapping"/>) are routed in from <c>MainWindow.OnKeyDown</c>
     /// while <see cref="IsListening"/> is true.
     /// </summary>
     [RelayCommand]
@@ -1796,7 +1949,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _listenTimeoutTimer.Start();
     }
 
-    /// <summary>Aborts an in-progress capture without touching the entry's existing binding - restores whatever label it showed before listening started.</summary>
+    /// <summary>Aborts an in-progress capture without touching the entry's existing mapping - restores whatever label it showed before listening started.</summary>
     public void CancelListening()
     {
         if (ListeningEntry == null) return;
@@ -1805,7 +1958,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>Wipes the currently-listening entry back to a fully unbound state.</summary>
-    public void ClearListeningBinding()
+    public void ClearListeningMapping()
     {
         if (ListeningEntry == null) return;
         var entry = ListeningEntry;
@@ -1814,11 +1967,11 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Wipes one entry back to a fully unbound "Click to Bind" state without deleting it from
+    /// Wipes one entry back to a fully unmapped "Click to Map" state without deleting it from
     /// <see cref="Mappings"/> - the row stays visible (now under an "Uncategorized ..." group)
     /// so the user can re-capture a different physical input for the same target/customization
-    /// rather than starting over. Reachable from the Rebinding Table's gear flyout "Clear"
-    /// button as well as <see cref="ClearListeningBinding"/> (the Backspace-while-listening
+    /// rather than starting over. Reachable from the Device Mapping Table's gear flyout "Clear"
+    /// button as well as <see cref="ClearListeningMapping"/> (the Backspace-while-listening
     /// shortcut), which previously was the only way to reach this behavior.
     /// </summary>
     [RelayCommand]
@@ -1829,12 +1982,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Falls back into whichever "Uncategorized ..." group matches the section the entry
         // was already in (by its old device name's category) rather than always landing in the
-        // gamepad section - clearing a wheel binding should keep it visible on the wheel page.
+        // gamepad section - clearing a wheel mapping should keep it visible on the wheel page.
         bool wasWheel = DevicePresetService.IsWheelOrPedalCategory(DevicePresetService.DetectCategory(entry.SourceDeviceName));
         entry.SourceDeviceName = wasWheel ? UncategorizedWheelDeviceName : UncategorizedGamepadDeviceName;
         entry.SourceDeviceGuid = Guid.Empty;
         entry.SourceIndex = 0;
-        entry.SourceDisplayName = "Click to Bind";
+        entry.SourceDisplayName = "Click to Map";
         RebuildGroupedMappings();
         AutoSaveCurrentProfile();
     }
@@ -2038,14 +2191,27 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 _availableUpdateInfo = null;
                 IsUpdateAvailable = false;
-                UpdateStatusText = "You have the latest version installed.";
+                // UpdateService.CheckForUpdatesAsync catches its own failures and returns null
+                // the same as a genuine "no update available" - LastError is what distinguishes
+                // the two, so a manual check reports the real reason instead of a false "latest
+                // version" for e.g. a timeout or a GitHub rate limit.
+                if (_updateService.LastError != null && !isBackgroundCheck)
+                {
+                    UpdateStatusText = _updateService.LastError;
+                }
+                else
+                {
+                    UpdateStatusText = "You have the latest version installed.";
+                }
             }
         }
         catch
         {
+            // UpdateService.CheckForUpdatesAsync already catches everything itself; this remains
+            // only as defense in depth against something unexpected in the branch above.
             if (!isBackgroundCheck)
             {
-                UpdateStatusText = "Could not reach update server.";
+                UpdateStatusText = _updateService.LastError ?? "Could not reach update server.";
             }
         }
         finally
@@ -2078,7 +2244,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!success)
         {
             IsInstallingUpdate = false;
-            UpdateStatusText = "Update installation failed.";
+            UpdateStatusText = _updateService.LastError ?? "Update installation failed.";
         }
     }
 
@@ -2121,7 +2287,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void AddMappingToDevice(string deviceName)
     {
-        var targetDevice = _deviceManager?.GetConnectedDevices().FirstOrDefault(d => d.InstanceName == deviceName);
+        var targetDevice = GetDeviceHardwareInfo(deviceName);
         var category = DevicePresetService.DetectCategory(deviceName);
 
         string defaultTarget = category switch
@@ -2134,7 +2300,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             SourceDeviceName = deviceName,
             SourceDeviceGuid = targetDevice?.InstanceGuid ?? Guid.Empty,
-            SourceDisplayName = "Click to Bind",
+            SourceDisplayName = "Click to Map",
             TargetDeviceId = 1,
             TargetOutput = defaultTarget
         });
@@ -2144,7 +2310,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Placeholder "device name" for a mapping that hasn't been bound to a real physical device
+    /// Placeholder "device name" for a mapping that hasn't been mapped to a real physical device
     /// yet - <see cref="DevicePresetService.DetectCategory"/> falls through to
     /// <see cref="DeviceHardwareCategory.GenericGamepad"/> for both of these (neither contains
     /// a recognized brand/wheel keyword), which is what routes them to
@@ -2166,19 +2332,19 @@ public partial class MainWindowViewModel : ViewModelBase
     public void AddWheelMapping() => AddUncategorizedMapping(isWheel: true);
 
     /// <summary>
-    /// Adds a brand-new, not-yet-bound mapping to whichever section (<see cref="AddGamepadMapping"/>
-    /// vs <see cref="AddWheelMapping"/>) its "+ New Binding" button was clicked from - it shows
+    /// Adds a brand-new, not-yet-mapped entry to whichever section (<see cref="AddGamepadMapping"/>
+    /// vs <see cref="AddWheelMapping"/>) its "+ Add Input" button was clicked from - it shows
     /// up under an "Uncategorized ..." group in that section only, never guessing a real
-    /// connected device the way this used to (which is what caused a brand-new binding to land
+    /// connected device the way this used to (which is what caused a brand-new mapping to land
     /// under an arbitrary already-mapped device's group, sometimes in the wrong section
-    /// entirely). Click-to-Bind on the resulting row still works exactly as before.
+    /// entirely). Click-to-Map on the resulting row still works exactly as before.
     /// </summary>
     private void AddUncategorizedMapping(bool isWheel)
     {
         Mappings.Add(new MappingEntry
         {
             SourceDeviceName = isWheel ? UncategorizedWheelDeviceName : UncategorizedGamepadDeviceName,
-            SourceDisplayName = "Click to Bind",
+            SourceDisplayName = "Click to Map",
             TargetDeviceId = 1,
             TargetOutput = isWheel ? "[Wheel] Gas / Throttle (Axis Y)" : "[Xbox] Xbox A (Cross / South / Handbrake)"
         });
@@ -2280,7 +2446,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 item.PropertyChanged += OnMappingEntryPropertyChanged;
 
                 // A newly-added entry can already have its device GUID set via object
-                // initializer (AddMappingToDevice, the Auto-Bind wizard) - that never raises
+                // initializer (AddMappingToDevice, the Auto-Map wizard) - that never raises
                 // PropertyChanged, so OnMappingEntryPropertyChanged's cloak hook alone would
                 // miss it. Skipped during profile load: SyncHidHideCloakingForAllMappings()
                 // already covers that in one deduplicated pass after the whole profile is in.
@@ -2678,23 +2844,39 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Ordered to match the requested teardown sequence: stop every background
+    /// worker/poller/hook first (so nothing still calls into a handle being torn down below),
+    /// then disconnect/dispose the virtual devices (ViGEm/vJoy/DS4, via <see cref="_feeder"/>),
+    /// then unacquire the physical DirectInput handles (<see cref="_deviceManager"/>'s own
+    /// <c>Dispose</c> already calls <c>StopPolling</c> too - calling it explicitly first here just
+    /// makes the polling loop stop before virtual-device teardown runs instead of only stopping
+    /// as a side effect of a later step), then restore HidHide last so physical devices become
+    /// visible to other apps only once ECCR itself is done touching them. Each step stays
+    /// independently guarded by <see cref="RunShutdownStep"/> so one failure can never skip the
+    /// steps after it.
+    /// </summary>
     public void CleanupAndShutdown()
     {
         RunShutdownStep(nameof(SaveAppSettings), SaveAppSettings);
         RunShutdownStep(nameof(AutoSaveCurrentProfile), AutoSaveCurrentProfile);
 
-        RunShutdownStep("HidHide.DisableCloakingForShutdown", () => HidHide.DisableCloakingForShutdown());
-
-        RunShutdownStep("DeviceManager teardown", () =>
-        {
-            _deviceManager?.StopPolling();
-            _deviceManager?.Dispose();
-        });
+        // 1. Stop background workers/pollers/hooks.
+        RunShutdownStep("DeviceManager.StopPolling", () => _deviceManager?.StopPolling());
         RunShutdownStep("GameProcessWatcher.Dispose", () => _gameProcessWatcher?.Dispose());
         RunShutdownStep("ControllerHidService.Dispose", () => _controllerHidService.Dispose());
         RunShutdownStep("ControllerLedViewModel.Dispose", () => _controllerLedViewModel?.Dispose());
+
+        // 2. Disconnect virtual devices and release the ViGEm/vJoy/DS4 clients.
         RunShutdownStep("Feeder.Dispose", () => _feeder.Dispose());
+
+        // 3. Unacquire/dispose physical DirectInput handles, including the wheel's exclusive FFB handle.
+        RunShutdownStep("DeviceManager.Dispose", () => _deviceManager?.Dispose());
         RunShutdownStep("WheelForceFeedback.Dispose", () => _wheelForceFeedback.Dispose());
+
+        // 4. Restore HidHide last - only once every native handle above is already gone.
+        RunShutdownStep("HidHide.DisableCloakingForShutdown", () => HidHide.DisableCloakingForShutdown());
+
         RunShutdownStep("WinmmTimer release", () => _highResTimerHandle?.Dispose());
     }
 }

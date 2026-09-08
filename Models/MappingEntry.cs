@@ -15,7 +15,7 @@ namespace ECCR.Models;
 /// prefix is what <see cref="ECCR.Services.CompositeFeederService"/> pattern-matches on to
 /// decide whether an entry feeds the ViGEm or vJoy backend, and the rest of the string is
 /// pattern-matched again downstream to pick the specific axis/button. This keeps the UI's
-/// dropdown list, the auto-bind presets, and the feeders all working off one shared
+/// dropdown list, the auto-map presets, and the feeders all working off one shared
 /// vocabulary of strings instead of a brittle parallel enum that would need to stay in sync
 /// with three places at once - the tradeoff is that renaming a target string anywhere means
 /// grepping for every place that matches against it.
@@ -26,15 +26,28 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private bool _isSelected = false;
 
-    /// <summary>True while this is the entry currently armed for capture (<see cref="ECCR.ViewModels.MainWindowViewModel.ListeningEntry"/>) - distinct from <see cref="IsSelected"/>, which means "checked for a bulk Select All/Remove Selected action." Drives the Rebinding Table row's highlight and the Visual Binder hotspot's matching ring, whichever side armed it.</summary>
+    /// <summary>True while this is the entry currently armed for capture (<see cref="ECCR.ViewModels.MainWindowViewModel.ListeningEntry"/>) - distinct from <see cref="IsSelected"/>, which means "checked for a bulk Select All/Remove Selected action." Drives the Device Mapping Table row's highlight and the Visual Device Mapping hotspot's matching ring, whichever side armed it.</summary>
     [JsonIgnore]
     [ObservableProperty]
     private bool _isArmed = false;
 
-    /// <summary>True while this is a button-type mapping whose physical input is currently held down - live feedback only, not persisted, populated from <see cref="ECCR.ViewModels.MainWindowViewModel.OnLiveDeviceStateUpdated"/> the same way the Visual Binder's hotspot press state is.</summary>
+    /// <summary>True while this is a button-type mapping whose physical input is currently held down - live feedback only, not persisted, populated from <see cref="ECCR.ViewModels.MainWindowViewModel.OnLiveDeviceStateUpdated"/> the same way the Visual Device Mapping's hotspot press state is.</summary>
     [JsonIgnore]
     [ObservableProperty]
     private bool _isLivePressed = false;
+
+    /// <summary>
+    /// This row's physical input's user-assigned nickname (e.g. "Left Paddle"), or null if
+    /// unset - live display only, not persisted here. The actual nickname lives in
+    /// <see cref="ECCR.Models.WheelDeviceSettings.ButtonNicknames"/> keyed by device; this field
+    /// is pushed onto the row by <c>ECCR.ViewModels.DeviceMappingPageViewModel.RebuildDisplayRows</c>/
+    /// <c>RefreshNicknameDisplaysForDevice</c> so <see cref="ECCR.Converters.SemanticInputNameConverter"/>
+    /// can show it via a reactive property binding instead of needing service-locator access to
+    /// the device settings dictionary.
+    /// </summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    private string? _nicknameDisplay = null;
 
     [ObservableProperty]
     private string _sourceDeviceName = string.Empty;
@@ -49,7 +62,7 @@ public partial class MappingEntry : ObservableObject
     private int _sourceIndex = 0;
 
     [ObservableProperty]
-    private string _sourceDisplayName = "Click to Bind";
+    private string _sourceDisplayName = "Click to Map";
 
     /// <summary>
     /// Numeric virtual-device slot this entry's output routes to - a ViGEm Xbox360/DS4
@@ -97,11 +110,11 @@ public partial class MappingEntry : ObservableObject
     private int _rawCenter = 32767;
 
     /// <summary>
-    /// Set when this entry was created/captured via the Binder page's graphical diagram
-    /// (see <see cref="ECCR.ViewModels.BinderDiagramViewModel"/>), naming which
+    /// Set when this entry was created/captured via the Device Mappings page's graphical diagram
+    /// (see <see cref="ECCR.ViewModels.DeviceMappingDiagramViewModel"/>), naming which
     /// <see cref="ECCR.Models.SemanticButton"/>/<see cref="ECCR.Models.WheelSemanticInput"/> it
     /// belongs to so re-clicking that hotspot finds this same entry again instead of creating a
-    /// duplicate. Null for entries created via the Rebinding Table's "+ Add Input" or Auto-Bind
+    /// duplicate. Null for entries created via the Device Mapping Table's "+ Add Input" or Auto-Map
     /// - those code paths never set it.
     /// </summary>
     [ObservableProperty]
@@ -131,10 +144,10 @@ public partial class MappingEntry : ObservableObject
     private int _latestRawReading = 0;
 
     /// <summary>
-    /// True only for a row synthesized fresh by <c>BinderPageViewModel.RebuildDisplayRows</c> to
+    /// True only for a row synthesized fresh by <c>DeviceMappingPageViewModel.RebuildDisplayRows</c> to
     /// represent a physical input the selected device reports that has no <see cref="MappingEntry"/>
     /// yet - never added to <c>MainWindowViewModel.Mappings</c> and never persisted, unlike the
-    /// generic "Click to Bind" placeholders (see <see cref="IsBound"/>'s doc comment), since a
+    /// generic "Click to Map" placeholders (see <see cref="IsBound"/>'s doc comment), since a
     /// placeholder row already knows its real <see cref="SourceType"/>/<see cref="SourceIndex"/>/
     /// <see cref="SourceDisplayName"/> - it only lacks a <see cref="TargetOutput"/>. Promoted into
     /// a real, registered entry the moment the user interacts with it (see
@@ -157,12 +170,12 @@ public partial class MappingEntry : ObservableObject
     }
 
     /// <summary>
-    /// False for a fresh "Click to Bind" placeholder row (or one still mid-capture) - drives the
-    /// "Clear Binding" flyout item's visibility in <c>RebindingTableView</c>, since there's
-    /// nothing to unbind on a row that isn't bound yet.
+    /// False for a fresh "Click to Map" placeholder row (or one still mid-capture) - drives the
+    /// "Clear Mapping" flyout item's visibility in <c>DeviceMappingTableView</c>, since there's
+    /// nothing to unmap on a row that isn't mapped yet.
     /// </summary>
     [JsonIgnore]
-    public bool IsBound => !IsPlaceholder && SourceDisplayName != "Click to Bind" && !SourceDisplayName.StartsWith("Listening...", StringComparison.Ordinal);
+    public bool IsBound => !IsPlaceholder && SourceDisplayName != "Click to Map" && !SourceDisplayName.StartsWith("Listening...", StringComparison.Ordinal);
 
     partial void OnIsPlaceholderChanged(bool value)
     {

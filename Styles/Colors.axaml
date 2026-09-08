@@ -1,6 +1,6 @@
 <!--
     Named brush palette extracted from the hex literals repeated across the app's existing
-    XAML (MainWindow.axaml, HidHideView.axaml, AutoBindWizardWindow.axaml, CalibrationDialog.axaml).
+    XAML (MainWindow.axaml, HidHideView.axaml, AutoMapWizardWindow.axaml, CalibrationDialog.axaml).
     Values are unchanged from what's already on screen - this file exists purely so new pages
     (Sidebar, Home, Controllers/Wheels, Controller LED, About, DeviceStatusBar) can reference a
     shared palette instead of repeating literals. Existing untouched XAML keeps its inline hex;

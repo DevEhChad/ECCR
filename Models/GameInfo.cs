@@ -36,7 +36,7 @@ public class GameInfo
 
     public GameSource Source { get; set; } = GameSource.Custom;
 
-    /// <summary>Steam AppID / Epic catalog item id / null for Custom or when a scanner couldn't resolve one.</summary>
+    /// <summary>Steam AppID / Epic catalog item id / Xbox Package Family Name (see <see cref="ECCR.Services.GameDiscovery.XboxGameDiscoveryProvider"/>) / null for Custom or when a scanner couldn't resolve one.</summary>
     public string? LauncherAppId { get; set; }
 
     /// <summary>Which <see cref="UserProfile.Id"/> this game is bound to, or null if unbound.</summary>

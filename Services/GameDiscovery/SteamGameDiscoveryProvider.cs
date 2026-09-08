@@ -20,6 +20,18 @@ public class SteamGameDiscoveryProvider : IGameDiscoveryProvider
 {
     public GameSource Source => GameSource.Steam;
 
+    /// <summary>
+    /// Steam's public, unauthenticated art CDN, keyed by AppID - tried in order (best first) by
+    /// <see cref="GameArtResolverService"/> when <see cref="FindLocalBoxArt"/> comes up empty
+    /// (most libraries never actually cache grid art locally). "{0}" is the AppID.
+    /// </summary>
+    internal static readonly string[] SteamCdnUrlTemplates =
+    [
+        "https://cdn.akamai.steamstatic.com/steam/apps/{0}/library_600x900_2x.jpg",
+        "https://cdn.akamai.steamstatic.com/steam/apps/{0}/library_600x900.jpg",
+        "https://cdn.akamai.steamstatic.com/steam/apps/{0}/header.jpg"
+    ];
+
     public Task<List<GameInfo>> ScanAsync(CancellationToken ct)
     {
         var results = new List<GameInfo>();

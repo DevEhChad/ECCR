@@ -16,4 +16,7 @@ public class RawDeviceInputState
     public string DeviceName { get; set; } = string.Empty;
     public int[] Axes { get; set; } = [];
     public bool[] Buttons { get; set; } = [];
+
+    /// <summary>Raw POV hat angle in hundredths of a degree (0 = up, clockwise), or -1 when centered/no POV present - the value <see cref="InputDeviceManager"/> decodes into <see cref="Buttons"/>' 128-131 synthetic indices before discarding; kept here too for diagnostics (the Input Matrix's raw-packet inspector).</summary>
+    public int PovAngleHundredths { get; set; } = -1;
 }

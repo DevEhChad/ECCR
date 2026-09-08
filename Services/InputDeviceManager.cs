@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using SharpDX.DirectInput;
 
 namespace ECCR.Services;
@@ -45,7 +45,10 @@ public class InputDeviceManager : IDisposable
     private readonly DirectInput _directInput;
     private readonly Dictionary<Guid, Joystick> _acquiredJoysticks = new();
     private CancellationTokenSource? _pollingCts;
-    private Task? _pollingTask;
+    private Thread? _pollingThread;
+
+    /// <summary>Guids already logged as a failed-to-acquire device, so a persistently-failing device (rather than a one-off transient race) logs once instead of once per 1.5s hotplug retry forever. Cleared on successful acquire or when the device disappears from enumeration.</summary>
+    private readonly HashSet<Guid> _loggedAcquireFailures = new();
 
     /// <summary>Independent, much slower timer than the poll loop - re-runs <see cref="RefreshDevices"/> periodically so a hotplug (controller plugged/unplugged mid-session) is picked up without an app restart. Same pattern as <see cref="ControllerHidService"/>'s own device-refresh timer.</summary>
     private Timer? _hotplugTimer;
@@ -53,6 +56,23 @@ public class InputDeviceManager : IDisposable
 
     public event Action<List<DeviceHardwareInfo>>? OnDevicesRefreshed;
     public event Action<RawDeviceInputState>? OnInputPolled;
+
+    private static readonly string LogFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "input-debug.log");
+    private const long MaxLogSizeBytes = 5 * 1024 * 1024;
+
+    /// <summary>Diagnostic log for device acquisition failures and background-loop exceptions - previously these were bare `catch { }` swallows with no trace, making a real "this specific device never responds" report indistinguishable from a transient hotplug race.</summary>
+    private static void LogDebug(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
+            if (File.Exists(LogFilePath) && new FileInfo(LogFilePath).Length > MaxLogSizeBytes)
+                File.Delete(LogFilePath);
+            File.AppendAllText(LogFilePath, $"[{DateTime.Now:HH:mm:ss.fff}] [InputDevice] {message}\n");
+        }
+        catch { }
+    }
 
     public InputDeviceManager()
     {
@@ -67,8 +87,14 @@ public class InputDeviceManager : IDisposable
             var devices = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AttachedOnly);
             foreach (var d in devices)
             {
-                string name = d.InstanceName.ToLowerInvariant();
-                if (name.Contains("vjoy") || name.Contains("vigem") || name.Contains("virtual")) continue;
+                var (vendorId, productId) = ParseVidPidFromProductGuid(d.ProductGuid);
+
+                // VID/PID-aware check (not a bare name substring) - necessary because ViGEm's
+                // emulated Xbox 360 pad deliberately impersonates a real Microsoft controller and
+                // its DirectInput name ("Controller (XBOX 360 For Windows)") contains none of
+                // "vjoy"/"vigem"/"virtual". See HidHideManager.IsVirtualDevice's doc comment for
+                // why VID/PID 045E:028E has to be matched unconditionally rather than by name.
+                if (HidHideManager.IsVirtualDevice(d.InstanceName, null, d.ProductName, vendorId, productId)) continue;
 
                 // Real per-device capabilities rather than a one-size-fits-all guess, so
                 // DevicePresetService.GeneratePreset can trim its presets to what this specific
@@ -88,8 +114,6 @@ public class InputDeviceManager : IDisposable
                     hasPov = caps.PovCount > 0;
                 }
                 catch { /* keep the 32/8/true fallback */ }
-
-                var (vendorId, productId) = ParseVidPidFromProductGuid(d.ProductGuid);
 
                 list.Add(new DeviceHardwareInfo
                 {
@@ -142,6 +166,7 @@ public class InputDeviceManager : IDisposable
                 }
                 catch { }
                 _acquiredJoysticks.Remove(g);
+                _loggedAcquireFailures.Remove(g);
             }
 
             foreach (var d in devices)
@@ -154,8 +179,18 @@ public class InputDeviceManager : IDisposable
                         joystick.Properties.BufferSize = 128;
                         joystick.Acquire();
                         _acquiredJoysticks[d.InstanceGuid] = joystick;
+                        _loggedAcquireFailures.Remove(d.InstanceGuid);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        // Logged once per persistent failure (not every 1.5s hotplug retry) - see
+                        // _loggedAcquireFailures's doc comment. This is what used to be a bare
+                        // catch { } with zero trace of why a specific device never came online.
+                        if (_loggedAcquireFailures.Add(d.InstanceGuid))
+                        {
+                            LogDebug($"Acquire failed for '{d.InstanceName}' (VID={d.VendorId:X4} PID={d.ProductId:X4}): {ex.GetType().Name}: {ex.Message}");
+                        }
+                    }
                 }
             }
         }
@@ -167,16 +202,28 @@ public class InputDeviceManager : IDisposable
     public void StartHotplugWatcher()
     {
         _hotplugTimer?.Dispose();
-        _hotplugTimer = new Timer(_ => RefreshDevices(), null, dueTime: HotplugRefreshIntervalMs, period: HotplugRefreshIntervalMs);
+        // An unhandled exception inside a System.Threading.Timer callback is fatal to the whole
+        // process - RefreshDevices() has no top-level guard of its own, so one is needed here.
+        _hotplugTimer = new Timer(_ =>
+        {
+            try { RefreshDevices(); }
+            catch (Exception ex) { LogDebug($"Hotplug refresh threw: {ex.GetType().Name}: {ex.Message}"); }
+        }, null, dueTime: HotplugRefreshIntervalMs, period: HotplugRefreshIntervalMs);
     }
 
+    /// <summary>
+    /// Runs on a dedicated background <see cref="Thread"/> (not a thread-pool <c>Task.Run</c>) -
+    /// this loop spins continuously at <paramref name="pollIntervalMs"/> cadence for the entire
+    /// app lifetime, which is exactly what a dedicated thread is for rather than permanently
+    /// occupying a thread-pool worker slot.
+    /// </summary>
     public void StartPolling(int pollIntervalMs = 4)
     {
         StopPolling();
         _pollingCts = new CancellationTokenSource();
         var token = _pollingCts.Token;
 
-        _pollingTask = Task.Run(async () =>
+        _pollingThread = new Thread(() =>
         {
             while (!token.IsCancellationRequested)
             {
@@ -189,6 +236,8 @@ public class InputDeviceManager : IDisposable
                 foreach (var kvp in joysticksCopy)
                 {
                     if (token.IsCancellationRequested) break;
+
+                    RawDeviceInputState? polledState = null;
 
                     try
                     {
@@ -211,6 +260,12 @@ public class InputDeviceManager : IDisposable
 
                         bool[] buttons = state.Buttons;
 
+                        // Hoisted out of the `if` below so it's available for RawDeviceInputState
+                        // even when this device has no POV hat at all (stays at the "centered/none"
+                        // sentinel -1 in that case) - the diagnostics panel wants the raw angle
+                        // regardless of whether a POV is present.
+                        int pov = -1;
+
                         if (state.PointOfViewControllers.Length > 0)
                         {
                             // DirectInput reports a POV hat as a single angle in hundredths of
@@ -218,7 +273,7 @@ public class InputDeviceManager : IDisposable
                             // the 8 principal directions are handled here (diagonals like
                             // 4500 = up-right set both Up and Right), which is enough for a
                             // D-pad; a hat with finer resolution would need more angle checks.
-                            int pov = state.PointOfViewControllers[0];
+                            pov = state.PointOfViewControllers[0];
                             bool up = pov >= 0 && (pov == 0 || pov == 4500 || pov == 31500);
                             bool right = pov >= 0 && (pov == 4500 || pov == 9000 || pov == 13500);
                             bool down = pov >= 0 && (pov == 13500 || pov == 18000 || pov == 22500);
@@ -237,24 +292,37 @@ public class InputDeviceManager : IDisposable
                             buttons = expandedButtons;
                         }
 
-                        OnInputPolled?.Invoke(new RawDeviceInputState
+                        polledState = new RawDeviceInputState
                         {
                             InstanceGuid = kvp.Key,
                             DeviceName = joystick.Information.InstanceName,
                             Axes = axes,
-                            Buttons = buttons
-                        });
+                            Buttons = buttons,
+                            PovAngleHundredths = pov
+                        };
                     }
                     catch
                     {
                         try { kvp.Value.Acquire(); } catch { }
                     }
+
+                    // Deliberately outside the catch above: a throw from a subscriber (e.g.
+                    // MainWindowViewModel.ProcessInputPolling) must never be misattributed as a
+                    // device read failure and trigger a spurious Acquire() retry on a device that
+                    // was actually read just fine this tick.
+                    if (polledState != null)
+                    {
+                        try { OnInputPolled?.Invoke(polledState); }
+                        catch (Exception ex) { LogDebug($"OnInputPolled subscriber threw: {ex.GetType().Name}: {ex.Message}"); }
+                    }
                 }
 
-                try { await Task.Delay(pollIntervalMs, token); }
+                try { Thread.Sleep(pollIntervalMs); }
                 catch { break; }
             }
-        }, token);
+        })
+        { IsBackground = true, Name = "InputPolling", Priority = ThreadPriority.AboveNormal };
+        _pollingThread.Start();
     }
 
     public void StopPolling()
@@ -270,15 +338,15 @@ public class InputDeviceManager : IDisposable
             {
                 cts.Cancel();
                 // Give the loop a real chance to observe cancellation and return before Dispose()
-                // tears down the same Joystick/DirectInput objects it may still be touching -
-                // 100ms was tight against a loop that can be mid-Poll()/GetCurrentState() and not
-                // just sitting in Task.Delay.
-                _pollingTask?.Wait(500);
+                // tears down the same Joystick/DirectInput objects it may still be touching - a
+                // loop that can be mid-Poll()/GetCurrentState() rather than just sitting in a sleep.
+                _pollingThread?.Join(500);
             }
             catch { }
             finally
             {
                 cts.Dispose();
+                _pollingThread = null;
             }
         }
     }

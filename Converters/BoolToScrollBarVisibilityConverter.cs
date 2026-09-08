@@ -6,11 +6,11 @@ using Avalonia.Data.Converters;
 namespace ECCR.Converters;
 
 /// <summary>
-/// Drives the Binder page's gamepad Bindings-tab outer <see cref="ScrollViewer"/>'s
-/// <c>HorizontalScrollBarVisibility</c> from <c>IsVisualBinderHidden</c>. A ScrollViewer set up
+/// Drives the Device Mappings page's gamepad Mappings-tab outer <see cref="ScrollViewer"/>'s
+/// <c>HorizontalScrollBarVisibility</c> from <c>IsVisualDeviceMappingHidden</c>. A ScrollViewer set up
 /// for horizontal scrolling (<c>Auto</c>) measures its content with unconstrained width and
 /// arranges it at its own natural size rather than stretching to the viewport - which is exactly
-/// why the Rebinding Table's <c>*</c> column previously couldn't claim the space freed up when
+/// why the Device Mapping Table's <c>*</c> column previously couldn't claim the space freed up when
 /// the diagram column collapsed to zero (the Grid never stretched to the larger viewport in the
 /// first place). Disabling horizontal scrolling once the diagram is hidden (the table alone
 /// always comfortably fits its own MinWidth) makes the ScrollViewer measure/arrange against the

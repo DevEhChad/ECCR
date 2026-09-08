@@ -6,7 +6,7 @@ using ECCR.Models;
 namespace ECCR.Services;
 
 /// <summary>
-/// Hotspot coordinate table for the Visual Binder's controller-skin images
+/// Hotspot coordinate table for the Visual Device Mapping's controller-skin images
 /// (Assets/ControllerSkins/*.png, chroma-keyed from Assets/Controller UI/*.jpg). All 6 skins
 /// share the same native 2816x1536 canvas and button/stick layout (only shell color and
 /// face-button glyphs differ), so one table covers every skin. Coordinates were measured
@@ -72,7 +72,7 @@ public static class ControllerHotspotService
     /// <see cref="DevicePresetService.GetButtonDisplayName"/>/<see cref="DevicePresetService.GeneratePreset"/>.
     /// Returns null when the category has no discrete button for that semantic (e.g. Xbox pads
     /// have no L2/R2 *button*, only an axis, and no touchpad) - the hotspot then simply never
-    /// lights up for that category, though it can still be bound via the physical-press capture
+    /// lights up for that category, though it can still be mapped via the physical-press capture
     /// flow if the user pulls the trigger far enough to register as an axis instead.
     /// </summary>
     public static int? GetSemanticButtonIndex(DeviceHardwareCategory category, SemanticButton semantic)

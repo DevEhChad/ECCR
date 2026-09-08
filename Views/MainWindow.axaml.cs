@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -55,6 +56,9 @@ public partial class MainWindow : Window
     /// "close minimizes to tray" enabled, the close is cancelled and the window just hides,
     /// leaving the tray icon and all background polling/feeding running. Only a real quit
     /// (tray "Exit", or this setting being off) tears everything down and exits the process.
+    /// Skipped entirely when a debugger is attached - hiding instead of exiting would strand
+    /// the process in the background holding the single-instance mutex (see Program.cs), so the
+    /// next debug launch would attach and immediately exit with no indication why.
     /// </summary>
     protected override void OnClosing(WindowClosingEventArgs e)
     {
@@ -66,7 +70,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (vm.RunInSystemTray && vm.CloseMinimizesToTray)
+            if (vm.RunInSystemTray && vm.CloseMinimizesToTray && !Debugger.IsAttached)
             {
                 e.Cancel = true;
                 Hide();
@@ -81,7 +85,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Routes Esc (cancel) / Backspace (clear) to an in-progress "Click to Bind" capture -
+    /// Routes Esc (cancel) / Backspace (clear) to an in-progress "Click to Map" capture -
     /// see <see cref="MainWindowViewModel.StartListening"/>. Scoped to <see cref="MainWindowViewModel.IsListening"/>
     /// so this never swallows Backspace while the user is typing in a normal TextBox elsewhere
     /// in the app (profile name entry, HidHide app path, etc).
@@ -99,7 +103,7 @@ public partial class MainWindow : Window
                 }
                 else if (e.Key == Key.Back)
                 {
-                    vm.ClearListeningBinding();
+                    vm.ClearListeningMapping();
                     e.Handled = true;
                 }
             }
@@ -127,7 +131,7 @@ public partial class MainWindow : Window
 
         if (change.Property == WindowStateProperty)
         {
-            if (WindowState == WindowState.Minimized && DataContext is MainWindowViewModel vm && vm.RunInSystemTray && vm.MinimizeToTray)
+            if (WindowState == WindowState.Minimized && DataContext is MainWindowViewModel vm && vm.RunInSystemTray && vm.MinimizeToTray && !Debugger.IsAttached)
             {
                 Hide();
             }

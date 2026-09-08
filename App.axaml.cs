@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -61,13 +62,28 @@ public partial class App : Application
     /// the app actually goes away if some future change to that chain (or a misbehaving driver
     /// call) ever blocks indefinitely: a background watchdog force-kills the process a few
     /// seconds after this is called if it hasn't already exited by then.
+    ///
+    /// <para>
+    /// The watchdog calls <see cref="Process.Kill"/> (Win32 <c>TerminateProcess</c>), not
+    /// <see cref="Environment.Exit"/> - this used to be the bug that made the app "still running
+    /// in the background after shutdown" with no visible window. <c>Environment.Exit</c> still
+    /// runs the normal CLR shutdown sequence (finalizers, then native DLL unload via
+    /// <c>DllMain(DLL_PROCESS_DETACH)</c> for every loaded interop library - SharpDX/DirectInput,
+    /// ViGEm, vJoy, HidHide's driver client), which is exactly what a misbehaving driver call can
+    /// hang inside. The normal exit path below and the CleanupAndShutdown steps above already
+    /// exercise that same native surface, so a watchdog that also calls <c>Environment.Exit</c>
+    /// can hang identically to what it exists to catch - it was never an actual guarantee.
+    /// <c>Process.Kill</c> terminates the process at the OS level immediately, independent of any
+    /// CLR or native shutdown state, so it can't be blocked by the same class of hang.
+    /// </para>
     /// </summary>
     private static void RunCleanupWithWatchdog(MainWindowViewModel? vm)
     {
         var watchdog = new Thread(() =>
         {
             Thread.Sleep(5000);
-            Environment.Exit(1);
+            try { Process.GetCurrentProcess().Kill(); }
+            catch { Environment.Exit(1); } // best-effort fallback if Kill() itself somehow throws
         })
         { IsBackground = true, Name = "ShutdownWatchdog" };
         watchdog.Start();
@@ -81,6 +97,18 @@ public partial class App : Application
             }
         }
         catch { }
+
+        // Cheap insurance against a stale tray icon lingering after exit - Environment.Exit
+        // below should already reclaim every native handle including this one, but removing it
+        // explicitly costs nothing and avoids relying on that.
+        try { _instance?.RemoveTrayIcon(); } catch { }
+    }
+
+    private void RemoveTrayIcon()
+    {
+        if (_trayIcon == null) return;
+        TrayIcon.SetIcons(this, new TrayIcons());
+        _trayIcon = null;
     }
 
     public override void Initialize()

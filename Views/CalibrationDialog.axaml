@@ -157,7 +157,7 @@
 
                         <Border x:Name="WheelRotationDivider" IsVisible="False" Height="1" Background="#1F283C" Margin="0,2"/>
 
-                        <Grid ColumnDefinitions="*, 40">
+                        <Grid ColumnDefinitions="*, Auto">
                             <StackPanel Grid.Column="0" Spacing="2">
                                 <TextBlock Text="Dead Zone" FontWeight="SemiBold" FontSize="12" Foreground="White"/>
                                 <TextBlock Text="Eliminates input jitter near resting position." FontSize="11" Foreground="#888899" TextWrapping="Wrap"/>

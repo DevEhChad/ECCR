@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ECCR.Models;
@@ -40,9 +41,17 @@ public partial class GamepadDeviceSettings : ObservableObject
     [ObservableProperty]
     private int _lightMotorIntensityPercent = 100;
 
-    /// <summary>Whether this device's own visual binder diagram is collapsed on the Bindings tab, so the Rebinding Table can use the full width - per-device rather than a global app setting, so switching gamepads restores each one's own saved layout choice.</summary>
+    /// <summary>
+    /// Whether this device's own visual mapping diagram is collapsed on the Device Mappings tab,
+    /// so the Device Mapping Table can use the full width - per-device rather than a global app
+    /// setting, so switching gamepads restores each one's own saved layout choice.
+    /// <see cref="JsonPropertyNameAttribute"/> keeps the serialized key stable as "IsVisualBinderHidden"
+    /// (its name before this property was renamed for terminology consistency) so profile JSON
+    /// files saved before this rename still deserialize without a migration step.
+    /// </summary>
+    [JsonPropertyName("IsVisualBinderHidden")]
     [ObservableProperty]
-    private bool _isVisualBinderHidden = false;
+    private bool _isVisualDeviceMappingHidden = false;
 
     /// <summary>PlayStation touchpad only - see <see cref="Models.TouchpadClickMode"/>. Unified by default so existing behavior (every click = full-panel) is unchanged until a user opts in.</summary>
     [ObservableProperty]

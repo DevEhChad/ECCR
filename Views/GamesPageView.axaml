@@ -33,7 +33,7 @@
                 <Grid ColumnDefinitions="*, Auto, Auto, Auto">
                     <StackPanel Grid.Column="0" Spacing="2">
                         <TextBlock Text="🎮 Games" FontWeight="Bold" FontSize="18" Foreground="White"/>
-                        <TextBlock Text="Bind installed games to mapping profiles." FontSize="12" Foreground="#8B95A5"/>
+                        <TextBlock Text="Assign installed games to profiles." FontSize="12" Foreground="#8B95A5"/>
                     </StackPanel>
                     <Button Grid.Column="1" Content="Remove Uninstalled" Margin="0,0,8,0" Padding="12,8" CornerRadius="6"
                             Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
@@ -93,12 +93,12 @@
                         <DataTemplate x:DataType="vm:GameCardViewModel">
                             <Border Classes="gameCard" Width="200" Margin="0,0,16,16">
                                 <StackPanel Spacing="8">
-                                    <Panel Height="110" Background="#0D1119">
+                                    <Panel Height="220" Background="#0D1119">
                                         <Image Source="{Binding BannerImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
                                                Stretch="UniformToFill"
                                                RenderOptions.BitmapInterpolationMode="HighQuality"
                                                IsVisible="{Binding BannerImagePath, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
-                                        <TextBlock Text="🎮" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        <TextBlock Text="🎮" FontSize="40" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                    IsVisible="{Binding BannerImagePath, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
                                     </Panel>
 
@@ -156,6 +156,8 @@
 
                     <Button Content="Edit Exe Path" Classes="neutral" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding EditDrawerTargetExePathCommand}"
                             ToolTip.Tip="If auto-detection picked the wrong executable, point this binding at the correct one"/>
+                    <Button Content="Change Banner" Classes="neutral" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding EditDrawerTargetBannerCommand}"
+                            ToolTip.Tip="Manually pick a banner/box-art image for this game - useful for Epic/EA titles where automatic art isn't available"/>
                     <Button Content="Unbind" Classes="danger" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding UnbindDrawerTargetCommand}"/>
 
                     <Button Content="Close" Background="#262D3D" CornerRadius="6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Command="{Binding CloseDrawerCommand}"/>

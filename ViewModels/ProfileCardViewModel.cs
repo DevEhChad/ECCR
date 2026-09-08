@@ -78,7 +78,7 @@ public partial class ProfileCardViewModel : ViewModelBase
     private void Edit()
     {
         _host.SelectedProfile = ProfileName;
-        _host.NavigateToCommand.Execute(AppPage.Binder);
+        _host.NavigateToCommand.Execute(AppPage.DeviceMapping);
     }
 
     [RelayCommand]

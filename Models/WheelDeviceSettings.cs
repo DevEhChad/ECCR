@@ -128,10 +128,13 @@ public partial class WheelDeviceSettings : ObservableObject
     private bool _isClipping = false;
 
     /// <summary>
-    /// Shows every physical input the device reports (not just already-bound ones) as
-    /// placeholder rows in the Rebinding Table - see <c>BinderPageViewModel.RebuildDisplayRows</c>.
-    /// Off by default so selecting a device doesn't immediately dump its full capability list
-    /// into the table; the user opts in via the table's "Show All Inputs" toggle.
+    /// Legacy/migration-source only: superseded by <see cref="ECCR.Models.HardwareDeviceProfile.ShowAllPhysicalInputs"/>
+    /// in the global <see cref="ECCR.Services.HardwareProfileService"/> store, which
+    /// <c>DeviceMappingPageViewModel</c>/<c>InputMatrixViewModel</c> read/write now instead of this
+    /// field, since a per-profile "Show All Inputs" state per device made no sense once nicknames
+    /// moved out of per-profile storage. Kept only so old profile JSON still deserializes and
+    /// <see cref="ECCR.Services.HardwareProfileService.MigrateFromLegacyIfNeeded"/> can seed the
+    /// global store from it once per profile on load; nothing else reads/writes this anymore.
     /// </summary>
     [ObservableProperty]
     private bool _showAllPhysicalInputs = false;
@@ -139,11 +142,8 @@ public partial class WheelDeviceSettings : ObservableObject
     private static string InputKey(InputType type, int index) => $"{type}:{index}";
 
     /// <summary>
-    /// Physical inputs (keyed as "Button:{index}" / "Axis:{index}") the user has explicitly
-    /// dismissed from the Rebinding Table's "Show All Inputs" placeholder listing (see
-    /// <c>BinderPageViewModel.RebuildDisplayRows</c>) - e.g. buttons on a 40-button wheel base
-    /// they'll never bind and don't want cluttering the table. Real, already-bound entries are
-    /// never affected by this - only unbound placeholder rows are ever hidden.
+    /// Legacy/migration-source only - see <see cref="ShowAllPhysicalInputs"/>'s doc comment.
+    /// Superseded by <see cref="ECCR.Models.HardwareDeviceProfile.HiddenPlaceholderInputs"/>.
     /// </summary>
     public HashSet<string> HiddenPlaceholderInputs { get; set; } = new();
 
@@ -164,5 +164,27 @@ public partial class WheelDeviceSettings : ObservableObject
         if (HiddenPlaceholderInputs.Count == 0) return;
         HiddenPlaceholderInputs.Clear();
         OnPropertyChanged(nameof(HiddenPlaceholderInputs));
+    }
+
+    /// <summary>
+    /// Legacy/migration-source only - see <see cref="ShowAllPhysicalInputs"/>'s doc comment.
+    /// Superseded by <see cref="ECCR.Models.HardwareDeviceProfile.ButtonNicknames"/> in the
+    /// global, profile-independent <see cref="ECCR.Services.HardwareProfileService"/> store -
+    /// per-profile nicknames meant switching a game profile silently gave a device a different
+    /// nickname set, which defeated the point of naming a physical button.
+    /// </summary>
+    public Dictionary<string, string> ButtonNicknames { get; set; } = new();
+
+    /// <summary>Null if this input has no nickname set (or the entry is blank/whitespace-only).</summary>
+    public string? GetButtonNickname(InputType type, int index) =>
+        ButtonNicknames.TryGetValue(InputKey(type, index), out var nick) && !string.IsNullOrWhiteSpace(nick) ? nick : null;
+
+    /// <summary>Sets (or, given null/whitespace, clears) one input's nickname, then raises <see cref="ButtonNicknames"/>'s PropertyChanged so the existing auto-save hook fires.</summary>
+    public void SetButtonNickname(InputType type, int index, string? nickname)
+    {
+        string key = InputKey(type, index);
+        if (string.IsNullOrWhiteSpace(nickname)) ButtonNicknames.Remove(key);
+        else ButtonNicknames[key] = nickname.Trim();
+        OnPropertyChanged(nameof(ButtonNicknames));
     }
 }

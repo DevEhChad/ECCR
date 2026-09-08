@@ -35,7 +35,7 @@ public class KeyboardFeederService : IVirtualFeeder
     public void UpdateAxis(uint targetDeviceId, string targetOutput, double normalizedValue)
     {
         if (!targetOutput.StartsWith("[Keyboard]", StringComparison.OrdinalIgnoreCase)) return;
-        // Axes bound to a keyboard key are treated digitally: pressed once travel crosses the
+        // Axes mapped to a keyboard key are treated digitally: pressed once travel crosses the
         // midpoint, released below it - same threshold philosophy as a deadzone-gated button.
         SetKeyState(targetOutput, normalizedValue >= 0.5);
     }
@@ -96,7 +96,7 @@ public class KeyboardFeederService : IVirtualFeeder
     /// struct-based form - deliberately avoids marshaling any P/Invoke struct at all (no
     /// [StructLayout(Explicit)] union to get subtly wrong), since a bad struct layout there
     /// produces an AccessViolationException that no ordinary try/catch can stop, crashing the
-    /// whole app the instant a keyboard-bound input first fires. keybd_event is officially
+    /// whole app the instant a keyboard-mapped input first fires. keybd_event is officially
     /// superseded by SendInput but remains fully functional on modern Windows; the try/catch
     /// below is defense in depth so any future interop failure here degrades to "the key press
     /// silently doesn't happen" instead of taking the app down, matching how every other feeder

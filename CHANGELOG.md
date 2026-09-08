@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.1.0] - 2026-08-31
+## [1.1.0] - 2026-09-08
 
 ### 🚀 Added
+- **Keyboard Output Target:** Mappings can now route to keyboard key presses (`[Keyboard] ...`) via a new `KeyboardFeederService`, alongside the existing Xbox/DS4/Wheel virtual outputs.
+- **Games Library:** New Games page auto-discovers installed titles from Steam, Epic, EA/Origin, and the Xbox app, and lets you bind each one to a mapping profile for automatic profile switching. Steam and Xbox titles fetch real box art from their respective public CDN/catalog APIs (falling back to a composited exe-icon banner when unavailable); a manual "Change Banner" picker covers Epic/EA titles and any custom-added game.
+- **Profiles Page Overhaul:** Profile cards now show bound-game counts and device-type summaries, with a "Global Default" profile designation and an on-screen toast notification when a profile auto-switches.
+- **Per-Device Wheel FFB Profiles:** New `WheelProfileService` resolves known wheelbases against a bundled/community profile table (`wheel_profiles.json`) for better default force-feedback behavior and axis/button naming.
+- **XInput Rumble Support:** Real Xbox-branded controllers now also receive rumble feedback via `XInputRumbleService`, alongside the existing Sony HID rumble path.
 - **Real Wheel Force Feedback:** A game's force-feedback effects (spring, damper, friction, constant/ramp/periodic forces) now relay live from its virtual `[Wheel]` device all the way back to the real wheel — decoded from vJoy's PID packet callback and replayed as native DirectInput effects on the physical device. This was previously flagged as out of scope; `vJoyFeederService` was output-only.
 - **Wheel Settings Tab:** New per-device tab on the Device Mapping page for rotation degrees, force-feedback master toggle + strength (0–200%), individual spring/damper/friction effect toggles, invert-force, an "FFB not detected" capability banner, and a shortcut into HidHide cloaking.
 - **Controller Mapping Redesign:** The Controller Mapping page is now a tabbed layout (Button Mapping, Deadzones, Motion, Sticks, Touchpad, More Options) scoped to a device picker, alongside a profile switcher and virtual-device indicator in the header.
@@ -22,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Physical Input Nicknames:** Every physical button/axis can now be renamed via a new "✎" editor next to its row in the mapping grid — useful for wheels/rigs whose printed button legend ECCR can't infer (most brands besides Moza don't distinguish a PlayStation-legend vs. Xbox-legend SKU). The nickname persists per device and shows everywhere that input's name appears (mapping grid, Calibration dialog, Click-to-Bind capture).
 
 ### 🔄 Changed
+- **Device Mapping Table Now Expands Full-Width:** Hiding a gamepad's visual diagram now genuinely lets the Device Mapping Table fill the whole page width, matching how the wheel mapping table has always looked - the diagram-hidden layout previously left the table sized to a narrow column regardless of the toggle.
+- **Games/Profiles Card Art:** Game cards now show real box art at a proper portrait aspect ratio where available, instead of a stretched square icon in a landscape box.
+- **Tray Behavior Off by Default:** "Run in System Tray," "Minimize to Tray," and "Close Minimizes to Tray" now default to off, so closing the window fully exits the app unless you opt into tray behavior in Settings.
 - **Full Shutdown Teardown:** Exiting ECCR now also live-disables HidHide cloaking and the virtual output devices, so every physical device is visible and every virtual one is gone the moment the process exits — the saved on/off preferences are untouched and simply reapply on next launch.
 - **Device Mapping Page Redesign:** Rebuilt to match the new Controller Mapping page's tab-strip/device-picker pattern via a shared `DeviceMappingGroupsPanel`, instead of a single flat grid.
 - **`WheelDeviceSettings` Is Now Live:** Converted to an observable model wired into profile save/load and the new Wheel Settings tab — previously scaffolded but completely unused by the app.
@@ -30,11 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Consistent Dropdown Styling:** Added a baseline style for every `ComboBox` in the app (min-width, corner radius, text trimming) and filled in missing ellipsis-trimming/width on the Channel, Player/Wheel Slot, device-picker, and Gyro/Touch-Aim dropdowns, so long labels no longer overlap or clip at normal window widths.
 
 ### 🛠️ Fixed
+- **App Freezing on "Add Input" and While Capturing a Binding:** Selecting a device, clicking "Add Input," and pressing a button to complete a Click-to-Bind capture could each freeze the whole app for a few seconds - caused by a full DirectInput device re-enumeration and blocking HidHide driver calls running synchronously on the UI thread. Both now run off the UI thread with an in-memory device cache, and no longer block interaction.
+- **App Sometimes Stayed Running in the Background After Exit:** The shutdown watchdog meant to guarantee the process exits could itself hang on the same class of stuck native driver call it was supposed to catch. It now force-terminates the process directly instead of going through the same shutdown path.
 - **Re-Bind Cancel No Longer Blanked the Label:** Canceling an in-progress re-bind of an already-bound key used to permanently show "Click to Bind" even though the underlying binding was untouched; canceling now correctly restores the real label.
 - **New Bindings Landing in the Wrong Section:** "+ New Binding" used to guess an already-connected real device as the source, which could silently place a brand-new binding under an unrelated device's group (sometimes in the wrong section entirely) instead of leaving it unbound for Click-to-Bind.
 - **HidHide Cloak Toggle Needed a Manual Re-Enable to Take Effect:** Checking/unchecking an individual device in the HidHide dialog only edited the driver's blocklist, never its live enforcement flag — so a toggle silently did nothing until the user manually disabled and re-enabled the master "Cloaking Active" switch. Per-device toggles (single, select-all/deselect-all, and dialog-close sync) now force the driver to re-apply immediately.
 - **Wheel Rotation Dial Could Disagree With Wheel Settings:** The Calibration dialog's steering dial read a separate, disconnected rotation-degrees value from the one set on the Wheel Settings tab, so the visual could show the wrong lock-to-lock range for the wheel's actual configured rotation.
 - **Auto-Bind Wizard Couldn't Target Wheel Slots Beyond 4:** Applying a DirectInput Wheel preset always wrote to whichever of the 4 Xbox Player slots was selected, so a wheel-mode preset could never land on Wheel Slots 5–8.
+
+### ⚠️ Known Limitations
+- **Device Mapping/Bindings and Wheel Force Feedback Are Experimental:** Both were substantially reworked in this release and haven't yet had wide real-world testing across the full range of controllers/wheels. If you hit a mapping that won't bind correctly, or force-feedback effects that feel wrong/absent on your specific hardware, please report it - these areas are actively being hardened.
 
 ---
 

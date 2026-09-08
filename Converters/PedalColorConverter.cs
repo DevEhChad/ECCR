@@ -7,7 +7,7 @@ namespace ECCR.Converters;
 
 /// <summary>
 /// Resolves a pedal/lever's accent color from its <see cref="Models.MappingEntry.TargetOutput"/>
-/// string - shared by <see cref="Views.CalibrationDialog"/>'s pedal-bar visual and the Binder
+/// string - shared by <see cref="Views.CalibrationDialog"/>'s pedal-bar visual and the Device Mappings
 /// page's Pedal Settings tab, so both surfaces agree on the same color table instead of each
 /// keeping its own copy.
 /// </summary>

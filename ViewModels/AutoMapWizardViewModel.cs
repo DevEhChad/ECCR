@@ -10,27 +10,27 @@ using ECCR.Services;
 namespace ECCR.ViewModels;
 
 /// <summary>
-/// Backs the Auto-Bind Configuration Wizard: preset generation for the selected device and
-/// applying the generated bindings to the shared mapping list. The device list and the
+/// Backs the Auto-Map Configuration Wizard: preset generation for the selected device and
+/// applying the generated mappings to the shared mapping list. The device list and the
 /// mapping collection are shared instances owned by <see cref="MainWindowViewModel"/>, so
 /// the wizard reads and writes the same data the main grid displays.
 /// </summary>
-public partial class AutoBindWizardViewModel : ViewModelBase
+public partial class AutoMapWizardViewModel : ViewModelBase
 {
     private readonly Func<List<DeviceHardwareInfo>> _connectedDeviceInfo;
     private readonly ObservableCollection<MappingEntry> _mappings;
 
     /// <summary>
-    /// Invoked after bindings are applied so the host can rebuild the grouped view,
+    /// Invoked after mappings are applied so the host can rebuild the grouped view,
     /// refresh the virtual device summary and auto-save the active profile.
     /// </summary>
-    private readonly Action _onBindingsApplied;
+    private readonly Action _onMappingsApplied;
 
-    // Auto-Bind Wizard Properties
+    // Auto-Map Wizard Properties
     [ObservableProperty]
     private string _wizardSelectedDevice = string.Empty;
 
-    /// <summary>Which virtual backend newly-applied bindings target - Xbox/DS4 (ViGEm) or Wheel (vJoy). See <see cref="ECCR.Services.OutputCategory"/>.</summary>
+    /// <summary>Which virtual backend newly-applied mappings target - Xbox/DS4 (ViGEm) or Wheel (vJoy). See <see cref="ECCR.Services.OutputCategory"/>.</summary>
     [ObservableProperty]
     private OutputCategory _wizardOutputCategory = OutputCategory.Xbox;
 
@@ -69,16 +69,16 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Which virtual player slot newly-applied bindings are assigned to. Defaults to Player 1
-    /// but is user-selectable (see the wizard's "Assign to Player" combo) so re-running Auto
-    /// Bind on a device previously bulk-assigned to P2-P4 doesn't silently reset it to P1.
+    /// Which virtual player slot newly-applied mappings are assigned to. Defaults to Player 1
+    /// but is user-selectable (see the wizard's "Assign to Player" combo) so re-running Auto-Map
+    /// on a device previously bulk-assigned to P2-P4 doesn't silently reset it to P1.
     /// </summary>
     [ObservableProperty]
     private uint _wizardTargetPlayer = 1;
 
     /// <summary>
     /// Which Wheel Slot (vJoy device 1-8, see <see cref="MainWindowViewModel.WheelSlots"/>)
-    /// newly-applied "[Wheel] ..." bindings are assigned to when <see cref="WizardTargetIsWheel"/>
+    /// newly-applied "[Wheel] ..." mappings are assigned to when <see cref="WizardTargetIsWheel"/>
     /// is true - the wheel-target counterpart of <see cref="WizardTargetPlayer"/>, kept as a
     /// separate property since a wheel slot and a Player are different numeric namespaces (see
     /// <see cref="MappingEntry.TargetDeviceId"/>'s doc comment).
@@ -86,7 +86,7 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     [ObservableProperty]
     private uint _wizardTargetWheelSlot = 1;
 
-    public ObservableCollection<PresetBindingItem> WizardBindings { get; } = new();
+    public ObservableCollection<PresetMappingItem> WizardMappings { get; } = new();
 
     /// <summary>Shared with the host view model; populated as devices are detected.</summary>
     public ObservableCollection<string> ConnectedDevices { get; }
@@ -98,30 +98,30 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     public ObservableCollection<WheelDeviceSlotOption> WheelSlots { get; }
 
     /// <summary>Design-time constructor.</summary>
-    public AutoBindWizardViewModel()
+    public AutoMapWizardViewModel()
         : this(new ObservableCollection<string>(), () => new List<DeviceHardwareInfo>(), new ObservableCollection<MappingEntry>(), new ObservableCollection<PlayerTargetOption>(), new ObservableCollection<WheelDeviceSlotOption>(), () => { })
     {
     }
 
-    public AutoBindWizardViewModel(
+    public AutoMapWizardViewModel(
         ObservableCollection<string> connectedDevices,
         Func<List<DeviceHardwareInfo>> connectedDeviceInfo,
         ObservableCollection<MappingEntry> mappings,
         ObservableCollection<PlayerTargetOption> playerTargets,
         ObservableCollection<WheelDeviceSlotOption> wheelSlots,
-        Action onBindingsApplied)
+        Action onMappingsApplied)
     {
         ConnectedDevices = connectedDevices;
         _connectedDeviceInfo = connectedDeviceInfo;
         _mappings = mappings;
         PlayerTargets = playerTargets;
         WheelSlots = wheelSlots;
-        _onBindingsApplied = onBindingsApplied;
+        _onMappingsApplied = onMappingsApplied;
     }
 
     /// <summary>
     /// Preselects a device and its DirectInput Wheel vs. Xbox Gamepad target, and regenerates
-    /// the preset preview - run every time the Auto-Bind page is navigated to (see
+    /// the preset preview - run every time the Auto-Map page is navigated to (see
     /// <c>MainWindowViewModel.OnCurrentPageChanged</c>) rather than behind an explicit "open"
     /// action, since the page is now always part of the shell instead of a popup wizard.
     /// </summary>
@@ -149,7 +149,7 @@ public partial class AutoBindWizardViewModel : ViewModelBase
     [RelayCommand]
     public void PopulateWizardPreset()
     {
-        WizardBindings.Clear();
+        WizardMappings.Clear();
         if (string.IsNullOrWhiteSpace(WizardSelectedDevice)) return;
 
         var connectedInfo = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
@@ -161,21 +161,21 @@ public partial class AutoBindWizardViewModel : ViewModelBase
         var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardOutputCategory, hasPov, vidPid);
         foreach (var item in presets)
         {
-            WizardBindings.Add(item);
+            WizardMappings.Add(item);
         }
     }
 
     [RelayCommand]
-    public void ApplyWizardBindings()
+    public void ApplyWizardMappings()
     {
-        if (string.IsNullOrWhiteSpace(WizardSelectedDevice) || WizardBindings.Count == 0) return;
+        if (string.IsNullOrWhiteSpace(WizardSelectedDevice) || WizardMappings.Count == 0) return;
 
         var targetDevice = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
         Guid devGuid = targetDevice?.InstanceGuid ?? Guid.Empty;
         uint targetDeviceId = WizardTargetIsWheel ? WizardTargetWheelSlot : WizardTargetPlayer;
 
-        DevicePresetService.ApplyPreset(_mappings, WizardSelectedDevice, devGuid, WizardBindings.ToList(), targetDeviceId);
+        DevicePresetService.ApplyPreset(_mappings, WizardSelectedDevice, devGuid, WizardMappings.ToList(), targetDeviceId);
 
-        _onBindingsApplied();
+        _onMappingsApplied();
     }
 }

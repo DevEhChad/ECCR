@@ -65,7 +65,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- Utility nav (HidHide, Auto Bind, About, Settings) -->
+            <!-- Utility nav (HidHide, Auto Map, About, Settings) -->
             <StackPanel Grid.Row="2" Margin="0,8,0,10">
                 <Border Height="1" Background="#1F283C" Margin="12,0,12,8"/>
                 <ItemsControl ItemsSource="{Binding UtilityNavItems}">

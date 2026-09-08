@@ -30,6 +30,7 @@ public class GameLibraryService
     private readonly string _gamesFilePath;
     private readonly IReadOnlyList<IGameDiscoveryProvider> _providers;
     private readonly GameArtResolverService _artResolver = new();
+    private readonly object _saveLock = new();
 
     public ObservableCollection<GameInfo> Games { get; } = new();
 
@@ -63,40 +64,77 @@ public class GameLibraryService
         catch { }
     }
 
+    /// <summary>
+    /// Reads and parses the games file on a background thread (this used to run synchronously on
+    /// the UI thread at app startup) then populates <see cref="Games"/> back on the UI thread,
+    /// since it's an ObservableCollection bound to the Games/Profiles pages. Fire-and-forget by
+    /// design - the only caller is <c>MainWindowViewModel</c>'s constructor, and every page that
+    /// binds to <see cref="Games"/> reacts to its CollectionChanged as entries arrive rather than
+    /// needing them present synchronously.
+    /// </summary>
     public void Load()
     {
-        Games.Clear();
-        if (string.IsNullOrEmpty(_gamesFilePath) || !File.Exists(_gamesFilePath)) return;
+        if (string.IsNullOrEmpty(_gamesFilePath) || !File.Exists(_gamesFilePath))
+        {
+            Games.Clear();
+            return;
+        }
 
-        try
+        Task.Run(() =>
         {
-            var games = JsonSerializer.Deserialize<List<GameInfo>>(File.ReadAllText(_gamesFilePath));
-            if (games == null) return;
-            foreach (var g in games)
+            List<GameInfo>? games = null;
+            try
             {
-                if (g == null) continue;
-                Games.Add(g);
+                games = JsonSerializer.Deserialize<List<GameInfo>>(File.ReadAllText(_gamesFilePath));
             }
-        }
-        catch
-        {
-            // Missing/corrupt file -> start with an empty library rather than crash.
-        }
+            catch
+            {
+                // Missing/corrupt file -> start with an empty library rather than crash.
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                Games.Clear();
+                if (games == null) return;
+                foreach (var g in games)
+                {
+                    if (g == null) continue;
+                    Games.Add(g);
+                }
+            });
+        });
     }
 
-    /// <summary>Unlike most persistence in this app, failures here are logged (not fully silent) - losing the whole hand-curated game library (icons, bindings, auto-switch flags) is a bigger loss than one missed profile re-save.</summary>
+    /// <summary>
+    /// Unlike most persistence in this app, failures here are logged (not fully silent) - losing
+    /// the whole hand-curated game library (icons, bindings, auto-switch flags) is a bigger loss
+    /// than one missed profile re-save. Snapshots <see cref="Games"/> synchronously (must happen
+    /// on the caller's thread - it's an ObservableCollection bound to the UI, not safe to
+    /// enumerate from a background thread while it could be mutated), then does the actual disk
+    /// write on a background thread so a caller on the UI thread (most callers here, plus every
+    /// per-game mutator below) never blocks on I/O. <see cref="_saveLock"/> serializes overlapping
+    /// writes (e.g. several games' art resolving in quick succession each triggering a Save)
+    /// so they can't interleave into a corrupt file.
+    /// </summary>
     public void Save()
     {
         if (string.IsNullOrEmpty(_gamesFilePath)) return;
-        try
+        var snapshot = Games.ToList();
+        Task.Run(() =>
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_gamesFilePath)!);
-            File.WriteAllText(_gamesFilePath, JsonSerializer.Serialize(Games.ToList(), JsonOptions));
-        }
-        catch (Exception ex)
-        {
-            LogDebug($"Save failed: {ex.GetType().Name}: {ex.Message}");
-        }
+            try
+            {
+                lock (_saveLock)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(_gamesFilePath)!);
+                    File.WriteAllText(_gamesFilePath, JsonSerializer.Serialize(snapshot, JsonOptions));
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Save failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        });
     }
 
     public GameInfo AddManualGame(string exePath, string displayName, string? bannerPath)
@@ -161,6 +199,15 @@ public class GameLibraryService
         var game = Games.FirstOrDefault(g => g.Id == gameId);
         if (game == null) return;
         game.ExecutablePath = newPath;
+        Save();
+    }
+
+    /// <summary>Manual override for a game's banner/box-art image - the Games page's "Change Banner" button, mainly for Epic/EA titles where automatic art resolution has no reliable free source.</summary>
+    public void UpdateBannerImagePath(Guid gameId, string newPath)
+    {
+        var game = Games.FirstOrDefault(g => g.Id == gameId);
+        if (game == null) return;
+        game.BannerImagePath = newPath;
         Save();
     }
 

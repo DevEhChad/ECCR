@@ -6,14 +6,14 @@ using ECCR.Models;
 namespace ECCR.Services;
 
 /// <summary>
-/// Hotspot coordinate table for the Binder page's generic wheel+pedal diagram - the wheel
-/// equivalent of <see cref="ControllerHotspotService"/>. Unlike the gamepad Visual Binder,
+/// Hotspot coordinate table for the Device Mappings page's generic wheel+pedal diagram - the wheel
+/// equivalent of <see cref="ControllerHotspotService"/>. Unlike the gamepad Visual Device Mapping,
 /// there is no product photo to overlay: the diagram itself is hand-drawn vector shapes (see
-/// <c>Views/BinderDiagramView.axaml</c>'s wheel branch), authored together with these hotspot
+/// <c>Views/DeviceMappingDiagramView.axaml</c>'s wheel branch), authored together with these hotspot
 /// bounds on one shared 1400x900 canvas rather than measured off pre-existing artwork.
 /// Only the brand-independent inputs get a hotspot here (steering, the 4 pedal/handbrake axes,
 /// D-Pad) - see <see cref="WheelSemanticInput"/>'s doc comment for why every face-button/paddle/
-/// bumper/menu hotspot was removed rather than positioned per brand. The Rebinding Table (with
+/// bumper/menu hotspot was removed rather than positioned per brand. The Device Mapping Table (with
 /// "Show All Inputs" on) remains the complete, always-accurate listing of every physical input;
 /// this diagram is a quick-click convenience for the handful of controls it can place correctly.
 /// </summary>

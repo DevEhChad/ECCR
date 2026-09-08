@@ -9,16 +9,16 @@ using ECCR.Services;
 namespace ECCR.ViewModels;
 
 /// <summary>
-/// Backs the unified Binder page: one device list (every connected wheel, pedal set, and
+/// Backs the unified Device Mappings page: one device list (every connected wheel, pedal set, and
 /// gamepad, same shared instance as <see cref="ConnectedDevicesPageViewModel.Devices"/>) with
 /// an inline content swap on selection, replacing the old split Controller Mapping / Device
-/// Mapping pages. The "Bindings" tab (<see cref="Diagram"/> + the Rebinding Table) is always
+/// Mapping pages. The "Mappings" tab (<see cref="Diagram"/> + the Device Mapping Table) is always
 /// available and is the new default view; the remaining tabs are ported near-verbatim from
 /// <c>ControllerMappingViewModel</c> (Deadzones/Sticks/Motion/Touchpad/MoreOptions, gamepad
 /// only) and <c>DeviceMappingViewModel</c> (WheelSettings, wheel only), gated by
 /// <see cref="IsSelectedDeviceGamepad"/>/<see cref="IsSelectedDeviceWheel"/>.
 /// </summary>
-public partial class BinderPageViewModel : ViewModelBase
+public partial class DeviceMappingPageViewModel : ViewModelBase, INavigationAware
 {
     private readonly MainWindowViewModel _host;
     private readonly ObservableCollection<DeviceMappingGroup> _gamepadGroups;
@@ -28,7 +28,9 @@ public partial class BinderPageViewModel : ViewModelBase
     public ObservableCollection<ControllerStatus> Devices { get; }
     public bool HasDevices => Devices.Count > 0;
 
-    public BinderDiagramViewModel Diagram { get; }
+    public DeviceMappingDiagramViewModel Diagram { get; }
+
+    public InputMatrixViewModel InputMatrix { get; }
 
     /// <summary>Controller LED state, retargeted to whichever gamepad is currently selected (see <see cref="RaiseDeviceScopedPropertiesChanged"/>) - embedded in the More Options tab instead of the old standalone Controller LED page.</summary>
     public ControllerLedViewModel ControllerLed => _host.ControllerLedViewModel;
@@ -37,15 +39,28 @@ public partial class BinderPageViewModel : ViewModelBase
     /// One row per real, already-bound entry for the selected device, plus (only when
     /// <see cref="IsShowAllInputsEnabled"/> is on) a synthesized placeholder for every unbound
     /// button/axis the device reports - see <see cref="RebuildDisplayRows"/>. This is what
-    /// <see cref="Views.Shared.RebindingTableView"/> actually binds to now, not
+    /// <see cref="Views.Shared.DeviceMappingTableView"/> actually binds to now, not
     /// <see cref="SelectedDeviceGroup"/>'s <c>Entries</c> directly. Placeholder rows are opt-in
     /// (default off) so the table doesn't clutter itself with every physical input a device
     /// could report the moment it's selected.
     /// </summary>
     public ObservableCollection<MappingEntry> DisplayRows { get; } = new();
 
+    /// <summary>Starts <see cref="Diagram"/>/<see cref="InputMatrix"/>'s live-state subscriptions - see <see cref="INavigationAware"/>'s doc comment for why this can't just happen in their constructors.</summary>
+    public void OnNavigatedTo()
+    {
+        Diagram.OnNavigatedTo();
+        InputMatrix.OnNavigatedTo();
+    }
+
+    public void OnNavigatedFrom()
+    {
+        Diagram.OnNavigatedFrom();
+        InputMatrix.OnNavigatedFrom();
+    }
+
     [ObservableProperty]
-    private BinderTab _selectedTab = BinderTab.Bindings;
+    private DeviceMappingTab _selectedTab = DeviceMappingTab.Mappings;
 
     /// <summary>
     /// The selected device's instance name - validated against <see cref="Devices"/> (physically
@@ -57,12 +72,12 @@ public partial class BinderPageViewModel : ViewModelBase
     private string? _selectedDeviceName;
 
     /// <summary>Design-time constructor.</summary>
-    public BinderPageViewModel() : this(new MainWindowViewModel(), new ObservableCollection<ControllerStatus>(),
+    public DeviceMappingPageViewModel() : this(new MainWindowViewModel(), new ObservableCollection<ControllerStatus>(),
         new ObservableCollection<DeviceMappingGroup>(), new ObservableCollection<DeviceMappingGroup>())
     {
     }
 
-    public BinderPageViewModel(MainWindowViewModel host, ObservableCollection<ControllerStatus> devices,
+    public DeviceMappingPageViewModel(MainWindowViewModel host, ObservableCollection<ControllerStatus> devices,
         ObservableCollection<DeviceMappingGroup> gamepadGroups, ObservableCollection<DeviceMappingGroup> wheelGroups)
     {
         _host = host;
@@ -70,7 +85,8 @@ public partial class BinderPageViewModel : ViewModelBase
         _gamepadGroups = gamepadGroups;
         _wheelGroups = wheelGroups;
 
-        Diagram = new BinderDiagramViewModel(host, this);
+        Diagram = new DeviceMappingDiagramViewModel(host, this);
+        InputMatrix = new InputMatrixViewModel(host, this);
 
         Devices.CollectionChanged += (_, _) =>
         {
@@ -145,7 +161,7 @@ public partial class BinderPageViewModel : ViewModelBase
     /// <see cref="SelectedDeviceName"/> just because it's momentarily missing would silently
     /// yank the user to a different device while they're mid-edit. A device that's unplugged
     /// stays "selected" (see <see cref="HasSelectedDeviceStatus"/>'s doc comment for how that's
-    /// surfaced) so its last-known bindings stay visible, and reappears automatically once the
+    /// surfaced) so its last-known mappings stay visible, and reappears automatically once the
     /// same-named device is reacquired.
     /// </summary>
     private void EnsureSelectedDeviceIsValid()
@@ -186,7 +202,7 @@ public partial class BinderPageViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedWheelSettings));
         OnPropertyChanged(nameof(IsSelectedDeviceForceFeedbackCapable));
         OnPropertyChanged(nameof(SelectedGamepadSettings));
-        OnPropertyChanged(nameof(IsVisualBinderHidden));
+        OnPropertyChanged(nameof(IsVisualDeviceMappingHidden));
         OnPropertyChanged(nameof(IsShowAllInputsEnabled));
 
         ResubscribeDisplayRowSource();
@@ -231,9 +247,11 @@ public partial class BinderPageViewModel : ViewModelBase
 
         if (string.IsNullOrEmpty(SelectedDeviceName)) return;
 
-        var wheelSettings = _host.GetOrCreateWheelSettings(SelectedDeviceName);
+        var hwProfile = HardwareProfileService.GetOrCreate(_host, SelectedDeviceName);
+        foreach (var row in DisplayRows) row.NicknameDisplay = hwProfile.GetButtonNickname(row.SourceType, row.SourceIndex);
+
         OnPropertyChanged(nameof(HasHiddenInputs));
-        if (!wheelSettings.ShowAllPhysicalInputs) return;
+        if (!hwProfile.ShowAllPhysicalInputs) return;
 
         var info = _host.GetDeviceHardwareInfo(SelectedDeviceName);
         int buttonCount = info?.ButtonCount ?? 32;
@@ -247,7 +265,7 @@ public partial class BinderPageViewModel : ViewModelBase
 
         for (int i = 0; i < buttonCount; i++)
         {
-            if (covered.Contains((InputType.Button, i)) || wheelSettings.IsInputHidden(InputType.Button, i)) continue;
+            if (covered.Contains((InputType.Button, i)) || hwProfile.IsInputHidden(InputType.Button, i)) continue;
             DisplayRows.Add(BuildPlaceholderRow(InputType.Button, i));
         }
 
@@ -255,14 +273,14 @@ public partial class BinderPageViewModel : ViewModelBase
         {
             for (int i = 128; i <= 131; i++)
             {
-                if (covered.Contains((InputType.Button, i)) || wheelSettings.IsInputHidden(InputType.Button, i)) continue;
+                if (covered.Contains((InputType.Button, i)) || hwProfile.IsInputHidden(InputType.Button, i)) continue;
                 DisplayRows.Add(BuildPlaceholderRow(InputType.Button, i));
             }
         }
 
         for (int i = 0; i < axisCount; i++)
         {
-            if (covered.Contains((InputType.Axis, i)) || wheelSettings.IsInputHidden(InputType.Axis, i)) continue;
+            if (covered.Contains((InputType.Axis, i)) || hwProfile.IsInputHidden(InputType.Axis, i)) continue;
             DisplayRows.Add(BuildPlaceholderRow(InputType.Axis, i));
         }
     }
@@ -270,25 +288,27 @@ public partial class BinderPageViewModel : ViewModelBase
     /// <summary>Whether the selected device is currently showing unbound placeholder rows - drives the "Show All Inputs" toolbar toggle.</summary>
     public bool IsShowAllInputsEnabled
     {
-        get => SelectedDeviceName != null && _host.GetOrCreateWheelSettings(SelectedDeviceName).ShowAllPhysicalInputs;
+        get => SelectedDeviceName != null && HardwareProfileService.GetOrCreate(_host, SelectedDeviceName).ShowAllPhysicalInputs;
         set
         {
             if (SelectedDeviceName == null) return;
-            _host.GetOrCreateWheelSettings(SelectedDeviceName).ShowAllPhysicalInputs = value;
+            HardwareProfileService.GetOrCreate(_host, SelectedDeviceName).ShowAllPhysicalInputs = value;
+            HardwareProfileService.Save();
             OnPropertyChanged();
             RebuildDisplayRows();
         }
     }
 
     /// <summary>Whether the selected device has any placeholder rows dismissed via <see cref="HidePlaceholderInput"/> - drives the "Restore Hidden Inputs" toolbar button.</summary>
-    public bool HasHiddenInputs => SelectedDeviceName != null && _host.GetOrCreateWheelSettings(SelectedDeviceName).HiddenPlaceholderInputs.Count > 0;
+    public bool HasHiddenInputs => SelectedDeviceName != null && HardwareProfileService.GetOrCreate(_host, SelectedDeviceName).HiddenPlaceholderInputs.Count > 0;
 
     /// <summary>Dismisses an auto-listed, not-yet-bound placeholder row (see <see cref="MappingEntry.IsPlaceholder"/>) from the table - it reappears only if <see cref="RestoreHiddenInputs"/> is used. No-op for a real, already-bound row.</summary>
     [RelayCommand]
     private void HidePlaceholderInput(MappingEntry entry)
     {
         if (!entry.IsPlaceholder || SelectedDeviceName == null) return;
-        _host.GetOrCreateWheelSettings(SelectedDeviceName).SetInputHidden(entry.SourceType, entry.SourceIndex, true);
+        HardwareProfileService.GetOrCreate(_host, SelectedDeviceName).SetInputHidden(entry.SourceType, entry.SourceIndex, true);
+        HardwareProfileService.Save();
         RebuildDisplayRows();
     }
 
@@ -297,8 +317,23 @@ public partial class BinderPageViewModel : ViewModelBase
     private void RestoreHiddenInputs()
     {
         if (SelectedDeviceName == null) return;
-        _host.GetOrCreateWheelSettings(SelectedDeviceName).ClearHiddenPlaceholderInputs();
+        HardwareProfileService.GetOrCreate(_host, SelectedDeviceName).ClearHiddenPlaceholderInputs();
+        HardwareProfileService.Save();
         RebuildDisplayRows();
+    }
+
+    /// <summary>
+    /// Re-reads <see cref="MappingEntry.NicknameDisplay"/> for every current <see cref="DisplayRows"/>
+    /// row belonging to <paramref name="deviceName"/> - called after a nickname edit (from either
+    /// the Input Matrix tab or the Device Mapping Table's own rename button) so the Device Mapping Table's
+    /// labels update immediately without a full <see cref="RebuildDisplayRows"/> pass, which would
+    /// otherwise disturb the table's scroll position/selection.
+    /// </summary>
+    public void RefreshNicknameDisplaysForDevice(string deviceName)
+    {
+        if (deviceName != SelectedDeviceName) return;
+        var hwProfile = HardwareProfileService.GetOrCreate(_host, deviceName);
+        foreach (var row in DisplayRows) row.NicknameDisplay = hwProfile.GetButtonNickname(row.SourceType, row.SourceIndex);
     }
 
     private MappingEntry BuildPlaceholderRow(InputType type, int index) => new()
@@ -310,28 +345,31 @@ public partial class BinderPageViewModel : ViewModelBase
             ? DevicePresetService.GetAxisDisplayName(SelectedDeviceName!, index)
             : DevicePresetService.GetButtonDisplayName(SelectedDeviceName!, index),
         TargetOutput = string.Empty,
-        IsPlaceholder = true
+        IsPlaceholder = true,
+        NicknameDisplay = HardwareProfileService.GetOrCreate(_host, SelectedDeviceName!).GetButtonNickname(type, index)
     };
 
     // --- Tab strip ---
 
     [RelayCommand]
-    private void SelectTab(BinderTab tab) => SelectedTab = tab;
+    private void SelectTab(DeviceMappingTab tab) => SelectedTab = tab;
 
-    public bool IsBindingsTabSelected => SelectedTab == BinderTab.Bindings;
-    public bool IsDeadzonesTabSelected => SelectedTab == BinderTab.Deadzones;
-    public bool IsSticksTabSelected => SelectedTab == BinderTab.Sticks;
-    public bool IsTriggersTabSelected => SelectedTab == BinderTab.Triggers;
-    public bool IsMotionTabSelected => SelectedTab == BinderTab.Motion;
-    public bool IsTouchpadTabSelected => SelectedTab == BinderTab.Touchpad;
-    public bool IsWheelSettingsTabSelected => SelectedTab == BinderTab.WheelSettings;
-    public bool IsCalibrationTabSelected => SelectedTab == BinderTab.Calibration;
-    public bool IsPedalSettingsTabSelected => SelectedTab == BinderTab.PedalSettings;
-    public bool IsMoreOptionsTabSelected => SelectedTab == BinderTab.MoreOptions;
+    public bool IsMappingsTabSelected => SelectedTab == DeviceMappingTab.Mappings;
+    public bool IsInputMatrixTabSelected => SelectedTab == DeviceMappingTab.InputMatrix;
+    public bool IsDeadzonesTabSelected => SelectedTab == DeviceMappingTab.Deadzones;
+    public bool IsSticksTabSelected => SelectedTab == DeviceMappingTab.Sticks;
+    public bool IsTriggersTabSelected => SelectedTab == DeviceMappingTab.Triggers;
+    public bool IsMotionTabSelected => SelectedTab == DeviceMappingTab.Motion;
+    public bool IsTouchpadTabSelected => SelectedTab == DeviceMappingTab.Touchpad;
+    public bool IsWheelSettingsTabSelected => SelectedTab == DeviceMappingTab.WheelSettings;
+    public bool IsCalibrationTabSelected => SelectedTab == DeviceMappingTab.Calibration;
+    public bool IsPedalSettingsTabSelected => SelectedTab == DeviceMappingTab.PedalSettings;
+    public bool IsMoreOptionsTabSelected => SelectedTab == DeviceMappingTab.MoreOptions;
 
-    partial void OnSelectedTabChanged(BinderTab value)
+    partial void OnSelectedTabChanged(DeviceMappingTab value)
     {
-        OnPropertyChanged(nameof(IsBindingsTabSelected));
+        OnPropertyChanged(nameof(IsMappingsTabSelected));
+        OnPropertyChanged(nameof(IsInputMatrixTabSelected));
         OnPropertyChanged(nameof(IsDeadzonesTabSelected));
         OnPropertyChanged(nameof(IsSticksTabSelected));
         OnPropertyChanged(nameof(IsTriggersTabSelected));
@@ -354,25 +392,25 @@ public partial class BinderPageViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Per-gamepad-device state (see <see cref="Models.GamepadDeviceSettings.IsVisualBinderHidden"/>)
+    /// Per-gamepad-device state (see <see cref="Models.GamepadDeviceSettings.IsVisualDeviceMappingHidden"/>)
     /// rather than a global app setting - switching devices shows each one's own saved layout
     /// choice. Wheels never show the diagram at all (unreachable/hidden for that device type), so
     /// there's no wheel-settings equivalent. Falls back to <c>false</c> (diagram shown) when no
     /// device is selected yet.
     /// </summary>
-    public bool IsVisualBinderHidden
+    public bool IsVisualDeviceMappingHidden
     {
-        get => SelectedGamepadSettings?.IsVisualBinderHidden ?? false;
+        get => SelectedGamepadSettings?.IsVisualDeviceMappingHidden ?? false;
         set
         {
             if (SelectedGamepadSettings == null) return;
-            SelectedGamepadSettings.IsVisualBinderHidden = value;
+            SelectedGamepadSettings.IsVisualDeviceMappingHidden = value;
             OnPropertyChanged();
         }
     }
 
     [RelayCommand]
-    private void ToggleVisualBinderHidden() => IsVisualBinderHidden = !IsVisualBinderHidden;
+    private void ToggleVisualDeviceMappingHidden() => IsVisualDeviceMappingHidden = !IsVisualDeviceMappingHidden;
 
     public string CustomProfileInput
     {
@@ -420,7 +458,7 @@ public partial class BinderPageViewModel : ViewModelBase
     /// <summary>
     /// Also doubles as "is the selected device currently connected" - false the moment a hotplug
     /// refresh removes it from <see cref="Devices"/>, true again the instant it's reacquired
-    /// under the same name. <see cref="Views.BinderPageView"/>'s disconnected banner binds to
+    /// under the same name. <see cref="Views.DeviceMappingPageView"/>'s disconnected banner binds to
     /// this directly rather than a separate property.
     /// </summary>
     public bool HasSelectedDeviceStatus => SelectedDeviceStatus != null;
@@ -508,8 +546,11 @@ public partial class BinderPageViewModel : ViewModelBase
 
     public MappingEntry? ThrottlePedalEntry => WheelAxisEntries.FirstOrDefault(e =>
         e.TargetOutput.Contains("Throttle") || e.TargetOutput.Contains("Gas"));
-    public MappingEntry? BrakePedalEntry => WheelAxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Brake"));
+    public MappingEntry? BrakePedalEntry => WheelAxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Brake") && !e.TargetOutput.Contains("Handbrake"));
     public MappingEntry? ClutchPedalEntry => WheelAxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Clutch"));
+    public MappingEntry? HandbrakePedalEntry => WheelAxisEntries.FirstOrDefault(e => e.TargetOutput.Contains("Handbrake"));
+
+    public bool HasNoPedalsMapped => ThrottlePedalEntry == null && BrakePedalEntry == null && ClutchPedalEntry == null && HandbrakePedalEntry == null;
 
     // --- More Options tab: Rumble/Haptics + LED (gamepad) ---
 

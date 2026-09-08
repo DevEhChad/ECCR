@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using ECCR.Models;
 
 namespace ECCR.Services;
@@ -26,6 +27,7 @@ public class ProfileService
     private readonly Func<string, Guid, UserProfile> _captureCurrentStateAsProfile;
     private readonly Action<UserProfile?> _applyLoadedProfileToLiveState;
     private readonly Dictionary<string, Guid> _nameToId = new();
+    private readonly object _writeLock = new();
 
     public ObservableCollection<string> ProfileNames { get; } = new();
 
@@ -169,13 +171,25 @@ public class ProfileService
         WriteProfile(profileName, _captureCurrentStateAsProfile(profileName, id));
     }
 
+    /// <summary>
+    /// Serializes <paramref name="profile"/> - a fresh snapshot already captured on the calling
+    /// thread by <see cref="_captureCurrentStateAsProfile"/>, never the live mutable state - and
+    /// writes it out on a background thread, since <see cref="SaveCurrentProfile"/> runs on the UI
+    /// thread on essentially every mapping edit via <c>MainWindowViewModel.AutoSaveCurrentProfile</c>.
+    /// <see cref="_writeLock"/> serializes the actual writes so two rapid autosaves can't interleave.
+    /// </summary>
     private void WriteProfile(string profileName, UserProfile profile)
     {
-        try
+        string path = Path.Combine(_profilesDirectory, $"{profileName}.json");
+        Task.Run(() =>
         {
-            File.WriteAllText(Path.Combine(_profilesDirectory, $"{profileName}.json"), JsonSerializer.Serialize(profile, JsonOptions));
-        }
-        catch { }
+            try
+            {
+                string json = JsonSerializer.Serialize(profile, JsonOptions);
+                lock (_writeLock) { File.WriteAllText(path, json); }
+            }
+            catch { }
+        });
     }
 
     /// <summary>Creates a brand-new, blank profile (empty mappings, default LED/wheel/gamepad settings) - distinct from the legacy "save the app's current live state under a new name" behavior of <c>MainWindowViewModel.ConfirmCreateProfile</c> (preserved as-is elsewhere), since the Profiles page creates profiles to bind to a specific game independent of whatever happens to be loaded right now.</summary>

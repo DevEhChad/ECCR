@@ -1,12 +1,12 @@
 <!--
-    The unified Binder page: replaces the old separate Controller Mapping / Device Mapping
+    The unified Device Mappings page: replaces the old separate Controller Mapping / Device Mapping
     pages with one device list (every connected wheel, pedal set, and gamepad) on the left and
     an inline content swap on the right - no navigation, no modal, matching the reference
-    mockup. The "Bindings" tab (visual diagram + Rebinding Table, see BinderDiagramView /
-    Views/Shared/RebindingTableView) is the new default view and replaces the old
-    dropdown-heavy per-device grid as the primary way to bind. The remaining tabs are ported
+    mockup. The "Device Mappings" tab (visual diagram + Device Mapping Table, see DeviceMappingDiagramView /
+    Views/Shared/DeviceMappingTableView) is the new default view and replaces the old
+    dropdown-heavy per-device grid as the primary way to map inputs. The remaining tabs are ported
     near-verbatim from the old pages and gated by device type (gamepad vs wheel) - see
-    BinderPageViewModel's doc comment.
+    DeviceMappingPageViewModel's doc comment.
 -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -20,14 +20,14 @@
              xmlns:avc="using:Avalonia.Data.Converters"
              mc:Ignorable="d"
              d:DesignWidth="1300" d:DesignHeight="800"
-             x:Class="ECCR.Views.BinderPageView"
+             x:Class="ECCR.Views.DeviceMappingPageView"
              x:Name="PageRoot"
-             x:DataType="vm:BinderPageViewModel">
+             x:DataType="vm:DeviceMappingPageViewModel">
 
     <UserControl.Resources>
         <converters:CategoryToGlyphConverter x:Key="CategoryToGlyphConverter"/>
         <converters:DeviceRowStateConverter x:Key="DeviceRowStateConverter"/>
-        <converters:BoolToBinderColumnsConverter x:Key="BoolToBinderColumnsConverter"/>
+        <converters:BoolToDeviceMappingColumnsConverter x:Key="BoolToDeviceMappingColumnsConverter"/>
         <converters:PedalColorConverter x:Key="PedalColorConverter"/>
         <converters:PedalFillHeightConverter x:Key="PedalFillHeightConverter"/>
         <converters:SteeringAngleConverter x:Key="SteeringAngleConverter"/>
@@ -37,7 +37,7 @@
     </UserControl.Resources>
 
     <Design.DataContext>
-        <vm:BinderPageViewModel/>
+        <vm:DeviceMappingPageViewModel/>
     </Design.DataContext>
 
     <Grid RowDefinitions="Auto, *" Margin="24">
@@ -45,9 +45,9 @@
             <Grid ColumnDefinitions="Auto, *">
                 <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-ControllerLogo.png" Width="22" Height="22"
                        Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0" RenderOptions.BitmapInterpolationMode="HighQuality"/>
-                <TextBlock Grid.Column="1" Text="Binder" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="Device Mappings" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center"/>
             </Grid>
-            <TextBlock Text="Bind buttons, axes, and keys for every connected wheel, pedal set, and gamepad - in one place." FontSize="12" Foreground="#8B95A5"/>
+            <TextBlock Text="Map buttons, axes, and keys for every connected wheel, pedal set, and gamepad - in one place." FontSize="12" Foreground="#8B95A5"/>
             <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,6,0,0">
                 <TextBlock FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap">
                     <Run Text="💡" />
@@ -55,7 +55,13 @@
                     <Run Text="Esc" FontWeight="Bold" Foreground="#D0D0E0"/>
                     <Run Text=" cancels, "/>
                     <Run Text="Backspace" FontWeight="Bold" Foreground="#D0D0E0"/>
-                    <Run Text=" clears the binding."/>
+                    <Run Text=" clears the mapping."/>
+                </TextBlock>
+            </Border>
+            <Border Background="#2A2410" BorderBrush="{DynamicResource AccentYellowBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,6,0,0">
+                <TextBlock FontSize="11" Foreground="{DynamicResource AccentYellowTextBrush}" TextWrapping="Wrap">
+                    <Run Text="⚠️ Experimental: "/>
+                    <Run Text="device mapping/bindings and wheel force feedback were substantially reworked in this release and haven't had wide real-world testing yet - please report anything that binds wrong or feels off." Foreground="#D8C8A0"/>
                 </TextBlock>
             </Border>
         </StackPanel>
@@ -71,18 +77,18 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="models:ControllerStatus">
                                     <Button Classes="deviceRow" Margin="0,0,0,8"
-                                            Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).SelectDeviceCommand}"
+                                            Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).SelectDeviceCommand}"
                                             CommandParameter="{Binding DeviceInstanceName}">
                                         <Button.Background>
                                             <MultiBinding Converter="{StaticResource DeviceRowStateConverter}">
                                                 <Binding Path="DeviceInstanceName"/>
-                                                <Binding Path="$parent[UserControl].((vm:BinderPageViewModel)DataContext).SelectedDeviceName"/>
+                                                <Binding Path="$parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).SelectedDeviceName"/>
                                             </MultiBinding>
                                         </Button.Background>
                                         <Button.BorderBrush>
                                             <MultiBinding Converter="{StaticResource DeviceRowStateConverter}" ConverterParameter="Border">
                                                 <Binding Path="DeviceInstanceName"/>
-                                                <Binding Path="$parent[UserControl].((vm:BinderPageViewModel)DataContext).SelectedDeviceName"/>
+                                                <Binding Path="$parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).SelectedDeviceName"/>
                                             </MultiBinding>
                                         </Button.BorderBrush>
                                         <Grid ColumnDefinitions="Auto, *">
@@ -129,39 +135,42 @@
 
                 <!-- Tab strip -->
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
-                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsBindingsTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Bindings}"
-                            Content="Bindings"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsMappingsTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Mappings}"
+                            Content="Mappings"/>
+                    <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsInputMatrixTabSelected}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.InputMatrix}"
+                            Content="Input Matrix"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsWheelSettingsTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.WheelSettings}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.WheelSettings}"
                             Content="Wheel Settings" IsVisible="{Binding IsSelectedDeviceWheel}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsCalibrationTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Calibration}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Calibration}"
                             Content="Calibration" IsVisible="{Binding IsSelectedDeviceWheel}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsPedalSettingsTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.PedalSettings}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.PedalSettings}"
                             Content="Pedal Settings" IsVisible="{Binding IsSelectedDeviceWheel}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsDeadzonesTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Deadzones}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Deadzones}"
                             Content="Deadzones" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsSticksTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Sticks}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Sticks}"
                             Content="Sticks" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsTriggersTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Triggers}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Triggers}"
                             Content="Triggers" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsMotionTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Motion}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Motion}"
                             Content="Motion" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsTouchpadTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.Touchpad}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.Touchpad}"
                             Content="Touchpad" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                     <Button Classes="mappingTab" Classes.mappingTabSelected="{Binding IsMoreOptionsTabSelected}"
-                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:BinderTab.MoreOptions}"
+                            Command="{Binding SelectTabCommand}" CommandParameter="{x:Static models:DeviceMappingTab.MoreOptions}"
                             Content="More Options" IsVisible="{Binding IsSelectedDeviceGamepad}"/>
                 </StackPanel>
 
-                <!-- Disconnected banner: shown when the selected device's last-known bindings are
+                <!-- Disconnected banner: shown when the selected device's last-known mappings are
                      still on screen but the physical hardware isn't currently reporting in
                      (unplugged, or not yet re-enumerated). Clears itself automatically the
                      instant InputDeviceManager's hotplug watcher reacquires the same device. -->
@@ -169,57 +178,73 @@
                         IsVisible="{Binding !HasSelectedDeviceStatus}">
                     <TextBlock FontSize="11" Foreground="#E0B77A" TextWrapping="Wrap">
                         <Run Text="⚠"/>
-                        <Run Text=" This device is currently disconnected - showing its last known bindings. Plug it back in to resume live input and testing."/>
+                        <Run Text=" This device is currently disconnected - showing its last known mappings. Plug it back in to resume live input and testing."/>
                     </TextBlock>
                 </Border>
 
                 <!-- Tab content -->
                 <Panel Grid.Row="3">
 
-                    <!-- Bindings: the new default view. Gamepads get diagram + Rebinding Table
-                         side by side; wheels use the Rebinding Table exclusively (the generic
+                    <!-- Mappings: the new default view. Gamepads get diagram + Device Mapping Table
+                         side by side; wheels use the Device Mapping Table exclusively (the generic
                          wheel diagram/hotspot flow is superseded by every physical input already
-                         listed in the table, see BinderPageViewModel.RebuildDisplayRows). -->
-                    <DockPanel IsVisible="{Binding IsBindingsTabSelected}" LastChildFill="True">
+                         listed in the table, see DeviceMappingPageViewModel.RebuildDisplayRows). -->
+                    <DockPanel IsVisible="{Binding IsMappingsTabSelected}" LastChildFill="True">
                         <Button DockPanel.Dock="Top" IsVisible="{Binding IsSelectedDeviceGamepad}"
                                 HorizontalAlignment="Right" Margin="0,0,0,8" Padding="10,6" CornerRadius="6"
                                 Background="Transparent" BorderBrush="#2B354C" Foreground="#8B95A5"
-                                Command="{Binding ToggleVisualBinderHiddenCommand}"
-                                ToolTip.Tip="Show/hide this device's controller visualizer so the Rebinding Table can use the full width - remembered per device">
+                                Command="{Binding ToggleVisualDeviceMappingHiddenCommand}"
+                                ToolTip.Tip="Show/hide this device's controller visualizer so the Device Mapping Table can use the full width - remembered per device">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Text="🖵 Hide Visualizer" IsVisible="{Binding !IsVisualBinderHidden}"/>
-                                <TextBlock Text="🖵 Show Visualizer" IsVisible="{Binding IsVisualBinderHidden}"/>
+                                <TextBlock Text="🖵 Hide Visualizer" IsVisible="{Binding !IsVisualDeviceMappingHidden}"/>
+                                <TextBlock Text="🖵 Show Visualizer" IsVisible="{Binding IsVisualDeviceMappingHidden}"/>
                             </StackPanel>
                         </Button>
-                        <ScrollViewer IsVisible="{Binding IsSelectedDeviceGamepad}"
-                                      HorizontalScrollBarVisibility="{Binding IsVisualBinderHidden, Converter={StaticResource BoolToScrollBarVisibilityConverter}}"
-                                      VerticalScrollBarVisibility="Disabled">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="{Binding !IsVisualBinderHidden, Converter={StaticResource BoolToBinderColumnsConverter}, ConverterParameter=Diagram}"/>
-                                    <ColumnDefinition Width="{Binding !IsVisualBinderHidden, Converter={StaticResource BoolToBinderColumnsConverter}, ConverterParameter=Gutter}"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <views:BinderDiagramView Grid.Column="0" MinWidth="480" DataContext="{Binding Diagram}" IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsVisualBinderHidden, Converter={x:Static avc:BoolConverters.Not}}"/>
-                                <shared:RebindingTableView Grid.Column="2" MinWidth="480"
-                                                            IsExpandedLayout="{Binding IsVisualBinderHidden}"
-                                                            ItemsSource="{Binding DisplayRows}"
-                                                            DeviceMappingGroup="{Binding SelectedDeviceGroup}"
-                                                            DeviceName="{Binding SelectedDeviceName}"/>
-                            </Grid>
-                        </ScrollViewer>
-                        <shared:RebindingTableView IsVisible="{Binding IsSelectedDeviceWheel}"
-                                                    IsExpandedLayout="True"
-                                                    ItemsSource="{Binding DisplayRows}"
-                                                    DeviceMappingGroup="{Binding SelectedDeviceGroup}"
-                                                    DeviceName="{Binding SelectedDeviceName}"/>
+                        <!-- Wrapped in one Panel so the DockPanel sees exactly one LastChildFill
+                             element here, regardless of which device type is selected - Avalonia's
+                             DockPanel (like WPF's) grants fill treatment to whichever child is
+                             literally last in document order, REGARDLESS of that child's IsVisible
+                             state. With the gamepad ScrollViewer and the wheel-only table as two
+                             separate DockPanel siblings, the wheel table (last in the XAML) always
+                             claimed fill even while invisible, leaving the gamepad ScrollViewer
+                             sized to its own natural/desired width instead of stretched - which is
+                             why hiding the visualizer never actually expanded the table before. -->
+                        <Panel>
+                            <ScrollViewer IsVisible="{Binding IsSelectedDeviceGamepad}"
+                                          HorizontalScrollBarVisibility="{Binding IsVisualDeviceMappingHidden, Converter={StaticResource BoolToScrollBarVisibilityConverter}}"
+                                          VerticalScrollBarVisibility="Disabled">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="{Binding !IsVisualDeviceMappingHidden, Converter={StaticResource BoolToDeviceMappingColumnsConverter}, ConverterParameter=Diagram}"/>
+                                        <ColumnDefinition Width="{Binding !IsVisualDeviceMappingHidden, Converter={StaticResource BoolToDeviceMappingColumnsConverter}, ConverterParameter=Gutter}"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <views:DeviceMappingDiagramView Grid.Column="0" MinWidth="480" DataContext="{Binding Diagram}" IsVisible="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).IsVisualDeviceMappingHidden, Converter={x:Static avc:BoolConverters.Not}}"/>
+                                    <shared:DeviceMappingTableView Grid.Column="2" MinWidth="480"
+                                                                IsExpandedLayout="{Binding IsVisualDeviceMappingHidden}"
+                                                                ItemsSource="{Binding DisplayRows}"
+                                                                DeviceMappingGroup="{Binding SelectedDeviceGroup}"
+                                                                DeviceName="{Binding SelectedDeviceName}"/>
+                                </Grid>
+                            </ScrollViewer>
+                            <shared:DeviceMappingTableView IsVisible="{Binding IsSelectedDeviceWheel}"
+                                                        IsExpandedLayout="True"
+                                                        ItemsSource="{Binding DisplayRows}"
+                                                        DeviceMappingGroup="{Binding SelectedDeviceGroup}"
+                                                        DeviceName="{Binding SelectedDeviceName}"/>
+                        </Panel>
                     </DockPanel>
+
+                    <!-- Input Matrix: capability-driven button/POV tile grid, works for any device
+                         (wheel, gamepad, button box) regardless of rim/box layout. -->
+                    <shared:InputMatrixView DataContext="{Binding InputMatrix}"
+                                             IsVisible="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).IsInputMatrixTabSelected}"/>
 
                     <!-- Wheel Settings: rotation + force feedback tuning, wheel only. -->
                     <ScrollViewer IsVisible="{Binding IsWheelSettingsTabSelected}">
                         <StackPanel Spacing="10" MaxWidth="640" HorizontalAlignment="Left"
                                     DataContext="{Binding SelectedWheelSettings}" x:DataType="models:WheelDeviceSettings">
-                            <Border Classes="card" IsVisible="{Binding !$parent[UserControl].((vm:BinderPageViewModel)DataContext).IsSelectedDeviceForceFeedbackCapable}">
+                            <Border Classes="card" IsVisible="{Binding !$parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).IsSelectedDeviceForceFeedbackCapable}">
                                 <TextBlock Text="This device isn't reporting force-feedback support to Windows - rotation/deadzone settings still apply, but effects (spring/damper/friction/etc.) won't reach it." Foreground="#FFAAAA" FontSize="12" TextWrapping="Wrap"/>
                             </Border>
 
@@ -367,26 +392,26 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <Grid ColumnDefinitions="*, Auto" IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsSelectedDeviceRoutedToGamepadOutput}">
+                                    <Grid ColumnDefinitions="*, Auto" IsVisible="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).IsSelectedDeviceRoutedToGamepadOutput}">
                                         <TextBlock Grid.Column="0" Text="Synthesize FFB from Rumble" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
                                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding SynthesizeFfbFromRumbleEnabled}" OnContent="" OffContent=""/>
                                     </Grid>
                                     <TextBlock Text="This wheel's steering is routed to an Xbox/DS4 target, so games only ever send simple rumble, never real force-feedback. Turn this on to translate that rumble into wheel forces instead of leaving the wheel with no feedback."
-                                               FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap" IsVisible="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).IsSelectedDeviceRoutedToGamepadOutput}"/>
+                                               FontSize="10" Foreground="#8B95A5" TextWrapping="Wrap" IsVisible="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).IsSelectedDeviceRoutedToGamepadOutput}"/>
 
                                     <TextBlock Text="Test FFB Pulse" FontWeight="SemiBold" FontSize="11" Foreground="#8B95A5" Margin="0,4,0,0"/>
                                     <Grid ColumnDefinitions="*, *, *, *" >
                                         <Button Grid.Column="0" Content="◀ Left" Classes="neutral" Padding="8,7" FontSize="12" Margin="0,0,4,0"
-                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbLeftCommand}"
+                                                Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).TestFfbLeftCommand}"
                                                 ToolTip.Tip="Fires a brief leftward constant-force pulse to verify torque delivery and polarity"/>
                                         <Button Grid.Column="1" Content="Right ▶" Classes="neutral" Padding="8,7" FontSize="12" Margin="0,0,4,0"
-                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbRightCommand}"
+                                                Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).TestFfbRightCommand}"
                                                 ToolTip.Tip="Fires a brief rightward constant-force pulse to verify torque delivery and polarity"/>
                                         <Button Grid.Column="2" Content="Texture" Classes="neutral" Padding="8,7" FontSize="12" Margin="0,0,4,0"
-                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbTextureCommand}"
+                                                Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).TestFfbTextureCommand}"
                                                 ToolTip.Tip="Fires a 1-second periodic buzz to verify motor oscillation"/>
                                         <Button Grid.Column="3" Content="Soft-Lock" Classes="neutral" Padding="8,7" FontSize="12"
-                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestFfbSoftLockCommand}"
+                                                Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).TestFfbSoftLockCommand}"
                                                 ToolTip.Tip="Briefly engages a full-strength spring wall to verify resistance engagement"/>
                                     </Grid>
                                 </StackPanel>
@@ -396,20 +421,20 @@
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="Cloaking" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
                                     <TextBlock Text="For force feedback and full remapping to be authoritative, games must only see ECCR's virtual wheel - hide this device's raw input from other applications via HidHide." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
-                                    <Button Content="🛡 Open HidHide Cloaking" Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).OpenHidHideCommand}"
+                                    <Button Content="🛡 Open HidHide Cloaking" Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).OpenHidHideCommand}"
                                             Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,8" CornerRadius="6" HorizontalAlignment="Left"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
                     </ScrollViewer>
 
-                    <!-- Calibration: live per-axis dashboard for every bound wheel axis, wheel only.
+                    <!-- Calibration: live per-axis dashboard for every mapped wheel axis, wheel only.
                          Complements (doesn't replace) the per-entry Calibration dialog reachable
-                         from the Rebinding Table's gear flyout - this tab shows every axis at
+                         from the Device Mapping Table's gear flyout - this tab shows every axis at
                          once instead of one at a time. -->
                     <ScrollViewer IsVisible="{Binding IsCalibrationTabSelected}">
                         <StackPanel Spacing="10">
-                            <TextBlock Text="No axis inputs bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                            <TextBlock Text="No axis inputs mapped for this device yet." Foreground="#8B95A5" FontSize="12"
                                        IsVisible="{Binding !HasWheelAxisEntries}" Margin="4,8"/>
                             <ItemsControl ItemsSource="{Binding WheelAxisEntries}">
                                 <ItemsControl.ItemTemplate>
@@ -446,7 +471,7 @@
                                                             <RotateTransform.Angle>
                                                                 <MultiBinding Converter="{StaticResource SteeringAngleConverter}">
                                                                     <Binding Path="LiveOutputPercentage"/>
-                                                                    <Binding ElementName="PageRoot" Path="((vm:BinderPageViewModel)DataContext).SelectedWheelSettings.RotationDegrees"/>
+                                                                    <Binding ElementName="PageRoot" Path="((vm:DeviceMappingPageViewModel)DataContext).SelectedWheelSettings.RotationDegrees"/>
                                                                 </MultiBinding>
                                                             </RotateTransform.Angle>
                                                         </RotateTransform>
@@ -506,15 +531,20 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <!-- Pedal Settings: dedicated Throttle/Brake/Clutch cards, wheel only. Splits
-                         pedal axes out of the generic Calibration tab's flat axis list, reusing
-                         its exact per-axis card layout (raw/output bars, Set Min/Center/Max,
+                    <!-- Pedal Settings: dedicated Throttle/Brake/Clutch/Handbrake cards, wheel only.
+                         Splits pedal axes out of the generic Calibration tab's flat axis list,
+                         reusing its exact per-axis card layout (raw/output bars, Set Min/Center/Max,
                          inner/outer deadzone, gamma/linearity, invert) plus a color accent and
-                         vertical pedal-bar visual matching CalibrationDialog's pedal view. -->
+                         vertical pedal-bar visual matching CalibrationDialog's pedal view. Each
+                         card is driven by whichever MappingEntry.TargetOutput actually names that
+                         pedal (ThrottlePedalEntry/BrakePedalEntry/ClutchPedalEntry/HandbrakePedalEntry
+                         in DeviceMappingPageViewModel) rather than the physical axis's raw DirectInput
+                         name - an atypically-named raw axis ("Slider 0", "Rotation Z") shows up here
+                         fine once it's mapped to the matching virtual pedal output. -->
                     <ScrollViewer IsVisible="{Binding IsPedalSettingsTabSelected}">
                         <StackPanel Spacing="10">
-                            <TextBlock Text="No pedals bound for this device yet." Foreground="#8B95A5" FontSize="12"
-                                       IsVisible="{Binding ThrottlePedalEntry, Converter={x:Static avc:ObjectConverters.IsNull}}"
+                            <TextBlock Text="No pedals mapped for this device yet." Foreground="#8B95A5" FontSize="12"
+                                       IsVisible="{Binding HasNoPedalsMapped}"
                                        Margin="4,8"/>
                             <ContentControl Content="{Binding ThrottlePedalEntry}">
                                 <ContentControl.ContentTemplate>
@@ -663,13 +693,62 @@
                                     </DataTemplate>
                                 </ContentControl.ContentTemplate>
                             </ContentControl>
+                            <ContentControl Content="{Binding HandbrakePedalEntry}">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate x:DataType="models:MappingEntry">
+                                        <Border Classes="card" Margin="0,0,0,10">
+                                            <Grid ColumnDefinitions="Auto, *">
+                                                <Border Grid.Column="0" Width="56" Height="90" Margin="0,0,14,0" Background="#10141E" BorderBrush="#20283C" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                                                    <Border VerticalAlignment="Bottom" Opacity="0.85" Background="{Binding TargetOutput, Converter={StaticResource PedalColorConverter}}"
+                                                            Height="{Binding LiveOutputPercentage, Converter={StaticResource PedalFillHeightConverter}}"/>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Spacing="10">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Grid.Column="0" Text="Handbrake" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding SourceDisplayName}" FontSize="11" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Raw" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveRawPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveRawPercentage}" Maximum="1.0" Height="6" CornerRadius="3" Foreground="#3E7BFA"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Calibrated Output" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LiveOutputPercentage, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#00E599" FontWeight="Bold"/>
+                                                    </Grid>
+                                                    <ProgressBar Value="{Binding LiveOutputPercentage}" Maximum="1.0" Height="8" CornerRadius="4" Foreground="#00E599"/>
+                                                    <Grid ColumnDefinitions="*, 44" Margin="0,4,0,0">
+                                                        <TextBlock Text="Inner Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Outer Deadzone" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DeadzoneOuter, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.0" Maximum="0.3" Value="{Binding DeadzoneOuter}"/>
+                                                    <Grid ColumnDefinitions="*, 44">
+                                                        <TextBlock Text="Sensitivity (Gamma)" FontSize="11" Foreground="#8B95A5"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding LinearityExponent, StringFormat='{}{0:0.00}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                    <Slider Minimum="0.3" Maximum="3.0" Value="{Binding LinearityExponent}"/>
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Invert Axis" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
                         </StackPanel>
                     </ScrollViewer>
 
                     <!-- Deadzones: axis rows for the selected device, gamepad only. -->
                     <ScrollViewer IsVisible="{Binding IsDeadzonesTabSelected}">
                         <StackPanel Spacing="10">
-                            <TextBlock Text="No axis inputs bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                            <TextBlock Text="No axis inputs mapped for this device yet." Foreground="#8B95A5" FontSize="12"
                                        IsVisible="{Binding !HasAxisEntries}" Margin="4,8"/>
                             <ItemsControl ItemsSource="{Binding AxisEntries}">
                                 <ItemsControl.ItemTemplate>
@@ -697,7 +776,7 @@
                     <!-- Sticks: axis rows grouped by physical stick, gamepad only. -->
                     <ScrollViewer IsVisible="{Binding IsSticksTabSelected}">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="No axis inputs bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                            <TextBlock Text="No axis inputs mapped for this device yet." Foreground="#8B95A5" FontSize="12"
                                        IsVisible="{Binding !HasAxisEntries}" Margin="4,8"/>
                             <StackPanel Spacing="8" IsVisible="{Binding HasLeftStickAxes}">
                                 <TextBlock Text="Left Stick" FontWeight="SemiBold" FontSize="13" Foreground="#BAC2DE"/>
@@ -762,7 +841,7 @@
                          tab's per-axis card layout. -->
                     <ScrollViewer IsVisible="{Binding IsTriggersTabSelected}">
                         <StackPanel Spacing="10">
-                            <TextBlock Text="No triggers bound for this device yet." Foreground="#8B95A5" FontSize="12"
+                            <TextBlock Text="No triggers mapped for this device yet." Foreground="#8B95A5" FontSize="12"
                                        IsVisible="{Binding LeftTriggerEntry, Converter={x:Static avc:ObjectConverters.IsNull}}"
                                        Margin="4,8"/>
                             <ContentControl Content="{Binding LeftTriggerEntry}">
@@ -964,7 +1043,7 @@
                                         </StackPanel>
                                         <Button Content="🔨 Test Vibration" IsEnabled="{Binding RumbleEnabled}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                 Classes="neutral" Padding="10,7" FontSize="12"
-                                                Command="{Binding $parent[UserControl].((vm:BinderPageViewModel)DataContext).TestVibrationCommand}"
+                                                Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).TestVibrationCommand}"
                                                 ToolTip.Tip="Pulses both motors at their configured intensities for a moment, without needing a game running"/>
                                     </StackPanel>
                                 </StackPanel>
@@ -975,7 +1054,7 @@
                                     <TextBlock Text="Touchpad Click Mode" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
                                     <TextBlock Text="Disambiguates the single physical click switch using finger touch position at the moment of the click. A click with no valid touch data (gloved hand, edge contact) always falls back to Full Panel." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
                                     <ComboBox HorizontalAlignment="Stretch" CornerRadius="6" Background="#161B26"
-                                              ItemsSource="{x:Static vm:BinderPageViewModel.TouchpadClickModes}"
+                                              ItemsSource="{x:Static vm:DeviceMappingPageViewModel.TouchpadClickModes}"
                                               SelectedItem="{Binding TouchpadClickMode}"/>
                                     <StackPanel Spacing="4" IsVisible="{Binding TouchpadClickMode, Converter={StaticResource TouchpadClickModeToMultiZoneVisibleConverter}}">
                                         <Grid ColumnDefinitions="*, 44">
@@ -1053,7 +1132,7 @@
                 </Panel>
             </Grid>
 
-            <TextBlock Grid.Column="2" Text="Select a device on the left to view and edit its bindings." FontSize="13" Foreground="#4B5563"
+            <TextBlock Grid.Column="2" Text="Select a device on the left to view and edit its mappings." FontSize="13" Foreground="#4B5563"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        IsVisible="{Binding SelectedDeviceName, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
         </Grid>

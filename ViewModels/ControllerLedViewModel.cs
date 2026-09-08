@@ -19,8 +19,8 @@ namespace ECCR.ViewModels;
 /// <see cref="ControllerStatus.IsLedSupported"/> state rather than a static device-name guess.
 /// The chosen color/mode is persisted per-profile (see <see cref="ECCR.Models.UserProfile.LedRed"/>/
 /// <c>LedGreen</c>/<c>LedBlue</c>/<c>LedMode</c>/<c>LedSpeed</c>) via <see cref="_onColorChanged"/>,
-/// an injected save callback (same one-way-dependency style <see cref="AutoBindWizardViewModel"/>
-/// uses for <c>_onBindingsApplied</c>) rather than this VM reaching back into
+/// an injected save callback (same one-way-dependency style <see cref="AutoMapWizardViewModel"/>
+/// uses for <c>_onMappingsApplied</c>) rather than this VM reaching back into
 /// <see cref="MainWindowViewModel"/> directly.
 /// <see cref="Red"/>/<see cref="Green"/>/<see cref="Blue"/> always hold the user's chosen base
 /// color (what the sliders/hex box show and what gets saved); non-<see cref="LedEffectMode.Static"/>
@@ -89,7 +89,7 @@ public partial class ControllerLedViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// Retargets this view model at the given gamepad and its per-device LED settings - called
-    /// by <c>BinderPageViewModel</c> whenever the Binder page's selected device changes, since
+    /// by <c>DeviceMappingPageViewModel</c> whenever the Device Mappings page's selected device changes, since
     /// LED settings moved from one profile-wide color to per-device (see
     /// <see cref="ActiveDeviceSettings"/>). Loads <paramref name="settings"/>' saved color/mode
     /// while suppressing the mirror-back-into-settings writes below, the same way

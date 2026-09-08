@@ -7,7 +7,7 @@ using Avalonia.Media;
 namespace ECCR.Converters;
 
 /// <summary>
-/// Highlights the Binder page's currently-selected device row. A <see cref="IMultiValueConverter"/>
+/// Highlights the Device Mappings page's currently-selected device row. A <see cref="IMultiValueConverter"/>
 /// (values[0] = the row's own device name, values[1] = the page's selected device name) rather
 /// than a "deviceRowSelected" style class toggled via <c>Classes.X="{Binding ...}"</c>: that
 /// attached-property syntax only accepts a single simple binding, not a <c>MultiBinding</c>

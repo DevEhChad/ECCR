@@ -163,7 +163,7 @@ public partial class GamesPageViewModel : ViewModelBase
             var name = _profileService.GetProfileName(card.Game.BoundProfileId.Value);
             if (name != null) _host.SelectedProfile = name;
         }
-        _host.NavigateToCommand.Execute(AppPage.Binder);
+        _host.NavigateToCommand.Execute(AppPage.DeviceMapping);
     }
 
     // --- Assignment drawer ---
@@ -238,6 +238,26 @@ public partial class GamesPageViewModel : ViewModelBase
         if (files.Count == 0) return;
 
         _gameLibraryService.UpdateExecutablePath(DrawerTargetGame.Game.Id, files[0].Path.LocalPath);
+    }
+
+    /// <summary>Manual "Change Banner" - lets the user hand-pick a banner/box-art image for any game (scanned or custom), the escape hatch for Epic/EA titles where automatic art resolution has no reliable free source.</summary>
+    [RelayCommand]
+    private async Task EditDrawerTargetBanner(IStorageProvider? storageProvider)
+    {
+        if (DrawerTargetGame == null) return;
+        storageProvider ??= StorageProviderResolver?.Invoke();
+        if (storageProvider == null) return;
+
+        var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select Banner Image",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.ico"] }]
+        });
+        if (files.Count == 0) return;
+
+        _gameLibraryService.UpdateBannerImagePath(DrawerTargetGame.Game.Id, files[0].Path.LocalPath);
+        DrawerTargetGame.RefreshBannerImagePath();
     }
 
     // --- Manual game addition ---

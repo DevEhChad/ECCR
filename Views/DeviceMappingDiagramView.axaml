@@ -1,13 +1,13 @@
 <!--
-    Binder page "Bindings" tab visual diagram: a clickable device image instead of a list row.
-    Scoped to whichever device BinderPageView's device list already selects (see
-    BinderDiagramViewModel.SelectedDeviceName) - no second device picker here. Clicking a
+    Device Mappings page "Mappings" tab visual diagram: a clickable device image instead of a list row.
+    Scoped to whichever device DeviceMappingPageView's device list already selects (see
+    DeviceMappingDiagramViewModel.SelectedDeviceName) - no second device picker here. Clicking a
     hotspot arms MainWindowViewModel's existing physical-press capture (StartListeningCommand),
-    same as every Rebinding Table row; the bottom panel then lets the user confirm/edit the
+    same as every Device Mapping Table row; the bottom panel then lets the user confirm/edit the
     target, deadzone, and invert, or remove the binding.
 
     Two mutually-exclusive diagrams share this view: the gamepad skin+hotspot Canvas (ported
-    unchanged from the old Visual Binder tab, native 2816x1536) and a new hand-drawn generic
+    unchanged from the old Visual Device Mapping tab, native 2816x1536) and a new hand-drawn generic
     wheel+pedal Canvas (native 1400x900, see WheelHotspotService) - which one is visible is
     driven by IsGamepadDevice/IsWheelDevice. Both Canvases are wrapped in a Stretch="Uniform"
     Viewbox, so every Canvas.Left/Top/Width/Height expressed in native pixel units scales
@@ -34,8 +34,8 @@
              xmlns:vm="using:ECCR.ViewModels"
              mc:Ignorable="d"
              d:DesignWidth="1000" d:DesignHeight="700"
-             x:Class="ECCR.Views.BinderDiagramView"
-             x:DataType="vm:BinderDiagramViewModel">
+             x:Class="ECCR.Views.DeviceMappingDiagramView"
+             x:DataType="vm:DeviceMappingDiagramViewModel">
 
     <ScrollViewer>
     <Grid RowDefinitions="Auto, Auto, Auto">
@@ -45,7 +45,7 @@
             <Grid ColumnDefinitions="Auto, *">
                 <TextBlock Grid.Column="0" Text="Skin" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 <ComboBox Grid.Column="1"
-                          ItemsSource="{x:Static vm:BinderDiagramViewModel.AvailableSkins}"
+                          ItemsSource="{x:Static vm:DeviceMappingDiagramViewModel.AvailableSkins}"
                           SelectedItem="{Binding SelectedSkin}"
                           HorizontalAlignment="Stretch"
                           CornerRadius="6"
@@ -179,7 +179,7 @@
              always just a MappingEntry. -->
         <Border Grid.Row="2" Classes="card">
             <Grid>
-                <TextBlock Text="Click a control on the diagram above to bind it."
+                <TextBlock Text="Click a control on the diagram above to map it."
                            FontSize="13" Foreground="#8B95A5"
                            IsVisible="{Binding !HasSelectedHotspot}"/>
 
@@ -189,7 +189,7 @@
                             <TextBlock Text="{Binding SelectedHotspotEntry.SourceDisplayName}" FontWeight="Bold" FontSize="14" Foreground="White"/>
                             <TextBlock Text="{Binding SelectedHotspotEntry.SourceDeviceName}" FontSize="11" Foreground="#8B95A5"/>
                         </StackPanel>
-                        <Button Grid.Column="1" Content="Capture / Re-bind"
+                        <Button Grid.Column="1" Content="Capture / Re-map"
                                 Command="{Binding StartListeningCommand}" CommandParameter="{Binding SelectedHotspotEntry}"
                                 Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White" Padding="12,7" CornerRadius="6"/>
                     </Grid>
