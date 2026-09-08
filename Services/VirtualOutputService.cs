@@ -14,6 +14,9 @@ namespace ECCR.Services;
 /// </summary>
 public interface IVirtualFeeder : IDisposable
 {
+    /// <summary>Raised whenever a game rumbles a virtual controller this feeder owns: (targetDeviceId, largeMotor, smallMotor).</summary>
+    event Action<uint, byte, byte>? RumbleReceived;
+
     void SetActive(bool active);
     void UpdateAxis(uint targetDeviceId, string targetOutput, double normalizedValue);
     void UpdateButton(uint targetDeviceId, string targetOutput, bool isPressed);

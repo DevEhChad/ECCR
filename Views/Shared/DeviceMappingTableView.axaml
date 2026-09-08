@@ -1,0 +1,316 @@
+<!--
+    Device Mappings page "Mappings" tab list: one flat, single-device-scoped row per MappingEntry -
+    badge + Input Name + Detected Input (click arms physical-press capture directly) + Assigned
+    Key + a primary "Map Input" button (opens a searchable-key popup) + an overflow "⚙" flyout
+    holding Deadzone/Invert/Calibrate/Player-or-Wheel-Slot/Remove, so the main row stays as flat
+    as the reference mockup while keeping every control the app's now-removed denser grid view
+    already had. Compiled bindings stay ON for the whole file (x:DataType is the common
+    ViewModelBase, since the real inherited DataContext differs by host page) - the
+    "$parent[Window].((vm:X)DataContext)" cast syntax used deep in the row templates requires
+    compiled bindings.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             xmlns:converters="using:ECCR.Converters"
+             xmlns:dataConverters="using:Avalonia.Data.Converters"
+             x:Class="ECCR.Views.Shared.DeviceMappingTableView"
+             x:Name="PanelRoot"
+             x:DataType="vm:ViewModelBase">
+
+    <UserControl.Resources>
+        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
+        <converters:SemanticInputNameConverter x:Key="SemanticInputNameConverter"/>
+        <converters:DeviceMappingTitleConverter x:Key="DeviceMappingTitleConverter"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Grid.deviceMappingRow">
+            <Setter Property="MinHeight" Value="44"/>
+        </Style>
+        <Style Selector="Grid.deviceMappingRow:pointerover">
+            <Setter Property="Background" Value="#161C2A"/>
+        </Style>
+        <!-- Currently armed for capture (StartListening'd), from either this table or a Visual Device Mapping hotspot - see MainWindowViewModel.ListeningEntry. -->
+        <Style Selector="Grid.deviceMappingRowArmed">
+            <Setter Property="Background" Value="#241B3A"/>
+        </Style>
+        <!-- "Press any button or move an axis..." feedback while armed - a slow opacity pulse on the Detected Input button itself, which already shows the "Listening..." label (see MainWindowViewModel.StartListening). -->
+        <Style Selector="Grid.deviceMappingRowArmed Button.rowDetectedInput">
+            <Style.Animations>
+                <Animation Duration="0:0:1.2" IterationCount="INFINITE" Easing="SineEaseInOut">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="1.0"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="50%">
+                        <Setter Property="Opacity" Value="0.55"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1.0"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <!-- Physical button held down right now - overrides the armed tint above while active. -->
+        <Style Selector="Grid.deviceMappingRowPressed">
+            <Setter Property="Background" Value="#3000E599"/>
+        </Style>
+
+        <!-- Expanded mode: set on this UserControl (DeviceMappingTableView.IsExpandedLayout, see code-behind)
+             when the visual device mapping diagram is hidden and this table has the full page width to
+             itself - slightly larger font/padding/hitboxes to make better use of the space. -->
+        <Style Selector="UserControl.expanded Grid.deviceMappingRow">
+            <Setter Property="MinHeight" Value="56"/>
+        </Style>
+        <Style Selector="UserControl.expanded TextBlock.rowLabel">
+            <Setter Property="FontSize" Value="15"/>
+        </Style>
+        <Style Selector="UserControl.expanded Button.rowDetectedInput">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
+        <Style Selector="UserControl.expanded Border.rowTarget">
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
+        <Style Selector="UserControl.expanded TextBlock.rowTargetLabel">
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+        <Style Selector="UserControl.expanded Button.rowIconButton">
+            <Setter Property="Width" Value="38"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="FontSize" Value="16"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes="card" Padding="18">
+        <Grid RowDefinitions="Auto, Auto, Auto, Auto, *">
+            <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,10">
+                <TextBlock Grid.Column="0" Text="DEVICE MAPPING TABLE" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="+ Add Input" FontSize="12" Padding="12,7" CornerRadius="6"
+                        Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AddMappingToDeviceCommand}"
+                        CommandParameter="{Binding #PanelRoot.DeviceName}"
+                        ToolTip.Tip="Adds a new unbound row for this device - click Map Input, then press a button or move an axis"/>
+            </Grid>
+
+            <TextBox Grid.Row="1"
+                     Text="{Binding #PanelRoot.SearchText}"
+                     Watermark="Search inputs…"
+                     Margin="0,0,0,10"
+                     Padding="10,8"
+                     CornerRadius="6"
+                     Background="#121622"
+                     BorderBrush="#20283C"
+                     FontSize="13"/>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="0,0,0,10">
+                <Button Content="Select All" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                        IsEnabled="{Binding #PanelRoot.DeviceMappingGroup, Converter={x:Static dataConverters:ObjectConverters.IsNotNull}}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectAllInGroupCommand}"
+                        CommandParameter="{Binding #PanelRoot.DeviceMappingGroup}"/>
+                <Button Content="Deselect All" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                        IsEnabled="{Binding #PanelRoot.DeviceMappingGroup, Converter={x:Static dataConverters:ObjectConverters.IsNotNull}}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeselectAllInGroupCommand}"
+                        CommandParameter="{Binding #PanelRoot.DeviceMappingGroup}"/>
+                <Button Content="🗑 Remove Selected" FontSize="12" Padding="10,7" CornerRadius="5" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA"
+                        IsEnabled="{Binding #PanelRoot.DeviceMappingGroup, Converter={x:Static dataConverters:ObjectConverters.IsNotNull}}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveSelectedInGroupCommand}"
+                        CommandParameter="{Binding #PanelRoot.DeviceMappingGroup}"/>
+                <Button Content="Restore Hidden Inputs" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                        IsVisible="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).HasHiddenInputs}"
+                        Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).RestoreHiddenInputsCommand}"
+                        ToolTip.Tip="Bring back every unbound row you've dismissed with its ✕ button"/>
+                <ToggleButton Content="Show All Inputs" FontSize="12" Padding="10,7" CornerRadius="5" Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                        IsChecked="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).IsShowAllInputsEnabled, Mode=TwoWay}"
+                        ToolTip.Tip="List every physical input this device reports, mapped or not - off by default so the table only shows what's actually mapped"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="3" Text="No device mappings yet for this device - click + Add Input above." FontSize="12" Foreground="#8B95A5"
+                       IsVisible="{Binding !#PanelRoot.HasEntries}" Margin="4,8"/>
+
+            <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="EntriesItemsControl" ItemsSource="{Binding #PanelRoot.FilteredEntries}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:MappingEntry">
+                        <Grid Classes="deviceMappingRow"
+                              Classes.deviceMappingRowArmed="{Binding IsArmed}"
+                              Classes.deviceMappingRowPressed="{Binding IsLivePressed}"
+                              ColumnDefinitions="28, 38, 1.6*, 1.2*, 1.2*, Auto, Auto, Auto"
+                              Margin="0,6"
+                              Background="Transparent">
+
+                            <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" IsVisible="{Binding !IsPlaceholder}"
+                                      VerticalAlignment="Center" HorizontalAlignment="Center"/>
+
+                            <Border Grid.Column="1"
+                                    x:DataType="converters:BadgeInfo"
+                                    DataContext="{Binding SourceDisplayName, Converter={StaticResource ButtonBadgeConverter}}"
+                                    IsVisible="{Binding HasBadge}"
+                                    Background="{Binding Background}"
+                                    BorderBrush="{Binding Border}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Width="26" Height="26"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Glyph}" Foreground="{Binding Foreground}" FontSize="13" FontWeight="Bold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0">
+                                <TextBlock Classes="rowLabel" FontWeight="SemiBold" FontSize="13.5" Foreground="White"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                    <TextBlock.Text>
+                                        <MultiBinding Converter="{StaticResource SemanticInputNameConverter}">
+                                            <Binding Path="SourceDisplayName"/>
+                                            <Binding Path="SemanticHotspot"/>
+                                            <Binding Path="SourceDeviceName"/>
+                                            <Binding Path="NicknameDisplay"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+
+                            <Button Grid.Column="3" Classes="rowDetectedInput"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).StartListeningCommand}"
+                                    CommandParameter="{Binding}"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalContentAlignment="Center"
+                                    Margin="4,0" Padding="10,8"
+                                    Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="1" CornerRadius="6"
+                                    Foreground="#D0D0E0" FontSize="12.5"
+                                    ToolTip.Tip="Click, then press the physical button or move the axis you want to map">
+                                <TextBlock Text="{Binding SourceDisplayName}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                            </Button>
+
+                            <Border Grid.Column="4" Classes="rowTarget" Margin="4,0" Padding="10,8" CornerRadius="6"
+                                    Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" VerticalAlignment="Center">
+                                <TextBlock Classes="rowTargetLabel" Text="{Binding TargetOutputDisplay}" FontSize="12.5" Foreground="#D0D0E0" TextTrimming="CharacterEllipsis"/>
+                            </Border>
+
+                            <Button Grid.Column="5" Classes="primary" Content="Map Input" FontSize="12.5" Padding="14,9" Margin="8,0,4,0">
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom" Opened="OnAssignFlyoutOpened" Closed="OnAssignFlyoutClosed">
+                                        <StackPanel Width="260" Spacing="8" Margin="4" KeyDown="OnAssignFlyoutKeyDown">
+                                            <TextBlock Text="{Binding Converter={StaticResource DeviceMappingTitleConverter}}"
+                                                       FontWeight="Bold" FontSize="12" Foreground="White" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MappingStatus}"
+                                                       FontSize="11" Foreground="{DynamicResource AccentPurpleTextBrush}"
+                                                       TextWrapping="Wrap" HorizontalAlignment="Left"
+                                                       IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsPickingKeyboardKey}"/>
+                                            <Button Content="⌨ Press a Key" Click="OnPressKeyToggleClick"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="{DynamicResource AccentPurpleBackgroundBrush}" BorderBrush="{DynamicResource AccentPurpleBrush}"
+                                                    Foreground="{DynamicResource AccentPurpleTextBrush}" FontSize="11" Padding="6,7" CornerRadius="4"/>
+                                            <TextBox Watermark="Search Xbox / PS4 / Wheel / Keyboard targets…" FontSize="12" TextChanged="OnKeySearchTextChanged"/>
+                                            <ListBox MaxHeight="220" Background="#0D1119" SelectionChanged="OnKeyListSelectionChanged"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                                <Button Content="Cancel" Click="OnAssignCancelClick" Background="#161B26" Foreground="#BAC2DE" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                                <Button Content="Accept" Click="OnAssignAcceptClick" Classes="primary" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+
+                            <Button Grid.Column="6" Classes="rowIconButton" Content="✕" Width="32" Height="32" Padding="0" FontSize="14"
+                                    IsVisible="{Binding IsPlaceholder}"
+                                    Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).HidePlaceholderInputCommand}"
+                                    CommandParameter="{Binding}"
+                                    Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="1" Foreground="#8B95A5" CornerRadius="6"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center"
+                                    ToolTip.Tip="Dismiss this input from the table - it's not mapped to anything, this just hides the row. Restore it from 'Restore Hidden Inputs' above."/>
+
+                            <Button Grid.Column="6" Classes="rowIconButton" Content="⚙" Width="32" Height="32" Padding="0" FontSize="14"
+                                    IsVisible="{Binding !IsPlaceholder}"
+                                    Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="1" Foreground="#BAC2DE" CornerRadius="6"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center">
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom">
+                                        <StackPanel Width="230" Spacing="10" Margin="4">
+                                            <StackPanel Spacing="4" IsVisible="{Binding IsAxis}">
+                                                <TextBlock Text="Dead Zone" FontSize="11" Foreground="#8B95A5"/>
+                                                <Grid ColumnDefinitions="*, 40">
+                                                    <Slider Grid.Column="0" Minimum="0.0" Maximum="0.5" Value="{Binding Deadzone}" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Deadzone, StringFormat='{}{0:P0}'}" FontSize="11" Foreground="#8B95A5" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </StackPanel>
+                                            <Grid ColumnDefinitions="*, Auto" IsVisible="{Binding IsAxis}">
+                                                <TextBlock Grid.Column="0" Text="Invert" FontSize="12" Foreground="#D0D0E0" VerticalAlignment="Center"/>
+                                                <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsInverted}" OnContent="" OffContent=""/>
+                                            </Grid>
+                                            <Button Content="Calibrate…" IsVisible="{Binding IsAxis}"
+                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenCalibrationCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="#161B26" BorderBrush="#2B354C" CornerRadius="6" Padding="8,6" FontSize="11"/>
+
+                                            <ComboBox ItemsSource="{x:Static vm:MainWindowViewModel.PlayerTargets}"
+                                                      SelectedValue="{Binding TargetDeviceId}"
+                                                      SelectedValueBinding="{Binding Id}"
+                                                      IsVisible="{Binding ShowPlayerCombo}"
+                                                      HorizontalAlignment="Stretch" CornerRadius="6" Background="#161B26" FontSize="11">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:PlayerTargetOption">
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <ComboBox ItemsSource="{x:Static vm:MainWindowViewModel.WheelSlots}"
+                                                      SelectedValue="{Binding TargetDeviceId}"
+                                                      SelectedValueBinding="{Binding Id}"
+                                                      IsVisible="{Binding ShowWheelSlotCombo}"
+                                                      HorizontalAlignment="Stretch" CornerRadius="6" Background="#161B26" FontSize="11">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:WheelDeviceSlotOption">
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+
+                                            <Button Content="Clear Mapping" IsVisible="{Binding IsBound}"
+                                                    ToolTip.Tip="Unassigns this input's physical mapping without deleting the row - it goes back to 'Click to Map'"
+                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ClearMappingCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Background="#1F283C" BorderBrush="#3D4B6E" Foreground="#D0D0E0"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="8,6" CornerRadius="6" FontSize="11"/>
+                                            <Button Content="Remove Mapping" Classes="danger"
+                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveMappingCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" FontSize="11"/>
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+
+                            <Button Grid.Column="7" Classes="rowIconButton" Content="✎" Width="32" Height="32" Padding="0" FontSize="14"
+                                    Background="#1F283C" BorderBrush="#3D4B6E" BorderThickness="1" Foreground="#BAC2DE" CornerRadius="6"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center"
+                                    ToolTip.Tip="Set a custom alias for this input">
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom" Opened="OnNicknameFlyoutOpened" Closed="OnNicknameFlyoutClosed">
+                                        <StackPanel Width="240" Spacing="8" Margin="4" KeyDown="OnNicknameFlyoutKeyDown">
+                                            <TextBlock Text="{Binding SourceDisplayName, StringFormat='Editing Alias for {0}'}"
+                                                       FontWeight="Bold" FontSize="12" Foreground="White" TextWrapping="Wrap"/>
+                                            <TextBox Watermark="e.g. Throttle, Left Paddle" FontSize="12"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                                <Button Content="Cancel" Click="OnNicknameCancelClick" Background="#161B26" Foreground="#BAC2DE" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                                <Button Content="Reset to Default" Click="OnNicknameClearClick" Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                                <Button Content="Apply" Click="OnNicknameApplyClick" Classes="primary" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>

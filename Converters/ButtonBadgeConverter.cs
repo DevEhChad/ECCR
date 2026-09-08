@@ -22,7 +22,7 @@ public class BadgeInfo
 /// in the main grid and dropdowns. Pure string pattern-matching against display text - see
 /// the class doc on <see cref="ECCR.Models.MappingEntry"/> for why the app uses display
 /// strings as the shared vocabulary instead of an enum. Order matters: more specific checks
-/// (e.g. "Moza A Button") are listed before the generic ones they'd otherwise also match.
+/// are listed before the generic ones they'd otherwise also match.
 /// </summary>
 public class ButtonBadgeConverter : IValueConverter
 {
@@ -95,20 +95,20 @@ public class ButtonBadgeConverter : IValueConverter
         // 3. PHYSICAL INPUTS (Detected Hardware)
         // ==========================================
 
-        // --- Standard Xbox & Moza Wheels (Xbox Scheme) ---
-        if (name.Contains("Moza A Button") || name.StartsWith("A Button") || name.Contains("Cross / A") || lower.Contains("(a / cross)"))
+        // --- Standard Xbox & Generic Wheel Buttons (Xbox Scheme) ---
+        if (name.StartsWith("A Button") || name.Contains("Cross / A") || lower.Contains("(a / cross)"))
             return CreateBadge("Ⓐ", "#193627", "#00E599", "#5CFFBE"); // Green
 
-        if (name.Contains("Moza B Button") || name.StartsWith("B Button") || name.Contains("Circle / B") || lower.Contains("(b / circle)"))
+        if (name.StartsWith("B Button") || name.Contains("Circle / B") || lower.Contains("(b / circle)"))
             return CreateBadge("Ⓑ", "#3D1D24", "#FA3E5E", "#FF7088"); // Red
 
-        if (name.Contains("Moza X Button") || name.StartsWith("X Button") || name.Contains("Square / X") || lower.Contains("(x / square)"))
+        if (name.StartsWith("X Button") || name.Contains("Square / X") || lower.Contains("(x / square)"))
             return CreateBadge("Ⓧ", "#1A2E4C", "#3E7BFA", "#70A0FF"); // Blue
 
-        if (name.Contains("Moza Y Button") || name.StartsWith("Y Button") || name.Contains("Triangle / Y") || lower.Contains("(y / triangle)"))
+        if (name.StartsWith("Y Button") || name.Contains("Triangle / Y") || lower.Contains("(y / triangle)"))
             return CreateBadge("Ⓨ", "#3D3418", "#FFB900", "#FFD254"); // Yellow
 
-        if (name.Contains("Moza Xbox Guide Button") || name.Contains("Xbox Guide Button"))
+        if (name.Contains("Xbox Guide Button") || name.Contains("Guide / Home Button"))
             return CreateBadge("⨂", "#193627", "#00E599", "#5CFFBE");
 
         // --- PlayStation Face Buttons ---

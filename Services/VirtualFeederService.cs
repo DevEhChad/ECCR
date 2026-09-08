@@ -24,6 +24,9 @@ public class VirtualFeederService : IVirtualFeeder
     private readonly object _lock = new();
     private bool _isActive = true;
 
+    /// <summary>Raised whenever a game rumbles a virtual Xbox 360 controller: (targetDeviceId, largeMotor, smallMotor).</summary>
+    public event Action<uint, byte, byte>? RumbleReceived;
+
     public bool IsActive => _isActive;
 
     public VirtualFeederService()
@@ -82,6 +85,8 @@ public class VirtualFeederService : IVirtualFeeder
             try
             {
                 var controller = _viGEmClient.CreateXbox360Controller();
+                controller.FeedbackReceived += (_, e) =>
+                    RumbleReceived?.Invoke(targetDeviceId, e.LargeMotor, e.SmallMotor);
                 controller.Connect();
                 _xboxControllers[targetDeviceId] = controller;
                 return controller;
@@ -144,6 +149,20 @@ public class VirtualFeederService : IVirtualFeeder
             {
                 byte val = (byte)(Math.Clamp(normalizedValue, 0.0, 1.0) * 255.0);
                 controller.SetSliderValue(Xbox360Slider.RightTrigger, val);
+            }
+            else
+            {
+                // Nothing analog matched - this is an axis (e.g. an auto-mapped wheel's analog
+                // clutch/handbrake pedal) whose default target is really a digital Xbox 360
+                // button such as LB or A (Xbox 360 has no free analog input left for it once
+                // both sticks and both triggers are spoken for). Without this fallback the
+                // value was silently dropped - never reaching the virtual pad at all - so
+                // instead threshold it into a button press/release.
+                var btn = MapTargetToXboxButton(targetOutput);
+                if (btn != null)
+                {
+                    controller.SetButtonState(btn, normalizedValue > 0.5);
+                }
             }
 
             controller.SubmitReport();

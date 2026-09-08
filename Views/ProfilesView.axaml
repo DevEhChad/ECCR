@@ -1,0 +1,132 @@
+<!--
+    Profiles page: profile select/save/create/delete (dropdown, unchanged) plus a card gallery
+    added alongside it. DataContext is ProfilesViewModel, a thin forwarder to
+    MainWindowViewModel for the dropdown's state/commands - see that class's doc comment. Game
+    library management (scanning, banners, auto-switch binding) lives on the separate Games page
+    instead.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="1000" d:DesignHeight="720"
+             x:Class="ECCR.Views.ProfilesView"
+             x:DataType="vm:ProfilesViewModel">
+
+    <Design.DataContext>
+        <vm:ProfilesViewModel/>
+    </Design.DataContext>
+
+    <Panel>
+        <ScrollViewer>
+            <StackPanel Margin="24" Spacing="16">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="📄 Profiles" FontWeight="Bold" FontSize="18" Foreground="White"/>
+                    <TextBlock Text="Switch between saved mapping profiles, or create/delete one." FontSize="12" Foreground="#8B95A5"/>
+                </StackPanel>
+
+                <!-- Introductory guide -->
+                <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="6" Padding="14,10">
+                    <StackPanel Spacing="4">
+                        <TextBlock FontSize="12" Foreground="#8B95A5" TextWrapping="Wrap">
+                            <Run Text="💡"/>
+                            <Run Text=" A profile is one device's full set of mappings, deadzones, and LED settings. Assign a game to a profile from the "/>
+                            <Run Text="Games" FontWeight="Bold" Foreground="#D0D0E0"/>
+                            <Run Text=" page so the two stay linked. The profile marked "/>
+                            <Run Text="Default" FontWeight="Bold" Foreground="#5CFFBE"/>
+                            <Run Text=" below loads automatically the next time the app starts, instead of whichever profile you last had active."/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#161B26" CornerRadius="8" Padding="16" BorderBrush="#20283C" BorderThickness="1" MaxWidth="640" HorizontalAlignment="Left">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Active Profile" FontWeight="SemiBold" FontSize="13" Foreground="#BAC2DE"/>
+                        <ComboBox ItemsSource="{Binding Profiles}"
+                                  SelectedItem="{Binding SelectedProfile}"
+                                  HorizontalAlignment="Stretch"
+                                  CornerRadius="6"
+                                  Background="#1B202E"
+                                  BorderBrush="#2F384C"/>
+
+                        <Grid ColumnDefinitions="*, *, *" Margin="0,4,0,0">
+                            <Button Grid.Column="0" Content="+ New Profile" Command="{Binding OpenCreateProfileDialogCommand}"
+                                    Margin="0,0,4,0" Padding="10,8" CornerRadius="6" HorizontalContentAlignment="Center"
+                                    Background="#232A3B" BorderBrush="#3D4B6E"/>
+                            <Button Grid.Column="1" Content="Save Profile" Command="{Binding SaveCurrentProfileCommand}"
+                                    Margin="4,0,4,0" Padding="10,8" CornerRadius="6" HorizontalContentAlignment="Center"
+                                    FontWeight="SemiBold" Background="#1A4A38" BorderBrush="#266D53"/>
+                            <Button Grid.Column="2" Content="🗑 Delete Profile" Command="{Binding DeleteCurrentProfileCommand}"
+                                    Margin="4,0,0,0" Padding="10,8" CornerRadius="6" HorizontalContentAlignment="Center"
+                                    Background="#2A1B1F" BorderBrush="#552229" Foreground="#FFAAAA"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card gallery -->
+                <TextBlock Text="ALL PROFILES" FontWeight="Bold" FontSize="12" Foreground="#8B95A5" Margin="2,8,0,0"/>
+                <ItemsControl ItemsSource="{Binding ProfileCards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ProfileCardViewModel">
+                            <Border Classes="gameCard" Width="230" Margin="0,0,16,16">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="{Binding ProfileName}" FontWeight="SemiBold" FontSize="14" Foreground="White" TextTrimming="CharacterEllipsis"/>
+
+                                    <WrapPanel>
+                                        <Border Classes="pill" Margin="0,0,6,6">
+                                            <TextBlock Text="{Binding DeviceTypeSummary}" FontSize="10.5" Foreground="#BAC2DE"/>
+                                        </Border>
+                                        <Border Classes="pill" Margin="0,0,6,6">
+                                            <TextBlock Text="{Binding BoundGameCount, StringFormat='{}{0} games'}" FontSize="10.5" Foreground="#BAC2DE"/>
+                                        </Border>
+                                        <Border Classes="pill" Background="#1A4A38" BorderBrush="#266D53" IsVisible="{Binding IsActive}" Margin="0,0,6,6">
+                                            <TextBlock Text="Active" FontSize="10.5" Foreground="#5CFFBE"/>
+                                        </Border>
+                                        <Border Classes="pill" Background="#1F2E4A" BorderBrush="#2E4A78" IsVisible="{Binding IsDefault}" Margin="0,0,6,6">
+                                            <TextBlock Text="Default" FontSize="10.5" Foreground="#7FB4FF"/>
+                                        </Border>
+                                    </WrapPanel>
+
+                                    <Grid ColumnDefinitions="*, *" >
+                                        <Button Grid.Column="0" Classes="neutral" Content="Apply" FontSize="10.5" Padding="6,5" Margin="0,0,3,0" HorizontalContentAlignment="Center" Command="{Binding ApplyCommand}"/>
+                                        <Button Grid.Column="1" Classes="neutral" Content="Edit" FontSize="10.5" Padding="6,5" Margin="3,0,0,0" HorizontalContentAlignment="Center" Command="{Binding EditCommand}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <TextBlock Grid.Column="0" Text="Global Default" FontSize="10.5" Foreground="#8B95A5" VerticalAlignment="Center"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsDefault, Mode=TwoWay}" OnContent="" OffContent=""
+                                                      ToolTip.Tip="Load this profile automatically when the app starts, instead of whichever was last active"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*, *">
+                                        <Button Grid.Column="0" Classes="neutral" Content="Duplicate" FontSize="10.5" Padding="6,5" Margin="0,0,3,0" HorizontalContentAlignment="Center" Command="{Binding DuplicateCommand}"/>
+                                        <Button Grid.Column="1" Classes="danger" Content="Delete" FontSize="10.5" Padding="6,5" Margin="3,0,0,0" HorizontalContentAlignment="Center" Command="{Binding DeleteCommand}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- CREATE/DUPLICATE PROFILE OVERLAY -->
+        <Border IsVisible="{Binding IsCreatingProfile}" Background="#CC0A0D14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="#161B26" BorderBrush="#2D374D" BorderThickness="1" CornerRadius="10" Padding="24" Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="{Binding CreateProfileDialogTitle}" FontSize="18" FontWeight="Bold"/>
+                    <TextBox Text="{Binding CustomProfileInput}" Watermark="Enter profile name (e.g., Assetto Rig)" CornerRadius="6" Background="#0E1118" Padding="10,8"/>
+                    <Grid ColumnDefinitions="*, *">
+                        <Button Grid.Column="0" Content="Cancel" Command="{Binding CancelCreateProfileCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,6,0" Background="#262D3D" CornerRadius="6"/>
+                        <Button Grid.Column="1" Content="{Binding ConfirmProfileDialogButtonText}" Command="{Binding ConfirmCreateProfileCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="6,0,0,0" FontWeight="SemiBold" Background="#00B074" CornerRadius="6"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Panel>
+</UserControl>

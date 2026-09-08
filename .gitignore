@@ -46,3 +46,6 @@ ECCR_Part3_UI_Assets.zip
 ## builders
 build-release.ps1
 build-dev.ps1
+
+#My Stuff
+testpics/

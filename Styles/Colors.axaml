@@ -1,0 +1,56 @@
+<!--
+    Named brush palette extracted from the hex literals repeated across the app's existing
+    XAML (MainWindow.axaml, HidHideView.axaml, AutoMapWizardWindow.axaml, CalibrationDialog.axaml).
+    Values are unchanged from what's already on screen - this file exists purely so new pages
+    (Sidebar, Home, Controllers/Wheels, Controller LED, About, DeviceStatusBar) can reference a
+    shared palette instead of repeating literals. Existing untouched XAML keeps its inline hex;
+    migrating it onto these keys is optional follow-up, not required by the UI overhaul.
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="AppBackgroundBrush">#0E1118</SolidColorBrush>
+    <SolidColorBrush x:Key="PanelBackgroundBrush">#121622</SolidColorBrush>
+    <SolidColorBrush x:Key="PanelBackgroundAltBrush">#161B26</SolidColorBrush>
+    <SolidColorBrush x:Key="InputBackgroundBrush">#10141E</SolidColorBrush>
+    <SolidColorBrush x:Key="RowBackgroundBrush">#1F283C</SolidColorBrush>
+    <SolidColorBrush x:Key="OverlayScrimBrush">#CC0A0D14</SolidColorBrush>
+
+    <!-- Borders / dividers -->
+    <SolidColorBrush x:Key="BorderPrimaryBrush">#20283C</SolidColorBrush>
+    <SolidColorBrush x:Key="BorderSecondaryBrush">#2D374D</SolidColorBrush>
+    <SolidColorBrush x:Key="BorderSubtleBrush">#262D3D</SolidColorBrush>
+    <SolidColorBrush x:Key="RowBorderBrush">#3D4B6E</SolidColorBrush>
+    <SolidColorBrush x:Key="DividerBrush">#1F283C</SolidColorBrush>
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="TextPrimaryBrush">#FFFFFF</SolidColorBrush>
+    <SolidColorBrush x:Key="TextSecondaryBrush">#BAC2DE</SolidColorBrush>
+    <SolidColorBrush x:Key="TextMutedBrush">#8B95A5</SolidColorBrush>
+    <SolidColorBrush x:Key="TextFaintBrush">#4B5563</SolidColorBrush>
+
+    <!-- Accents -->
+    <SolidColorBrush x:Key="AccentBlueBrush">#3E7BFA</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentBlueTextBrush">#70A0FF</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentBlueBackgroundBrush">#1A2E4C</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentGreenBrush">#00E599</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentGreenTextBrush">#5CFFBE</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentGreenBackgroundBrush">#193627</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentGreenSolidBrush">#00B074</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentRedBrush">#FA3E5E</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentRedTextBrush">#FF7088</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentRedBackgroundBrush">#2A1B1F</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentRedBorderBrush">#552229</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentYellowBrush">#FFB900</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentYellowTextBrush">#FFD254</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentPurpleBrush">#C33EFA</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentPurpleTextBrush">#DB70FF</SolidColorBrush>
+    <SolidColorBrush x:Key="AccentPurpleBackgroundBrush">#361D38</SolidColorBrush>
+
+    <!-- Sidebar-specific -->
+    <SolidColorBrush x:Key="SidebarBackgroundBrush">#0B0E15</SolidColorBrush>
+    <SolidColorBrush x:Key="SidebarSelectedBrush">#1A2E4C</SolidColorBrush>
+    <SolidColorBrush x:Key="SidebarHoverBrush">#161B26</SolidColorBrush>
+
+</ResourceDictionary>

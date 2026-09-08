@@ -14,6 +14,9 @@ public partial class DeviceMappingGroup : ObservableObject
 {
     public string DeviceName { get; }
 
+    /// <summary>The raw DirectInput device name - shown in the UI as-is now that per-device nicknames have been removed.</summary>
+    public string DisplayName => DeviceName;
+
     [ObservableProperty]
     private bool _isExpanded = true;
 

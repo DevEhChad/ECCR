@@ -1,0 +1,77 @@
+<!--
+    Persistent top device-status bar - lives in the shell's Row 0 (see MainWindow.axaml), so
+    it renders identically regardless of which page is active. Shows one pill per connected
+    PHYSICAL device - every gamepad, wheel, or pedal set InputDeviceManager.GetConnectedDevices
+    reports, which already excludes ECCR's own virtual ViGEm/vJoy outputs by name. Scrolls
+    horizontally once there are more pills than fit. Clicking a pill jumps to that device's
+    Controller Mapping or Device Mapping page with it pre-selected, same
+    MainWindowViewModel.NavigateToDeviceMappingCommand the Connected Devices page's rows use -
+    reached via the "$parent[Window].((vm:MainWindowViewModel)DataContext).X" compiled-binding
+    path since this bar has no direct reference to the host view model itself.
+    DataContext is DeviceStatusBarViewModel.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             xmlns:converters="using:ECCR.Converters"
+             mc:Ignorable="d"
+             d:DesignWidth="900" d:DesignHeight="56"
+             x:Class="ECCR.Views.DeviceStatusBarView"
+             x:DataType="vm:DeviceStatusBarViewModel">
+
+    <UserControl.Resources>
+        <converters:CategoryToGlyphConverter x:Key="CategoryToGlyphConverter"/>
+    </UserControl.Resources>
+
+    <Design.DataContext>
+        <vm:DeviceStatusBarViewModel/>
+    </Design.DataContext>
+
+    <Border Background="#121622" BorderBrush="#20283C" BorderThickness="0,0,0,1" Padding="16,10">
+        <Grid ColumnDefinitions="*, Auto">
+            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding AllDeviceStatuses}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="10"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:ControllerStatus">
+                            <Button Classes="pillButton"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).NavigateToDeviceMappingCommand}"
+                                    CommandParameter="{Binding DeviceInstanceName}"
+                                    ToolTip.Tip="Open mapping for this device">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Image Source="{Binding Category, Converter={StaticResource CategoryToGlyphConverter}}"
+                                           Width="18" Height="18" Stretch="Uniform"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           VerticalAlignment="Center"/>
+                                    <StackPanel Spacing="0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DeviceInstanceName}" FontSize="11" FontWeight="SemiBold" Foreground="White" MaxWidth="180" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsBatterySupported}">
+                                            <TextBlock Text="{Binding BatteryPercent, StringFormat='{}{0}%'}" FontSize="10" Foreground="#00E599"/>
+                                            <TextBlock Text="⚡" FontSize="10" IsVisible="{Binding IsCharging}"/>
+                                            <TextBlock Text="{Binding ConnectionType}" FontSize="10" Foreground="#8B95A5"/>
+                                        </StackPanel>
+                                        <TextBlock Text="Connected" FontSize="10" Foreground="#8B95A5" IsVisible="{Binding !IsBatterySupported}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock Grid.Column="0"
+                       Text="No devices connected"
+                       FontSize="12"
+                       Foreground="#4B5563"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding !HasDevices}"/>
+        </Grid>
+    </Border>
+</UserControl>

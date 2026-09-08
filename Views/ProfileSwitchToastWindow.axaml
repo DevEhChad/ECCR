@@ -1,0 +1,58 @@
+<!--
+    Floating, non-modal, always-on-top, non-activating notification shown when auto-switching
+    changes the active profile for a launched game (see MainWindowViewModel.ProfileAutoSwitched).
+    The only other secondary window in this app, CalibrationDialog, is modal (ShowDialog) - this
+    one is intentionally the opposite: SystemDecorations="None" + Topmost + ShowActivated="False"
+    (Avalonia's equivalent of the WS_EX_NOACTIVATE style) so it never steals focus from whatever
+    game just launched. DataContext is a small ToastContent record set by ShowToast in the
+    code-behind, not a full view model - this window is a one-shot, short-lived notification, not
+    a page.
+-->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:converters="using:ECCR.Converters"
+        xmlns:views="using:ECCR.Views"
+        xmlns:avc="using:Avalonia.Data.Converters"
+        x:Class="ECCR.Views.ProfileSwitchToastWindow"
+        x:DataType="views:ToastContent"
+        Width="340" Height="88"
+        CanResize="False"
+        SystemDecorations="None"
+        Topmost="True"
+        ShowActivated="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual"
+        Background="Transparent"
+        Opacity="0">
+
+    <Window.Transitions>
+        <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.3"/>
+        </Transitions>
+    </Window.Transitions>
+
+    <Window.Resources>
+        <converters:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
+    </Window.Resources>
+
+    <Border Background="#161B26" BorderBrush="#2B354C" BorderThickness="1" CornerRadius="10" Padding="12" Margin="8">
+        <Grid ColumnDefinitions="56, 12, *">
+            <Border Grid.Column="0" Width="56" Height="56" Background="#0D1119" CornerRadius="6" ClipToBounds="True">
+                <Panel>
+                    <Image Source="{Binding BannerImagePath, Converter={StaticResource FilePathToBitmapConverter}}"
+                           Stretch="UniformToFill"
+                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                           IsVisible="{Binding BannerImagePath, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+                    <TextBlock Text="🎮" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding BannerImagePath, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+                </Panel>
+            </Border>
+
+            <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="Profile switched" FontSize="10.5" Foreground="#8B95A5"/>
+                <TextBlock Text="{Binding GameDisplayName}" FontWeight="Bold" FontSize="14" Foreground="White" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding ProfileName, StringFormat='Now using: {0}'}" FontSize="12" Foreground="#00E599" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

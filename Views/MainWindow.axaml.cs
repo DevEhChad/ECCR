@@ -1,17 +1,21 @@
 using System;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
-using ECCR.Models;
+using Avalonia.Input;
+using Avalonia.Platform;
 using ECCR.ViewModels;
 
 namespace ECCR.Views;
 
 /// <summary>
-/// The app's only top-level window. Most dialogs (Settings, HidHide, the update prompts,
-/// Create Profile) are <c>IsVisible</c>-toggled overlay <c>Border</c>s layered inside this
-/// same window rather than separate popups. <see cref="AutoBindWizardWindow"/> and
-/// <see cref="CalibrationDialog"/> are the exceptions - real child windows opened modally
-/// via <c>ShowDialog</c>, which fully blocks this window while they're open.
+/// The app's only top-level window - now an app shell (sidebar + persistent device-status bar
+/// + page-switching content area, see MainWindow.axaml) rather than a single mapping-grid view
+/// with overlay dialogs. Two overlays remain global here (Update prompt, Changelog popup)
+/// since they're unsolicited interruptions that should render above the whole shell regardless
+/// of the active page. <see cref="CalibrationDialog"/> is still a real child window opened
+/// modally via <c>ShowDialog</c> for the same reason as before - it's a small per-row tool,
+/// not a page.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -23,6 +27,28 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        // Wheel force-feedback needs a real HWND to exclusively acquire the physical wheel
+        // (see WheelForceFeedbackService.SetWindowHandle) - not available yet at construction,
+        // only once the window has actually been shown by the platform.
+        Opened += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                var handle = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+                vm.SetNativeWindowHandle(handle);
+
+                // Non-modal, always-on-top, non-activating - a genuinely new window pattern in
+                // this app (CalibrationDialog is the only other secondary window, and it's
+                // modal). A fresh ProfileSwitchToastWindow per event rather than a reused
+                // instance, since profile switches are infrequent and each toast is short-lived.
+                vm.ProfileAutoSwitched += (game, profileName) =>
+                {
+                    if (!vm.EnableProfileSwitchNotifications) return;
+                    new ProfileSwitchToastWindow().ShowToast(game, profileName);
+                };
+            }
+        };
     }
 
     /// <summary>
@@ -30,6 +56,9 @@ public partial class MainWindow : Window
     /// "close minimizes to tray" enabled, the close is cancelled and the window just hides,
     /// leaving the tray icon and all background polling/feeding running. Only a real quit
     /// (tray "Exit", or this setting being off) tears everything down and exits the process.
+    /// Skipped entirely when a debugger is attached - hiding instead of exiting would strand
+    /// the process in the background holding the single-instance mutex (see Program.cs), so the
+    /// next debug launch would attach and immediately exit with no indication why.
     /// </summary>
     protected override void OnClosing(WindowClosingEventArgs e)
     {
@@ -41,20 +70,58 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (vm.CloseMinimizesToTray)
+            if (vm.RunInSystemTray && vm.CloseMinimizesToTray && !Debugger.IsAttached)
             {
                 e.Cancel = true;
                 Hide();
                 return;
             }
 
-            vm.IsShuttingDown = true;
-            vm.CleanupAndShutdown();
-            Environment.Exit(0);
+            App.PerformFullExitFor(vm);
             return;
         }
 
         base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// Routes Esc (cancel) / Backspace (clear) to an in-progress "Click to Map" capture -
+    /// see <see cref="MainWindowViewModel.StartListening"/>. Scoped to <see cref="MainWindowViewModel.IsListening"/>
+    /// so this never swallows Backspace while the user is typing in a normal TextBox elsewhere
+    /// in the app (profile name entry, HidHide app path, etc).
+    /// </summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+        {
+            if (vm.IsListening)
+            {
+                if (e.Key == Key.Escape)
+                {
+                    vm.CancelListening();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Back)
+                {
+                    vm.ClearListeningMapping();
+                    e.Handled = true;
+                }
+            }
+            else if (vm.IsPickingKeyboardKey)
+            {
+                if (e.Key == Key.Escape)
+                {
+                    vm.CancelKeyPick();
+                }
+                else
+                {
+                    vm.AssignPickedKey(e.Key);
+                }
+                e.Handled = true;
+            }
+        }
+
+        base.OnKeyDown(e);
     }
 
     /// <summary>Mirrors OnClosing's tray behavior for the minimize button/gesture: minimizing hides to tray instead of showing a taskbar-minimized window, when that setting is on.</summary>
@@ -64,41 +131,9 @@ public partial class MainWindow : Window
 
         if (change.Property == WindowStateProperty)
         {
-            if (WindowState == WindowState.Minimized && DataContext is MainWindowViewModel vm && vm.MinimizeToTray)
+            if (WindowState == WindowState.Minimized && DataContext is MainWindowViewModel vm && vm.RunInSystemTray && vm.MinimizeToTray && !Debugger.IsAttached)
             {
                 Hide();
-            }
-        }
-    }
-
-    /// <summary>
-    /// Handler for the device-group header's "Assign to Player" dropdown - reassigns every
-    /// mapping under that physical device to the chosen player target in one action. Plain
-    /// code-behind rather than a bindable command because the ComboBox lives inside a
-    /// DataTemplate whose DataContext is the <see cref="DeviceMappingGroup"/>, not the main
-    /// view model, so the selection needs to be routed back up manually.
-    /// </summary>
-    private void OnBulkTargetSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ComboBox cb && cb.DataContext is DeviceMappingGroup group)
-        {
-            uint targetId = 1;
-            if (cb.SelectedItem is PlayerTargetOption opt)
-            {
-                targetId = opt.Id;
-            }
-            else if (cb.SelectedItem is uint u)
-            {
-                targetId = u;
-            }
-            else
-            {
-                return;
-            }
-
-            if (DataContext is MainWindowViewModel vm)
-            {
-                vm.BulkChangeDeviceTarget(group.DeviceName, targetId);
             }
         }
     }

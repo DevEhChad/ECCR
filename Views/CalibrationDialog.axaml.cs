@@ -1,7 +1,7 @@
 ﻿using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Media;
+using ECCR.Converters;
 using ECCR.Models;
 using ECCR.Services;
 
@@ -18,6 +18,16 @@ namespace ECCR.Views;
 /// </summary>
 public partial class CalibrationDialog : Window
 {
+    /// <summary>
+    /// The calibrated entry's device-level wheel settings, supplied by
+    /// <see cref="ECCR.ViewModels.MainWindowViewModel.OpenCalibration"/> before <c>ShowDialog</c>
+    /// is called - source of truth for the steering dial's rotation range (see
+    /// <see cref="Models.WheelDeviceSettings.RotationDegrees"/>), bound via ElementName rather
+    /// than DataContext since the DataContext is the plain <see cref="MappingEntry"/> being
+    /// calibrated. Null for non-wheel entries (the rotation UI stays hidden in that case anyway).
+    /// </summary>
+    public WheelDeviceSettings? WheelSettings { get; set; }
+
     public CalibrationDialog()
     {
         InitializeComponent();
@@ -58,13 +68,17 @@ public partial class CalibrationDialog : Window
             GenericOutputBar.IsVisible = false;
             SteeringWheelPanel.IsVisible = true;
             PedalBarPanel.IsVisible = false;
+            WheelRotationPanel.IsVisible = true;
+            WheelRotationDivider.IsVisible = true;
         }
         else if (isPedal)
         {
             GenericOutputBar.IsVisible = false;
             SteeringWheelPanel.IsVisible = false;
             PedalBarPanel.IsVisible = true;
-            PedalFill.Background = ResolvePedalBrush(target);
+            PedalFill.Background = PedalColorConverter.Resolve(target);
+            WheelRotationPanel.IsVisible = false;
+            WheelRotationDivider.IsVisible = false;
         }
         else
         {
@@ -77,14 +91,8 @@ public partial class CalibrationDialog : Window
         GenericOutputBar.IsVisible = true;
         SteeringWheelPanel.IsVisible = false;
         PedalBarPanel.IsVisible = false;
-    }
-
-    private static IBrush ResolvePedalBrush(string targetOutput)
-    {
-        if (targetOutput.Contains("Handbrake", StringComparison.OrdinalIgnoreCase)) return Brush.Parse("#FFAF70");
-        if (targetOutput.Contains("Brake", StringComparison.OrdinalIgnoreCase)) return Brush.Parse("#FF4D6A");
-        if (targetOutput.Contains("Clutch", StringComparison.OrdinalIgnoreCase)) return Brush.Parse("#3E7BFA");
-        return Brush.Parse("#00E599");
+        WheelRotationPanel.IsVisible = false;
+        WheelRotationDivider.IsVisible = false;
     }
 
     private void OnSetMinClick(object? sender, RoutedEventArgs e)

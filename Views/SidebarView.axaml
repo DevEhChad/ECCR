@@ -1,0 +1,94 @@
+<!--
+    Collapsible left sidebar: icon-only when collapsed, icon+label when expanded. Bound
+    directly to MainWindowViewModel (no dedicated SidebarViewModel needed - it only reads
+    PrimaryNavItems/UtilityNavItems/IsSidebarCollapsed and calls NavigateToCommand). Row
+    templates use the "#SidebarRoot.((vm:MainWindowViewModel)DataContext).X" compiled-binding
+    pattern since each row's own DataContext is a NavItem, not MainWindowViewModel.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             xmlns:converters="using:ECCR.Converters"
+             xmlns:avc="using:Avalonia.Data.Converters"
+             mc:Ignorable="d"
+             d:DesignWidth="220" d:DesignHeight="700"
+             x:Class="ECCR.Views.SidebarView"
+             x:DataType="vm:MainWindowViewModel"
+             x:Name="SidebarRoot">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
+        <converters:BoolToSidebarWidthConverter x:Key="BoolToSidebarWidthConverter"/>
+    </UserControl.Resources>
+
+    <Border Background="#0B0E15" BorderBrush="#20283C" BorderThickness="0,0,1,0"
+            Width="{Binding IsSidebarCollapsed, Converter={StaticResource BoolToSidebarWidthConverter}}">
+        <Grid RowDefinitions="Auto, *, Auto">
+
+            <!-- Logo / collapse toggle -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="14,16,14,12">
+                <Image Grid.Column="0" Source="avares://ECCR/Assets/UILogos/Full-HomeLogo.png" Width="30" Height="30"
+                       Stretch="Uniform" VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                <TextBlock Grid.Column="1" Text="ECCR" FontWeight="Bold" FontSize="18" Foreground="White" VerticalAlignment="Center" Margin="12,0,0,0"
+                           IsVisible="{Binding !IsSidebarCollapsed}"/>
+                <Button Grid.Column="2" Content="☰" Command="{Binding ToggleSidebarCollapsedCommand}"
+                        Background="Transparent" Foreground="#8B95A5" Padding="7,5" FontSize="16"/>
+            </Grid>
+
+            <!-- Primary nav -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding PrimaryNavItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:NavItem">
+                            <Button Classes="navItem" Classes.navItemSelected="{Binding IsSelected}"
+                                    Command="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).NavigateToCommand}"
+                                    CommandParameter="{Binding Page}">
+                                <Grid ColumnDefinitions="Auto, *">
+                                    <Image Grid.Column="0" Source="{Binding IconImage}" Width="26" Height="26" Stretch="Uniform"
+                                           VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="19" Width="30" VerticalAlignment="Center"
+                                               IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14.5" VerticalAlignment="Center" Margin="10,0,0,0"
+                                               TextTrimming="CharacterEllipsis"
+                                               IsVisible="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).IsSidebarCollapsed, Converter={x:Static avc:BoolConverters.Not}}"/>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Utility nav (HidHide, Auto Map, About, Settings) -->
+            <StackPanel Grid.Row="2" Margin="0,8,0,10">
+                <Border Height="1" Background="#1F283C" Margin="12,0,12,8"/>
+                <ItemsControl ItemsSource="{Binding UtilityNavItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:NavItem">
+                            <Button Classes="navItem" Classes.navItemSelected="{Binding IsSelected}"
+                                    Command="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).NavigateToCommand}"
+                                    CommandParameter="{Binding Page}">
+                                <Grid ColumnDefinitions="Auto, *">
+                                    <Image Grid.Column="0" Source="{Binding IconImage}" Width="26" Height="26" Stretch="Uniform"
+                                           VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="19" Width="30" VerticalAlignment="Center"
+                                               IsVisible="{Binding IconImage, Converter={x:Static avc:ObjectConverters.IsNull}}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14.5" VerticalAlignment="Center" Margin="10,0,0,0"
+                                               TextTrimming="CharacterEllipsis"
+                                               IsVisible="{Binding #SidebarRoot.((vm:MainWindowViewModel)DataContext).IsSidebarCollapsed, Converter={x:Static avc:BoolConverters.Not}}"/>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

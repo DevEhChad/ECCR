@@ -1,0 +1,238 @@
+<!--
+    Reusable control styles (Style Classes) built on top of Styles/Colors.axaml's palette, for
+    new pages introduced by the sidebar/shell overhaul. Existing pages keep their inline-styled
+    Borders/Buttons untouched - these classes are additive, not a replacement.
+-->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Card: the "Background=#121622 BorderBrush=#20283C CornerRadius=8" panel pattern repeated throughout the app -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <!-- Baseline for every ComboBox in the app: consistent minimum width and corner radius, plus
+         best-effort text trimming on the selected-item display for combos that don't supply
+         their own ItemTemplate (e.g. the plain-string profile switcher) - combos with a custom
+         ItemTemplate (most of them, for the badge+label rows) still need TextTrimming set on
+         their own inline TextBlock, since a style here can't reach inside a DataTemplate. -->
+    <Style Selector="ComboBox">
+        <Setter Property="MinWidth" Value="120"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="ComboBox /template/ ContentPresenter">
+        <Setter Property="TextBlock.TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <!-- Dependent option row: a settings row that's only meaningful while a parent toggle above
+         it is on (e.g. tray sub-options while "Run in System Tray" is off) - the row's IsEnabled
+         is bound to the parent toggle in the view, and this just makes that disabled state
+         visible, since plain TextBlocks don't dim on their own the way real controls do. -->
+    <Style Selector="Grid.dependentOption:disabled">
+        <Setter Property="Opacity" Value="0.4"/>
+    </Style>
+
+    <!-- Status pill: small rounded badge used by the device-status bar and Home's quick-action cards -->
+    <Style Selector="Border.pill">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="10,5"/>
+    </Style>
+
+    <!-- Buttons: the three recurring variants -->
+    <Style Selector="Button.primary">
+        <Setter Property="Background" Value="{DynamicResource AccentGreenSolidBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="14,8"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <Style Selector="Button.neutral">
+        <Setter Property="Background" Value="{DynamicResource RowBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource RowBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <Style Selector="Button.danger">
+        <Setter Property="Background" Value="{DynamicResource AccentRedBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentRedBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentRedTextBrush}"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <!-- Connected Devices: a card-look row that's actually a clickable Button (Border.card's
+         style doesn't apply to Button, hence a dedicated selector) - navigates to the clicked
+         device's mapping page. -->
+    <Style Selector="Button.deviceRow">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="14"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Button.deviceRow:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+
+    <!-- Clickable pill: same look as Border.pill, for compact rows (top device-status bar) that need to be a Button rather than static content -->
+    <Style Selector="Button.pillButton">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+    <Style Selector="Button.pillButton:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+
+    <!-- Sidebar nav row -->
+    <Style Selector="Button.navItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Padding" Value="14,13"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Margin" Value="8,3"/>
+    </Style>
+    <Style Selector="Button.navItem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+    <!-- Additive: applied on top of .navItem (not a standalone style) when a row is the active page. -->
+    <Style Selector="Button.navItem.navItemSelected">
+        <Setter Property="Background" Value="{DynamicResource SidebarSelectedBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+
+    <!-- Horizontal tab strip (Controller Mapping page): a pill row, unlike the sidebar's
+         vertical navItem, with a bottom-border accent on the active tab. -->
+    <Style Selector="Button.mappingTab">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="Padding" Value="14,9"/>
+        <Setter Property="CornerRadius" Value="6,6,0,0"/>
+        <Setter Property="Margin" Value="0,0,2,0"/>
+        <Setter Property="BorderThickness" Value="0,0,0,2"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.mappingTab:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SidebarHoverBrush}"/>
+    </Style>
+    <!-- Additive: applied on top of .mappingTab (not a standalone style) when it's the active tab. -->
+    <Style Selector="Button.mappingTab.mappingTabSelected">
+        <Setter Property="Background" Value="{DynamicResource SidebarSelectedBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentGreenSolidBrush}"/>
+    </Style>
+
+    <!-- Profiles page: one game card in the library grid. A Border, not a Button, since the
+         card's clickable surfaces are its own internal buttons (Launch/Test/Calibrate/Assign),
+         not the card as a whole. -->
+    <Style Selector="Border.gameCard">
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="12"/>
+    </Style>
+
+    <!-- Visual Device Mapping: clickable button region overlaid on the controller-skin image. Mostly
+         transparent at rest so the artwork shows through; hover/bound/pressed states layer on
+         top additively (a hotspot can be both bound and mid-press at once). -->
+    <Style Selector="Button.hotspot">
+        <Setter Property="Background" Value="#14FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+        <Setter Property="BorderThickness" Value="3"/>
+        <Setter Property="CornerRadius" Value="18"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="Button.hotspot:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#403E7BFA"/>
+    </Style>
+    <Style Selector="Button.hotspot.hotspotBound">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentGreenSolidBrush}"/>
+    </Style>
+    <Style Selector="Button.hotspot.hotspotPressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="#6000E599"/>
+    </Style>
+    <!-- Currently armed for capture (from either this hotspot or the matching Device Mapping Table row) - see MainWindowViewModel.ListeningEntry. -->
+    <Style Selector="Button.hotspot.hotspotArmed">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentPurpleBrush}"/>
+        <Setter Property="BorderThickness" Value="4"/>
+    </Style>
+
+    <!-- Visual Device Mapping: moving analog-stick graphic (position driven by a RenderTransform, not layout). -->
+    <Style Selector="Ellipse.stickKnob">
+        <Setter Property="Fill" Value="#332D374D"/>
+        <Setter Property="Stroke" Value="#3E7BFA"/>
+        <Setter Property="StrokeThickness" Value="6"/>
+    </Style>
+
+    <!-- Input Matrix: one tile per physical button/POV direction - same additive hover/pressed
+         language as Button.hotspot above, just laid out in a reflowing grid instead of overlaid
+         on device artwork. -->
+    <Style Selector="Button.matrixTile">
+        <Setter Property="Background" Value="#161B26"/>
+        <Setter Property="BorderBrush" Value="#2B354C"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="Width" Value="120"/>
+        <Setter Property="Height" Value="64"/>
+        <Setter Property="Margin" Value="4"/>
+    </Style>
+    <Style Selector="Button.matrixTile:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#403E7BFA"/>
+    </Style>
+    <!-- Physical button held down right now - strictly momentary, no lingering after release. -->
+    <Style Selector="Button.matrixTile.matrixTilePressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="#6000E599"/>
+    </Style>
+
+    <!-- Input Matrix: one gauge card per reported analog axis, clickable to quick-assign a target -
+         same base chrome as Button.matrixTile so the two grids read as one family. -->
+    <Style Selector="Button.matrixAxisCard">
+        <Setter Property="Background" Value="#161B26"/>
+        <Setter Property="BorderBrush" Value="#2B354C"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="Width" Value="160"/>
+        <Setter Property="Margin" Value="4"/>
+    </Style>
+    <Style Selector="Button.matrixAxisCard:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#403E7BFA"/>
+    </Style>
+    <!-- Gauge track: a fixed-size Canvas the fill Rectangle(s) are positioned/sized within by CenteredAxisFillConverter (centered axes) or bound directly (unidirectional axes' width). -->
+    <Style Selector="Rectangle.matrixAxisFill">
+        <Setter Property="Fill" Value="{DynamicResource AccentGreenSolidBrush}"/>
+        <Setter Property="RadiusX" Value="3"/>
+        <Setter Property="RadiusY" Value="3"/>
+    </Style>
+
+    <!-- Ghost/stuck-input warning icon on a tile still held past the 30s threshold. -->
+    <Style Selector="TextBlock.matrixGhostIcon">
+        <Setter Property="Foreground" Value="#FFB74D"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+</Styles>

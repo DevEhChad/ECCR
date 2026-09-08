@@ -8,7 +8,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
     <!-- Single Source of Truth for App Version -->
-    <Version>1.0.8</Version>
+    <Version>1.1.0</Version>
 
     <!-- Application & Task Manager Metadata -->
     <Product>EhChads Controller Remapper</Product>
@@ -24,6 +24,9 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+    <!-- Bundled so the in-app changelog viewer (Services/ChangelogService.cs) works offline
+         and always matches exactly what shipped in this build. -->
+    <AvaloniaResource Include="CHANGELOG.md" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,9 +35,11 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="HidSharp" Version="2.6.4" />
     <PackageReference Include="Nefarius.Drivers.HidHide" Version="2.0.0" />
     <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
     <PackageReference Include="SharpDX.DirectInput" Version="4.2.0" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
     <PackageReference Include="System.Management" Version="9.0.0" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" />
     <PackageReference Include="Velopack" Version="1.2.0" />
@@ -49,6 +54,7 @@
       <Private>true</Private>
     </Reference>
     <None Include="Vendor\vJoy\vJoyInterface.dll">
+      <Link>vJoyInterface.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

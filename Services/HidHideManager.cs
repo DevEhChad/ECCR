@@ -20,6 +20,17 @@ public partial class HidDeviceItem : ObservableObject
 
     [ObservableProperty]
     private bool _isHidden;
+
+    /// <summary>
+    /// False when <see cref="DeviceInstanceId"/> is the synthesized <c>HID\VID_xxxx&amp;PID_xxxx</c>
+    /// fallback <see cref="HidHideManager.GetConnectedHidDevices"/> builds when it can't recover a
+    /// real Windows device instance path - that string doesn't match anything in HidHide's actual
+    /// device tree, so sending it to <c>AddBlockedInstanceId</c> would silently no-op (the checkbox
+    /// would show "hidden" while the device stays fully visible). <see cref="HidHideManager.ToggleDeviceHiding"/>
+    /// refuses to hide (not un-hide) a device with this false, and surfaces <see cref="HidHideManager.LastError"/> instead.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isIdentifierReliable = true;
 }
 
 /// <summary>
@@ -38,6 +49,69 @@ public partial class HidDeviceItem : ObservableObject
 public class HidHideManager
 {
     private readonly IHidHideControlService? _hidHide;
+    private System.Threading.Timer? _cycleDebounceTimer;
+    private readonly object _cycleDebounceLock = new();
+
+    /// <summary>
+    /// Serializes every call into the driver client (<see cref="_hidHide"/>) and DirectInput -
+    /// these methods used to only ever run one-at-a-time by accident, because every caller sat
+    /// on the UI thread. Now that <see cref="EnsureDeviceCloaked"/> and friends are called from
+    /// background threads (see <c>ViewModels.HidHideViewModel.EnsureDeviceCloaked</c>'s doc
+    /// comment for why), a concurrent read-modify-write against the driver's blocklist - e.g. two
+    /// mappings capturing/cloaking at nearly the same moment - could otherwise race and silently
+    /// drop one device's cloak. None of these calls are hot-path/high-frequency (only ever
+    /// user-triggered), so a single coarse lock costs nothing in practice.
+    /// </summary>
+    private readonly object _driverLock = new();
+
+    private static readonly string LogFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ECCR", "hid-debug.log");
+
+    /// <summary>Temporary diagnostic log (shared file/format with <see cref="ControllerHidService"/>) for troubleshooting which devices get included/excluded and why.</summary>
+    private const long MaxLogSizeBytes = 5 * 1024 * 1024;
+
+    private static void LogDebug(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
+            if (File.Exists(LogFilePath) && new FileInfo(LogFilePath).Length > MaxLogSizeBytes)
+                File.Delete(LogFilePath);
+            File.AppendAllText(LogFilePath, $"[{DateTime.Now:HH:mm:ss.fff}] [HidHide] {message}\n");
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// User-facing explanation of the most recent failure from a user-triggered cloaking action
+    /// (<see cref="ToggleDeviceHiding"/>, <see cref="SetGlobalHidingState"/>, <see cref="EnsureDeviceCloaked"/>) -
+    /// null when the last such action succeeded. This is the "fail soft with a notification"
+    /// half of this class: every driver call already degrades to a safe no-op on failure, but
+    /// before this that failure was completely invisible (bare <c>catch { }</c>) instead of just
+    /// non-fatal. <see cref="ViewModels.HidHideViewModel"/> surfaces this in the HidHide page.
+    /// </summary>
+    public string? LastError { get; private set; }
+
+    /// <summary>
+    /// Classifies the Nefarius driver's own exception hierarchy (as exposed by the
+    /// Nefarius.Drivers.HidHide 2.0.0 package this app references - it predates the newer
+    /// HidHideMultipleDeviceNodesFoundException/HidHideHandleInvalidException types some later
+    /// versions add) into a short, specific message instead of one generic failure string, logs
+    /// the real type+message to <c>hid-debug.log</c> either way, and records the result in
+    /// <see cref="LastError"/> for the UI.
+    /// </summary>
+    private void HandleHidHideException(string context, Exception ex)
+    {
+        LastError = ex switch
+        {
+            HidHideDriverNotFoundException => "HidHide driver isn't installed or isn't running.",
+            HidHideDriverAccessFailedException => "Windows denied access to the HidHide driver - try running as administrator.",
+            HidHideDetectionFailedException => "HidHide couldn't determine this device's identity - it may have multiple ambiguous device nodes.",
+            _ => $"HidHide error during {context}: {ex.Message}"
+        };
+
+        LogDebug($"{context} threw: {ex.GetType().Name}: {ex.Message}");
+    }
 
     public bool IsInstalled
     {
@@ -91,48 +165,59 @@ public class HidHideManager
 
     /// <summary>
     /// Identifies the app's own virtual output devices (vJoy: VID 0x1234; ViGEm's emulated
-    /// Xbox 360/DualShock pads: VID 0x045E with one of several XInput PIDs) so they're never
-    /// accidentally cloaked. Checks VID/PID first when available, then falls back to
-    /// substring matching on device name/instance ID/product name for callers (like the
-    /// device-instance-ID-only overloads used throughout this file) that don't have VID/PID
-    /// parsed out. Over-matching here is the safer failure mode than under-matching, since
-    /// the consequence of a false positive is just "one real device stays visible to
-    /// HidHide's picker", while a false negative could hide the app's own virtual device
-    /// from every game.
+    /// Xbox 360 pad: VID 0x045E PID 0x028E specifically - ViGEm's own emulation target, not
+    /// any other Microsoft PID) so they're never accidentally cloaked. Checks VID/PID first
+    /// when available, then falls back to substring matching on device name/instance ID/
+    /// product name for callers (like the device-instance-ID-only overloads used throughout
+    /// this file) that don't have VID/PID parsed out. Over-matching here is the safer failure
+    /// mode than under-matching, since the consequence of a false positive is just "one real
+    /// device stays visible to HidHide's picker", while a false negative could hide the app's
+    /// own virtual device from every game - see the 045E:028E handling below for why that PID
+    /// in particular stays an unconditional match rather than trying to disambiguate a genuine
+    /// wired Xbox 360 pad from ViGEm's impersonation of one.
     /// </summary>
     public static bool IsVirtualDevice(string? name, string? deviceId, string? prodName = null, int vid = 0, int pid = 0)
     {
-        if (vid == 0x1234) return true;
-        if (vid == 0x045E && (pid == 0x028E || pid == 0x028F || pid == 0x02D1 || pid == 0x02DD || pid == 0x02E3 || pid == 0x0B12)) return true;
-
         string n = (name ?? string.Empty).ToLowerInvariant();
         string id = (deviceId ?? string.Empty).ToLowerInvariant();
         string p = (prodName ?? string.Empty).ToLowerInvariant();
 
+        // vJoy's default VID (0x1234) is vJoy-specific and not shared with any real hardware
+        // vendor, so this stays a bare VID match.
+        if (vid == 0x1234) return true;
         if (p.Contains("vjoy") || n.Contains("vjoy") || id.Contains("vjoy") ||
             id.Contains("vid_1234") || id.Contains("pid_bead") || id.Contains("pid_0be3") || id.Contains("root_vjoy"))
         {
             return true;
         }
 
-        if (p.Contains("vigem") || n.Contains("vigem") || id.Contains("vigem") ||
-            id.Contains("vid_045e&pid_028e") || n.Contains("virtual"))
-        {
-            return true;
-        }
+        // ViGEm's virtual Xbox 360 pad always identifies as exactly 045E:028E (a real Microsoft
+        // Xbox 360 controller's own VID/PID, since ViGEm deliberately impersonates one for game
+        // compatibility) - PID alone is therefore ambiguous with a genuine wired Xbox 360 pad.
+        // Verified live against a real machine running ECCR with virtual output active: a
+        // ViGEm-created 045E:028E pad does NOT reliably carry a "root" instance-id token (it
+        // showed up on real USB-tree-shaped instance IDs, indistinguishable from a genuine wired
+        // pad by instance ID alone) - so unlike the true ROOT-enumerated vJoy case, there is no
+        // reliable disambiguator available here. Given a false negative (accidentally exposing
+        // ECCR's own virtual output to being hidden, which breaks every game's input) is far
+        // worse than a false positive (one genuine wired Xbox 360 pad, a rare case among this
+        // app's users, not appearing in the HidHide picker), 028E stays an unconditional match.
+        // Other 045E PIDs (028F/02D1/02DD/02E3/0B12 etc.) belong to real Microsoft Xbox One/
+        // Series hardware that ViGEm does not emulate, and correctly do NOT match here.
+        bool isVigemVidPid = (vid == 0x045E && pid == 0x028E) || id.Contains("vid_045e&pid_028e");
+        bool isVigemNameHit = p.Contains("vigem") || n.Contains("vigem") || id.Contains("vigem");
 
+        if (isVigemNameHit || isVigemVidPid) return true;
+
+        // isVigemVidPid already covers 045E:028E unconditionally above; this catches the
+        // remaining vJoy-token cases for a generically-named "HID-compliant ..." device whose
+        // vid/pid weren't parsed out by the caller.
         if (n.Contains("hid-compliant game controller") || n.Contains("hid-compliant system controller"))
         {
-            if (id.Contains("1234") || id.Contains("bead") || id.Contains("0be3") || 
-                id.Contains("045e") || id.Contains("root") || id.Contains("vigem"))
+            if (id.Contains("1234") || id.Contains("bead") || id.Contains("0be3") || id.Contains("vigem"))
             {
                 return true;
             }
-        }
-
-        if (n == "controller (xbox 360 for windows)" && (id.Contains("045e") || id.Contains("xusb") || id.Contains("root") || id.Contains("vigem")))
-        {
-            return true;
         }
 
         return false;
@@ -235,21 +320,73 @@ public class HidHideManager
                 {
                     EnsureSelfWhitelisted();
                 }
+                LastError = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            HandleHidHideException(active ? "enabling cloaking" : "disabling cloaking", ex);
+        }
+    }
+
+    /// <summary>
+    /// Forces the driver to re-evaluate its blocklist immediately by cycling <c>IsActive</c>
+    /// off then back on - a raw flag flip, not a call through <see cref="SetGlobalHidingState"/>,
+    /// so it doesn't redundantly re-run <see cref="UnblockVirtualDevices"/>/
+    /// <see cref="EnsureSelfWhitelisted"/> on every call. A per-device blocklist edit
+    /// (<see cref="AddBlockedInstanceId"/>/<see cref="RemoveBlockedInstanceId"/> via
+    /// <see cref="ToggleDeviceHiding"/>, <see cref="EnsureDeviceCloaked"/>, or
+    /// <see cref="SyncBlockedInstances"/>) doesn't make the driver re-evaluate already-open
+    /// device handles on its own - only a transition of the master <c>IsActive</c> flag does,
+    /// which is why toggling the app's own "Cloaking Active" switch off/on used to be the only
+    /// way to make a per-device change actually take effect live. This method automates that
+    /// same cycle so callers don't have to. No-op if cloaking isn't currently active (nothing
+    /// to re-apply) or the driver isn't installed.
+    /// </summary>
+    private void CycleGlobalHidingIfActive()
+    {
+        try
+        {
+            if (_hidHide != null && IsInstalled && _hidHide.IsActive)
+            {
+                _hidHide.IsActive = false;
+                _hidHide.IsActive = true;
             }
         }
         catch { }
     }
 
+    /// <summary>
+    /// Debounced version of <see cref="CycleGlobalHidingIfActive"/> for <see cref="EnsureDeviceCloaked"/>,
+    /// which can fire many times in a tight burst (e.g. once per mapping while Auto-Map Apply
+    /// adds ~15-20 mapping entries for one device) - coalesces a burst into a single cycle
+    /// ~150ms after the last call, instead of visibly flickering cloaking once per binding.
+    /// </summary>
+    private void ScheduleCycleDebounced()
+    {
+        lock (_cycleDebounceLock)
+        {
+            _cycleDebounceTimer?.Dispose();
+            _cycleDebounceTimer = new System.Threading.Timer(_ => CycleGlobalHidingIfActive(), null, dueTime: 150, period: System.Threading.Timeout.Infinite);
+        }
+    }
+
+    /// <summary>Public entry point for a single, immediate live-sync cycle - used by <see cref="ECCR.ViewModels.HidHideViewModel"/> after a single-checkbox toggle or a bulk select/deselect-all pass.</summary>
+    public void SyncLiveNow() => CycleGlobalHidingIfActive();
+
     public List<string> GetBlockedInstanceIds()
     {
         if (_hidHide == null || !IsInstalled) return new List<string>();
-        try
+        lock (_driverLock)
         {
-            return _hidHide.BlockedInstanceIds
-                .Where(id => !IsVirtualDevice(string.Empty, id))
-                .ToList();
+            try
+            {
+                return _hidHide.BlockedInstanceIds
+                    .Where(id => !IsVirtualDevice(string.Empty, id))
+                    .ToList();
+            }
+            catch { return new List<string>(); }
         }
-        catch { return new List<string>(); }
     }
 
     /// <summary>
@@ -290,6 +427,7 @@ public class HidHideManager
 
                 if (IsVirtualDevice(devName, null, prodName, vid, pid))
                 {
+                    LogDebug($"DirectInput pass: excluded '{devName}' (VID={vid:X4} PID={pid:X4}) - matched IsVirtualDevice (pre-instance-id)");
                     continue;
                 }
 
@@ -305,47 +443,55 @@ public class HidHideManager
                 try
                 {
                     using var joystick = new Joystick(directInput, d.InstanceGuid);
-                    string? interfacePath = joystick.Properties.InterfacePath;
-
-                    if (!string.IsNullOrWhiteSpace(interfacePath))
-                    {
-                        string clean = interfacePath.TrimStart('\\', '?', '.');
-                        int guidIndex = clean.LastIndexOf('{');
-                        if (guidIndex > 0)
-                        {
-                            clean = clean.Substring(0, guidIndex).TrimEnd('#');
-                        }
-                        instanceId = clean.Replace('#', '\\');
-                    }
+                    instanceId = ExtractInstanceIdFromInterfacePath(joystick.Properties.InterfacePath) ?? string.Empty;
                 }
                 catch { }
 
+                // A real instance path always has at least one more segment after VID_xxxx&PID_xxxx
+                // (the device's enumeration/serial suffix) - this bare fallback never matches
+                // anything in HidHide's actual device tree, so it's flagged unreliable rather than
+                // presented as a normal cloakable entry (see HidDeviceItem.IsIdentifierReliable).
+                bool identifierReliable = !string.IsNullOrWhiteSpace(instanceId);
                 if (string.IsNullOrWhiteSpace(instanceId))
                 {
                     instanceId = $"HID\\VID_{vid:X4}&PID_{pid:X4}";
+                    LogDebug($"DirectInput pass: '{devName}' - could not resolve a real instance path, using unreliable fallback '{instanceId}'");
                 }
 
                 if (IsVirtualDevice(devName, instanceId, prodName, vid, pid))
                 {
+                    LogDebug($"DirectInput pass: excluded '{devName}' ({instanceId}) - matched IsVirtualDevice (post-instance-id)");
                     continue;
                 }
 
                 if (seenIds.Add(instanceId))
                 {
+                    string friendlyName = BuildBrandedFriendlyName(
+                        !string.IsNullOrWhiteSpace(prodName) ? prodName : devName, vid);
+
+                    LogDebug($"DirectInput pass: added '{friendlyName}' ({instanceId})");
                     list.Add(new HidDeviceItem
                     {
                         DeviceInstanceId = instanceId,
-                        FriendlyName = devName,
-                        IsHidden = blockedInstances.Contains(instanceId) || 
+                        FriendlyName = friendlyName,
+                        IsIdentifierReliable = identifierReliable,
+                        IsHidden = blockedInstances.Contains(instanceId) ||
                                    blockedInstances.Any(b => string.Equals(b, instanceId, StringComparison.OrdinalIgnoreCase))
                     });
                 }
             }
 
+            // Only PNPClass = 'XBOXGameDevice' is included here - real Xbox controllers that
+            // enumerate via XUSB rather than a DirectInput-visible HID joystick interface.
+            // The former broader 'HIDClass' query pulled in every HID device on the system
+            // (keyboards, mice, touchpads, webcams, "HID-compliant vendor-defined device", the
+            // laptop lid switch, etc.) that IsNonGamingPeripheral's keyword list couldn't fully
+            // keep out - narrowing to just XBOXGameDevice keeps this pass limited to real game
+            // controllers instead of "every device with a HID descriptor".
             try
             {
                 using var searcher = new ManagementObjectSearcher(
-                    "SELECT DeviceID, Name, Caption, Description, Service, PNPClass FROM Win32_PnPEntity WHERE PNPClass = 'HIDClass' OR PNPClass = 'XBOXGameDevice'");
+                    "SELECT DeviceID, Name, Caption, Description, Service, PNPClass FROM Win32_PnPEntity WHERE PNPClass = 'XBOXGameDevice'");
                 using var collection = searcher.Get();
 
                 foreach (ManagementObject obj in collection)
@@ -362,36 +508,127 @@ public class HidHideManager
                         continue;
                     }
 
-                    if (IsVirtualDevice(name, deviceId)) continue;
-                    if (IsNonGamingPeripheral(name, deviceId)) continue;
-
-                    string lower = name.ToLowerInvariant();
-                    string idLower = deviceId.ToLowerInvariant();
-
-                    bool isGaming = idLower.Contains("ig_") ||
-                                    lower.Contains("controller") || lower.Contains("gamepad") || lower.Contains("joystick") ||
-                                    lower.Contains("wheel") || lower.Contains("pedal") || lower.Contains("shifter") ||
-                                    lower.Contains("handbrake") || lower.Contains("moza") || lower.Contains("logitech") ||
-                                    lower.Contains("thrustmaster") || lower.Contains("fanatec") || lower.Contains("simagic") ||
-                                    lower.Contains("dualsense") || lower.Contains("dualshock");
-
-                    if (isGaming && seenIds.Add(deviceId))
+                    if (IsVirtualDevice(name, deviceId))
                     {
+                        LogDebug($"WMI pass: excluded '{name}' ({deviceId}) - matched IsVirtualDevice");
+                        continue;
+                    }
+                    if (IsNonGamingPeripheral(name, deviceId))
+                    {
+                        LogDebug($"WMI pass: excluded '{name}' ({deviceId}) - matched IsNonGamingPeripheral");
+                        continue;
+                    }
+
+                    // The PNPClass filter (XBOXGameDevice) plus the two exclusions above are
+                    // already sufficient to isolate real gaming HID devices - a device that
+                    // makes it this far no longer needs to also match a hardcoded brand/keyword
+                    // whitelist (that used to silently drop any real controller whose
+                    // Windows-assigned name didn't happen to contain a listed brand word).
+                    if (seenIds.Add(deviceId))
+                    {
+                        int vid = ParseVidFromInstanceId(deviceId);
+                        string friendlyName = BuildBrandedFriendlyName(name, vid);
+
                         list.Add(new HidDeviceItem
                         {
                             DeviceInstanceId = deviceId,
-                            FriendlyName = name,
+                            FriendlyName = friendlyName,
                             IsHidden = blockedInstances.Contains(deviceId) ||
                                        blockedInstances.Any(b => string.Equals(b, deviceId, StringComparison.OrdinalIgnoreCase))
                         });
+                        LogDebug($"WMI pass: added '{name}' ({deviceId})");
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                LogDebug($"WMI pass threw: {ex.GetType().Name}: {ex.Message}");
+            }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            LogDebug($"GetConnectedHidDevices threw: {ex.GetType().Name}: {ex.Message}");
+        }
 
         return list.OrderBy(d => d.FriendlyName).ToList();
+    }
+
+    /// <summary>
+    /// HidHide's blocklist is keyed by Windows device instance path (VID_xxxx&amp;PID_xxxx\...),
+    /// not DirectInput's InstanceGuid, so it has to be recovered from the device's raw
+    /// interface path. A typical interface path looks like
+    /// "\\?\HID#VID_1234&amp;PID_5678#7&amp;abc123&amp;0&amp;0000#{guid}" - strip the leading "\\?\"/"."
+    /// noise and the trailing "#{class guid}" suffix, then swap the remaining "#" separators
+    /// back to "\" to get the instance ID form HidHide expects. Shared by
+    /// <see cref="GetConnectedHidDevices"/>'s enumeration and <see cref="ResolveInstanceId"/>'s
+    /// single-device lookup.
+    /// </summary>
+    private static string? ExtractInstanceIdFromInterfacePath(string? interfacePath)
+    {
+        if (string.IsNullOrWhiteSpace(interfacePath)) return null;
+
+        string clean = interfacePath.TrimStart('\\', '?', '.');
+        int guidIndex = clean.LastIndexOf('{');
+        if (guidIndex > 0)
+        {
+            clean = clean.Substring(0, guidIndex).TrimEnd('#');
+        }
+        return clean.Replace('#', '\\');
+    }
+
+    /// <summary>Recovers one device's HidHide instance ID from its DirectInput instance GUID - the single-device counterpart of <see cref="GetConnectedHidDevices"/>'s enumeration pass.</summary>
+    public string? ResolveInstanceId(Guid directInputGuid)
+    {
+        if (_hidHide == null || !IsInstalled) return null;
+
+        try
+        {
+            using var directInput = new DirectInput();
+            using var joystick = new Joystick(directInput, directInputGuid);
+            return ExtractInstanceIdFromInterfacePath(joystick.Properties.InterfacePath);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Adds a physical device to HidHide's live blocklist the instant it becomes a mapping
+    /// source, so a game can never see both it and ECCR's virtual output at once (which reads
+    /// as doubled/fighting input - the same reason a wheel needs to be cloaked for FFB to be
+    /// authoritative, see <see cref="ECCR.Services.WheelForceFeedbackService"/>). Only adds -
+    /// never removes - so this can't undo a hide the user set for an unrelated reason; enforcement
+    /// itself still depends on the separate global <see cref="IsGlobalActive"/> toggle the user
+    /// controls, this just keeps the per-device list correct and ready. Returns the resolved
+    /// instance ID (for the caller to also live-update any open HidHide dialog's checkbox list),
+    /// or null if resolution/cloaking didn't happen (driver not installed, virtual device, lookup failure).
+    /// </summary>
+    public string? EnsureDeviceCloaked(Guid directInputGuid, string? deviceName)
+    {
+        if (_hidHide == null || !IsInstalled || directInputGuid == Guid.Empty) return null;
+        if (IsVirtualDevice(deviceName, null)) return null;
+
+        lock (_driverLock)
+        {
+            string? instanceId = ResolveInstanceId(directInputGuid);
+            if (string.IsNullOrWhiteSpace(instanceId) || IsVirtualDevice(deviceName, instanceId)) return null;
+
+            try
+            {
+                var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
+                if (!blocked.Contains(instanceId))
+                {
+                    _hidHide.AddBlockedInstanceId(instanceId);
+                    LogDebug($"EnsureDeviceCloaked: auto-cloaked '{deviceName}' ({instanceId}) - now a mapping source.");
+                    ScheduleCycleDebounced();
+                }
+                LastError = null;
+                return instanceId;
+            }
+            catch (Exception ex)
+            {
+                HandleHidHideException($"auto-cloaking '{deviceName}'", ex);
+                return null;
+            }
+        }
     }
 
     private static bool IsNonGamingPeripheral(string name, string deviceId)
@@ -413,32 +650,115 @@ public class HidHideManager
         return false;
     }
 
+    /// <summary>
+    /// USB vendor IDs for controller/wheel/joystick brands whose devices sometimes enumerate
+    /// under a generic Windows-assigned name (e.g. "HID-compliant game controller") instead of
+    /// their real product string - used by <see cref="BuildBrandedFriendlyName"/> to recover a
+    /// recognizable brand name for the HidHide device list instead of showing the generic label.
+    /// </summary>
+    private static readonly Dictionary<int, string> KnownControllerVendors = new()
+    {
+        { 0x054C, "Sony" },
+        { 0x045E, "Microsoft" },
+        { 0x046D, "Logitech" },
+        { 0x044F, "Thrustmaster" },
+        { 0x0EB7, "Fanatec" },
+        { 0x057E, "Nintendo" },
+        { 0x28DE, "Valve" },
+        { 0x2DC8, "8BitDo" },
+        { 0x1532, "Razer" },
+        { 0x24C6, "PowerA" },
+        { 0x20D6, "PowerA" },
+        { 0x0F0D, "HORI" },
+        { 0x1038, "SteelSeries" },
+        { 0x3537, "GameSir" },
+        { 0x0079, "DragonRise" },
+        { 0x1D79, "Simagic" },
+        { 0x16D0, "Cammus" },
+    };
+
+    private static bool LooksGenericHidName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return true;
+        string lower = name.ToLowerInvariant();
+        return lower.Contains("hid-compliant") ||
+               lower.Contains("usb input device") ||
+               lower.Contains("usb game controller") ||
+               lower == "generic usb joystick";
+    }
+
+    /// <summary>
+    /// Picks the best display name for a real controller/wheel/joystick: the raw DirectInput
+    /// product/instance name when it already looks like a real brand string, otherwise a
+    /// "{Brand} Controller" fallback built from the device's USB VID (see
+    /// <see cref="KnownControllerVendors"/>) so the HidHide list never shows a bare
+    /// "HID-compliant game controller" entry the user can't identify.
+    /// </summary>
+    private static string BuildBrandedFriendlyName(string rawName, int vid)
+    {
+        if (!LooksGenericHidName(rawName)) return rawName;
+
+        if (KnownControllerVendors.TryGetValue(vid, out var brand))
+        {
+            return $"{brand} Controller";
+        }
+
+        return string.IsNullOrWhiteSpace(rawName) ? "Game Controller" : rawName;
+    }
+
+    /// <summary>Extracts the USB VID from a Windows device instance ID like "USB\VID_054C&amp;PID_0CE6\..." (0 if absent/unparseable).</summary>
+    private static int ParseVidFromInstanceId(string instanceId)
+    {
+        int idx = instanceId.IndexOf("VID_", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0 || idx + 8 > instanceId.Length) return 0;
+
+        string hex = instanceId.Substring(idx + 4, 4);
+        return int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int vid) ? vid : 0;
+    }
+
     public void ToggleDeviceHiding(HidDeviceItem device, bool hide)
     {
         if (_hidHide == null || !IsInstalled) return;
         if (IsVirtualDevice(device.FriendlyName, device.DeviceInstanceId)) return;
 
-        try
+        // See HidDeviceItem.IsIdentifierReliable's doc comment - a fabricated ID can't actually
+        // cloak anything, so refuse rather than flip the checkbox on a hide that silently did
+        // nothing. Un-hiding is always allowed - there's nothing destructive about it either way.
+        if (hide && !device.IsIdentifierReliable)
         {
-            var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
-
-            if (hide)
-            {
-                if (!blocked.Contains(device.DeviceInstanceId))
-                {
-                    _hidHide.AddBlockedInstanceId(device.DeviceInstanceId);
-                }
-            }
-            else
-            {
-                if (blocked.Contains(device.DeviceInstanceId))
-                {
-                    _hidHide.RemoveBlockedInstanceId(device.DeviceInstanceId);
-                }
-            }
-            device.IsHidden = hide;
+            LastError = $"Couldn't determine a reliable device identifier for '{device.FriendlyName}' - it can't be cloaked.";
+            LogDebug($"ToggleDeviceHiding: refused to hide '{device.FriendlyName}' ({device.DeviceInstanceId}) - unreliable identifier.");
+            return;
         }
-        catch { }
+
+        lock (_driverLock)
+        {
+            try
+            {
+                var blocked = new HashSet<string>(_hidHide.BlockedInstanceIds, StringComparer.OrdinalIgnoreCase);
+
+                if (hide)
+                {
+                    if (!blocked.Contains(device.DeviceInstanceId))
+                    {
+                        _hidHide.AddBlockedInstanceId(device.DeviceInstanceId);
+                    }
+                }
+                else
+                {
+                    if (blocked.Contains(device.DeviceInstanceId))
+                    {
+                        _hidHide.RemoveBlockedInstanceId(device.DeviceInstanceId);
+                    }
+                }
+                device.IsHidden = hide;
+                LastError = null;
+            }
+            catch (Exception ex)
+            {
+                HandleHidHideException($"{(hide ? "hiding" : "un-hiding")} '{device.FriendlyName}'", ex);
+            }
+        }
     }
 
     /// <summary>
@@ -478,6 +798,8 @@ public class HidHideManager
                     try { _hidHide.RemoveBlockedInstanceId(id); } catch { }
                 }
             }
+
+            CycleGlobalHidingIfActive();
         }
         catch { }
     }

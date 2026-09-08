@@ -1,0 +1,135 @@
+<!--
+    Auto Map page (formerly a separate popup Window, AutoMapWizardWindow - see product
+    decision to promote it to a full sidebar page). DataContext is AutoMapWizardViewModel
+    directly, registered as-is into MainWindowViewModel's _pageViewModels. Lets the user pick a
+    connected device, preview the full preset DevicePresetService.GeneratePreset would
+    generate for it, then apply it in one shot (replacing any existing mappings for that
+    device) - identical behavior to the old wizard window, just hosted inline instead of as a
+    modal dialog.
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
+             xmlns:converters="using:ECCR.Converters"
+             x:Class="ECCR.Views.AutoMapWizardView"
+             x:DataType="vm:AutoMapWizardViewModel">
+
+    <Design.DataContext>
+        <vm:AutoMapWizardViewModel/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
+        <converters:ButtonBadgeConverter x:Key="ButtonBadgeConverter"/>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto, Auto, *, Auto" Margin="24">
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+            <TextBlock Text="⚡ Auto-Map Configuration Wizard" FontWeight="Bold" FontSize="18" Foreground="White"/>
+            <TextBlock Text="Quickly generate standard button and axis mappings for your selected controller or wheel rig." FontSize="12" Foreground="#8B95A5"/>
+        </StackPanel>
+
+        <!-- Device Selector, Target Mode & Player Slot -->
+        <Border Grid.Row="1" Background="#161B26" CornerRadius="8" Padding="14" Margin="0,0,0,14" BorderBrush="#20283C" BorderThickness="1">
+            <!-- WrapPanel (not a fixed Grid) - at narrow window widths (this app's own
+                 MinWidth="800") a rigid "*, Auto, Auto" column split let the two Auto sections
+                 (an unwrapped 3-radio-button row and two MinWidth="190" ComboBoxes) squeeze the
+                 device-selector column toward zero. Each section now wraps to its own line
+                 instead of clipping when space is tight. -->
+            <WrapPanel Orientation="Horizontal">
+                <StackPanel Spacing="6" MinWidth="220" Margin="0,0,14,10">
+                    <TextBlock Text="Selected Controller / Device" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                    <ComboBox ItemsSource="{Binding ConnectedDevices}"
+                              SelectedItem="{Binding WizardSelectedDevice}"
+                              HorizontalAlignment="Stretch"
+                              Background="#10141E"
+                              CornerRadius="6"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6" VerticalAlignment="Center" Margin="0,0,14,10">
+                    <TextBlock Text="Emulation Profile Target" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <RadioButton Content="Xbox Gamepad" IsChecked="{Binding IsXboxOutputSelected}" GroupName="TargetType" Foreground="White"/>
+                        <RadioButton Content="DualShock 4" IsChecked="{Binding IsDualShock4OutputSelected}" GroupName="TargetType" Foreground="White"/>
+                        <RadioButton Content="DirectInput Wheel" IsChecked="{Binding IsWheelOutputSelected}" GroupName="TargetType" Foreground="White"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Spacing="6" VerticalAlignment="Center" Margin="0,0,0,10">
+                    <TextBlock Text="Assign to Player" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding !WizardTargetIsWheel}"/>
+                    <TextBlock Text="Assign to Wheel Slot" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding WizardTargetIsWheel}"/>
+                    <ComboBox ItemsSource="{Binding PlayerTargets}"
+                              SelectedValue="{Binding WizardTargetPlayer}"
+                              SelectedValueBinding="{Binding Id}"
+                              IsVisible="{Binding !WizardTargetIsWheel}"
+                              MinWidth="190"
+                              Background="#10141E"
+                              CornerRadius="6">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:PlayerTargetOption">
+                                <Grid ColumnDefinitions="Auto, *">
+                                    <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <ComboBox ItemsSource="{Binding WheelSlots}"
+                              SelectedValue="{Binding WizardTargetWheelSlot}"
+                              SelectedValueBinding="{Binding Id}"
+                              IsVisible="{Binding WizardTargetIsWheel}"
+                              MinWidth="190"
+                              Background="#10141E"
+                              CornerRadius="6">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:WheelDeviceSlotOption">
+                                <Grid ColumnDefinitions="Auto, *">
+                                    <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </WrapPanel>
+        </Border>
+
+        <!-- Mappings Preview List -->
+        <Border Grid.Row="2" Background="#161B26" CornerRadius="8" Padding="12" BorderBrush="#20283C" BorderThickness="1">
+            <Grid RowDefinitions="Auto, *">
+                <Grid Grid.Row="0" ColumnDefinitions="2*, 1*, 2.5*" Margin="8,0,8,8">
+                    <TextBlock Grid.Column="0" Text="Physical Input" FontWeight="Bold" FontSize="12" Foreground="#8B95A5"/>
+                    <TextBlock Grid.Column="1" Text="Type" FontWeight="Bold" FontSize="12" Foreground="#8B95A5"/>
+                    <TextBlock Grid.Column="2" Text="Mapped Output" FontWeight="Bold" FontSize="12" Foreground="#8B95A5"/>
+                </Grid>
+
+                <ScrollViewer Grid.Row="1">
+                    <ItemsControl ItemsSource="{Binding WizardMappings}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:PresetMappingItem">
+                                <Border Background="#10141E" CornerRadius="6" Padding="10,8" Margin="0,3">
+                                    <Grid ColumnDefinitions="2*, 1*, 2.5*">
+                                        <TextBlock Grid.Column="0" Text="{Binding PhysicalName}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Type}" VerticalAlignment="Center" Foreground="#8B95A5" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding DefaultTargetOutput}" VerticalAlignment="Center" Foreground="#00E599" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- Footer Buttons -->
+        <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto" Margin="0,16,0,0">
+            <Button Grid.Column="0" Content="🔄 Regenerate Preset" Command="{Binding PopulateWizardPresetCommand}" Background="#1F283C" Foreground="White" Padding="14,8" CornerRadius="6"/>
+            <Button Grid.Column="2" Content="Apply Configuration" Command="{Binding ApplyWizardMappingsCommand}" Background="#00B074" Foreground="White" FontWeight="Bold" Padding="18,8" CornerRadius="6"/>
+        </Grid>
+    </Grid>
+</UserControl>
