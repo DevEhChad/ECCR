@@ -143,6 +143,13 @@ public partial class DeviceMappingPageViewModel : ViewModelBase, INavigationAwar
     /// <summary>Gates the More Options tab's Touchpad Click Mode card - only PlayStation-category devices report a touchpad at all.</summary>
     public bool IsSelectedDeviceTouchpadCapable => SelectedDeviceCategory == DeviceHardwareCategory.PlayStationController;
 
+    /// <summary>Gates the More Options tab's Adaptive Triggers card - only a DualSense has them, and the effects are written to the physical pad over HID so it must be the connected one.</summary>
+    public bool IsSelectedDeviceAdaptiveTriggerCapable =>
+        SelectedDeviceStatus is { } status && ControllerHidService.SupportsAdaptiveTriggers(status.VendorId, status.ProductId);
+
+    /// <summary>Every value of <see cref="TriggerEffectMode"/>, for the Adaptive Triggers mode ComboBoxes.</summary>
+    public static IReadOnlyList<TriggerEffectMode> TriggerEffectModes { get; } = System.Enum.GetValues<TriggerEffectMode>();
+
     /// <summary>Every value of <see cref="TouchpadClickMode"/>, for the Touchpad Click Mode ComboBox's ItemsSource - same plain-enum-values ComboBox convention already used for <c>ControllerLedViewModel.EffectModes</c>.</summary>
     public static IReadOnlyList<TouchpadClickMode> TouchpadClickModes { get; } = System.Enum.GetValues<TouchpadClickMode>();
     public bool IsSelectedDeviceGamepad => SelectedDeviceName != null && !IsSelectedDeviceWheel;
@@ -176,6 +183,7 @@ public partial class DeviceMappingPageViewModel : ViewModelBase, INavigationAwar
         OnPropertyChanged(nameof(SelectedDeviceCategory));
         OnPropertyChanged(nameof(IsSelectedDeviceWheel));
         OnPropertyChanged(nameof(IsSelectedDeviceTouchpadCapable));
+        OnPropertyChanged(nameof(IsSelectedDeviceAdaptiveTriggerCapable));
         OnPropertyChanged(nameof(IsSelectedDeviceGamepad));
         OnPropertyChanged(nameof(SelectedDeviceDisplayName));
         OnPropertyChanged(nameof(SelectedDeviceGroup));

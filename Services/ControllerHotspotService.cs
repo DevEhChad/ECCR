@@ -69,7 +69,7 @@ public static class ControllerHotspotService
     /// <summary>
     /// Maps a semantic hotspot to the physical button index this hardware category reports it
     /// on, using the exact index numbering already established in
-    /// <see cref="DevicePresetService.GetButtonDisplayName"/>/<see cref="DevicePresetService.GeneratePreset"/>.
+    /// <see cref="DevicePresetService.GetButtonDisplayName"/>/<see cref="DevicePresetService.GenerateAutoBindPreset"/>.
     /// Returns null when the category has no discrete button for that semantic (e.g. Xbox pads
     /// have no L2/R2 *button*, only an axis, and no touchpad) - the hotspot then simply never
     /// lights up for that category, though it can still be mapped via the physical-press capture

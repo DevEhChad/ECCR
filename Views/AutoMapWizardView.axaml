@@ -2,7 +2,7 @@
     Auto Map page (formerly a separate popup Window, AutoMapWizardWindow - see product
     decision to promote it to a full sidebar page). DataContext is AutoMapWizardViewModel
     directly, registered as-is into MainWindowViewModel's _pageViewModels. Lets the user pick a
-    connected device, preview the full preset DevicePresetService.GeneratePreset would
+    connected device, preview the full preset DevicePresetService.GenerateAutoBindPreset would
     generate for it, then apply it in one shot (replacing any existing mappings for that
     device) - identical behavior to the old wizard window, just hosted inline instead of as a
     modal dialog.
@@ -48,21 +48,22 @@
                 </StackPanel>
 
                 <StackPanel Spacing="6" VerticalAlignment="Center" Margin="0,0,14,10">
-                    <TextBlock Text="Emulation Profile Target" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <RadioButton Content="Xbox Gamepad" IsChecked="{Binding IsXboxOutputSelected}" GroupName="TargetType" Foreground="White"/>
+                    <TextBlock Text="Auto Bind Layout" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                    <WrapPanel Orientation="Horizontal">
+                        <RadioButton Content="Xbox 360 layout" IsChecked="{Binding IsXboxOutputSelected}" GroupName="TargetType" Foreground="White" Margin="0,0,10,0"/>
+                        <RadioButton Content="DirectInput layout (generic wheel)" IsChecked="{Binding IsWheelOutputSelected}" GroupName="TargetType" Foreground="White" Margin="0,0,10,0"/>
+                        <RadioButton Content="Combined (Xbox buttons + wheel axes)" IsChecked="{Binding IsCombinedOutputSelected}" GroupName="TargetType" Foreground="White" Margin="0,0,10,0"/>
                         <RadioButton Content="DualShock 4" IsChecked="{Binding IsDualShock4OutputSelected}" GroupName="TargetType" Foreground="White"/>
-                        <RadioButton Content="DirectInput Wheel" IsChecked="{Binding IsWheelOutputSelected}" GroupName="TargetType" Foreground="White"/>
-                    </StackPanel>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding WizardLayoutDescription}" FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <StackPanel Spacing="6" VerticalAlignment="Center" Margin="0,0,0,10">
-                    <TextBlock Text="Assign to Player" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding !WizardTargetIsWheel}"/>
-                    <TextBlock Text="Assign to Wheel Slot" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding WizardTargetIsWheel}"/>
+                    <TextBlock Text="Assign to Player" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding WizardUsesPlayer}"/>
                     <ComboBox ItemsSource="{Binding PlayerTargets}"
                               SelectedValue="{Binding WizardTargetPlayer}"
                               SelectedValueBinding="{Binding Id}"
-                              IsVisible="{Binding !WizardTargetIsWheel}"
+                              IsVisible="{Binding WizardUsesPlayer}"
                               MinWidth="190"
                               Background="#10141E"
                               CornerRadius="6">
@@ -77,10 +78,11 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
+                    <TextBlock Text="Assign to Wheel Slot" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" IsVisible="{Binding WizardUsesWheelSlot}"/>
                     <ComboBox ItemsSource="{Binding WheelSlots}"
                               SelectedValue="{Binding WizardTargetWheelSlot}"
                               SelectedValueBinding="{Binding Id}"
-                              IsVisible="{Binding WizardTargetIsWheel}"
+                              IsVisible="{Binding WizardUsesWheelSlot}"
                               MinWidth="190"
                               Background="#10141E"
                               CornerRadius="6">
