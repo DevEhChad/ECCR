@@ -16,7 +16,7 @@ public class DeviceHardwareInfo
     public int ButtonCount { get; set; }
     public int AxisCount { get; set; }
 
-    /// <summary>Whether the device reports a POV hat (D-Pad) - gates whether <see cref="DevicePresetService.GeneratePreset"/> emits the synthetic 128-131 D-Pad button indices for it.</summary>
+    /// <summary>Whether the device reports a POV hat (D-Pad) - gates whether <see cref="DevicePresetService.GenerateAutoBindPreset"/> emits the synthetic 128-131 D-Pad button indices for it.</summary>
     public bool HasPov { get; set; }
 
     /// <summary>
@@ -28,6 +28,12 @@ public class DeviceHardwareInfo
     /// </summary>
     public int VendorId { get; set; }
     public int ProductId { get; set; }
+
+    /// <summary>Bit n set = axis slot n (X, Y, Z, RotationX, RotationY, RotationZ, Slider0, Slider1) exists on the device. 0xFF if it couldn't be probed. <see cref="AxisCount"/> alone can't say which slots are present.</summary>
+    public int AxisSlotMask { get; set; } = 0xFF;
+
+    /// <summary>True when Windows also exposes the device through XInput (see <see cref="XInputRumbleService.IsXInputDevice"/>).</summary>
+    public bool ExposesXInput { get; set; }
 }
 
 /// <summary>
@@ -79,6 +85,25 @@ public class InputDeviceManager : IDisposable
         _directInput = new DirectInput();
     }
 
+    /// <summary>Which of the 8 fixed axis slots the device really has, from its DirectInput axis objects (sliders are numbered in enumeration order). Falls back to <paramref name="fallback"/> if the device reports none.</summary>
+    private static int ProbeAxisSlotMask(Joystick joystick, int fallback)
+    {
+        int mask = 0;
+        int sliders = 0;
+        foreach (var obj in joystick.GetObjects(DeviceObjectTypeFlags.Axis))
+        {
+            var guid = obj.ObjectType;
+            if (guid == ObjectGuid.XAxis) mask |= 1 << 0;
+            else if (guid == ObjectGuid.YAxis) mask |= 1 << 1;
+            else if (guid == ObjectGuid.ZAxis) mask |= 1 << 2;
+            else if (guid == ObjectGuid.RxAxis) mask |= 1 << 3;
+            else if (guid == ObjectGuid.RyAxis) mask |= 1 << 4;
+            else if (guid == ObjectGuid.RzAxis) mask |= 1 << 5;
+            else if (guid == ObjectGuid.Slider && sliders < 2) mask |= 1 << (6 + sliders++);
+        }
+        return mask != 0 ? mask : fallback;
+    }
+
     public List<DeviceHardwareInfo> GetConnectedDevices()
     {
         var list = new List<DeviceHardwareInfo>();
@@ -97,7 +122,7 @@ public class InputDeviceManager : IDisposable
                 if (HidHideManager.IsVirtualDevice(d.InstanceName, null, d.ProductName, vendorId, productId)) continue;
 
                 // Real per-device capabilities rather than a one-size-fits-all guess, so
-                // DevicePresetService.GeneratePreset can trim its presets to what this specific
+                // DevicePresetService.GenerateAutoBindPreset can trim its presets to what this specific
                 // device actually has instead of assuming every device is a 32-button/8-axis
                 // superset. Queried via a short-lived Joystick that's never Acquire()'d - reading
                 // Capabilities doesn't require acquisition, and RefreshDevices (below) owns the
@@ -105,6 +130,7 @@ public class InputDeviceManager : IDisposable
                 int buttonCount = 32;
                 int axisCount = 8;
                 bool hasPov = true;
+                int axisSlotMask = 0xFF;
                 try
                 {
                     using var probe = new Joystick(_directInput, d.InstanceGuid);
@@ -112,6 +138,7 @@ public class InputDeviceManager : IDisposable
                     buttonCount = caps.ButtonCount;
                     axisCount = Math.Min(caps.AxeCount, 8); // RawDeviceInputState.Axes is a fixed 8-wide array
                     hasPov = caps.PovCount > 0;
+                    axisSlotMask = ProbeAxisSlotMask(probe, axisSlotMask);
                 }
                 catch { /* keep the 32/8/true fallback */ }
 
@@ -125,7 +152,9 @@ public class InputDeviceManager : IDisposable
                     AxisCount = axisCount,
                     HasPov = hasPov,
                     VendorId = vendorId,
-                    ProductId = productId
+                    ProductId = productId,
+                    AxisSlotMask = axisSlotMask,
+                    ExposesXInput = XInputRumbleService.IsXInputDevice(vendorId, productId)
                 });
             }
         }

@@ -53,6 +53,26 @@ public partial class InputMatrixView : UserControl
         }
     }
 
+    // --- Auto-Map layout flyout ---
+
+    private Flyout? _openAutoMapFlyout;
+
+    private void OnAutoMapFlyoutOpened(object? sender, EventArgs e)
+    {
+        _openAutoMapFlyout = sender as Flyout;
+        (DataContext as InputMatrixViewModel)?.PrepareAutoMap();
+    }
+
+    private void OnAutoMapFlyoutClosed(object? sender, EventArgs e) => _openAutoMapFlyout = null;
+
+    private void OnAutoMapCancelClick(object? sender, RoutedEventArgs e) => _openAutoMapFlyout?.Hide();
+
+    private void OnAutoMapApplyClick(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as InputMatrixViewModel)?.ApplyAutoMap();
+        _openAutoMapFlyout?.Hide();
+    }
+
     // --- Button/POV tile nickname editor flyout ---
 
     private void OnTileFlyoutOpened(object? sender, EventArgs e)

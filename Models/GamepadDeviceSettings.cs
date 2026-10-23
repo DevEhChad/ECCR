@@ -75,4 +75,34 @@ public partial class GamepadDeviceSettings : ObservableObject
 
     [ObservableProperty]
     private double _ledSpeed = 1.0;
+
+    /// <summary>DualSense adaptive-trigger effects - see <see cref="TriggerEffectSettings"/>. Edits to the nested object are re-raised as a change of this property (<see cref="OnLeftTriggerChanged"/>) so the existing per-device autosave hook in <c>MainWindowViewModel</c> sees them.</summary>
+    [ObservableProperty]
+    private TriggerEffectSettings _leftTrigger = new();
+
+    [ObservableProperty]
+    private TriggerEffectSettings _rightTrigger = new();
+
+    public GamepadDeviceSettings()
+    {
+        LeftTrigger.PropertyChanged += OnLeftTriggerEdited;
+        RightTrigger.PropertyChanged += OnRightTriggerEdited;
+    }
+
+    // Profile deserialization replaces the instances created above, so each swap moves the forwarding subscription over.
+    partial void OnLeftTriggerChanged(TriggerEffectSettings? oldValue, TriggerEffectSettings newValue)
+    {
+        if (oldValue != null) oldValue.PropertyChanged -= OnLeftTriggerEdited;
+        if (newValue != null) newValue.PropertyChanged += OnLeftTriggerEdited; // null only from a hand-edited profile
+    }
+
+    partial void OnRightTriggerChanged(TriggerEffectSettings? oldValue, TriggerEffectSettings newValue)
+    {
+        if (oldValue != null) oldValue.PropertyChanged -= OnRightTriggerEdited;
+        if (newValue != null) newValue.PropertyChanged += OnRightTriggerEdited;
+    }
+
+    private void OnLeftTriggerEdited(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => OnPropertyChanged(nameof(LeftTrigger));
+
+    private void OnRightTriggerEdited(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => OnPropertyChanged(nameof(RightTrigger));
 }

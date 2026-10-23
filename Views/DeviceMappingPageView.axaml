@@ -34,6 +34,57 @@
         <converters:BoolToScrollBarVisibilityConverter x:Key="BoolToScrollBarVisibilityConverter"/>
         <converters:TouchpadClickModeToMultiZoneVisibleConverter x:Key="TouchpadClickModeToMultiZoneVisibleConverter"/>
         <converters:ForceMeterColorConverter x:Key="ForceMeterColorConverter"/>
+
+        <!-- One adaptive trigger's effect editor; the Adaptive Triggers card instantiates it for the left and right trigger. -->
+        <DataTemplate x:Key="TriggerEffectEditor" x:DataType="models:TriggerEffectSettings">
+            <StackPanel Spacing="8">
+                <ComboBox ItemsSource="{x:Static vm:DeviceMappingPageViewModel.TriggerEffectModes}" SelectedItem="{Binding Mode}"
+                          HorizontalAlignment="Stretch" Background="#10141E" CornerRadius="6"/>
+
+                <StackPanel Spacing="8" IsVisible="{Binding IsActive}">
+                    <StackPanel Spacing="4" IsVisible="{Binding UsesStartPosition}">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Text="Start Position (0 = at rest, 9 = fully pulled)" FontSize="11" Foreground="#8B95A5"/>
+                            <TextBlock Grid.Column="1" Text="{Binding StartPosition}" FontSize="11" Foreground="#D0D0E0"/>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="9" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding StartPosition}"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="8" IsVisible="{Binding IsWeapon}">
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*, Auto">
+                                <TextBlock Text="Resistance Starts At" FontSize="11" Foreground="#8B95A5"/>
+                                <TextBlock Grid.Column="1" Text="{Binding WeaponStart}" FontSize="11" Foreground="#D0D0E0"/>
+                            </Grid>
+                            <Slider Minimum="2" Maximum="7" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding WeaponStart}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*, Auto">
+                                <TextBlock Text="Click / Release At" FontSize="11" Foreground="#8B95A5"/>
+                                <TextBlock Grid.Column="1" Text="{Binding WeaponEnd}" FontSize="11" Foreground="#D0D0E0"/>
+                            </Grid>
+                            <Slider Minimum="3" Maximum="8" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding WeaponEnd}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Text="Strength" FontSize="11" Foreground="#8B95A5"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Strength}" FontSize="11" Foreground="#D0D0E0"/>
+                        </Grid>
+                        <Slider Minimum="1" Maximum="8" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Strength}"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding IsVibration}">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Text="Frequency" FontSize="11" Foreground="#8B95A5"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Frequency, StringFormat='{}{0} Hz'}" FontSize="11" Foreground="#D0D0E0"/>
+                        </Grid>
+                        <Slider Minimum="1" Maximum="255" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Frequency}"/>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.Resources>
 
     <Design.DataContext>
@@ -1046,6 +1097,21 @@
                                                 Command="{Binding $parent[UserControl].((vm:DeviceMappingPageViewModel)DataContext).TestVibrationCommand}"
                                                 ToolTip.Tip="Pulses both motors at their configured intensities for a moment, without needing a game running"/>
                                     </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" IsVisible="{Binding IsSelectedDeviceAdaptiveTriggerCapable}">
+                                <StackPanel Spacing="10" DataContext="{Binding SelectedGamepadSettings}" x:DataType="models:GamepadDeviceSettings">
+                                    <TextBlock Text="Adaptive Triggers" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <TextBlock Text="Sets the DualSense trigger feel directly on the controller, whichever layout you map it to. Games can't change it while this controller is remapped, so what you pick here is what you feel. Pull the trigger to try an effect." FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap"/>
+
+                                    <TextBlock Text="Left Trigger (L2)" FontSize="12" Foreground="#D0D0E0"/>
+                                    <ContentControl Content="{Binding LeftTrigger}" ContentTemplate="{StaticResource TriggerEffectEditor}"/>
+
+                                    <Border Height="1" Background="#1F283C" Margin="0,2"/>
+
+                                    <TextBlock Text="Right Trigger (R2)" FontSize="12" Foreground="#D0D0E0"/>
+                                    <ContentControl Content="{Binding RightTrigger}" ContentTemplate="{StaticResource TriggerEffectEditor}"/>
                                 </StackPanel>
                             </Border>
 

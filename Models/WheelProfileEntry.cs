@@ -30,6 +30,18 @@ public class WheelProfileEntry
 
     /// <summary>Raw axis index (0-7, fixed X/Y/Z/RotationX/RotationY/RotationZ/Slider0/Slider1 order) -&gt; display label override.</summary>
     public Dictionary<string, string>? Axes { get; set; }
+
+    /// <summary>Raw button/POV index (string key) -&gt; canonical Xbox button name (<see cref="ECCR.Services.XboxButtonNames"/>). Buttons listed here are bound to the virtual Xbox 360 pad in Xbox/Combined auto-bind; unlisted buttons fall back to the generic layout.</summary>
+    public Dictionary<string, string>? XboxButtons { get; set; }
+
+    /// <summary>Raw axis slot (0-7, string key) -&gt; role: Steering, Gas, Brake, Clutch, Handbrake or Ignore. Slots not listed use the brand-independent defaults (X steering, Y gas, Z brake, Rx clutch, Ry handbrake).</summary>
+    public Dictionary<string, string>? AxisRoles { get; set; }
+
+    /// <summary>Axis slots that rest at their maximum (typical for pedals) and need inverting to read 0 at rest.</summary>
+    public List<int>? InvertedAxes { get; set; }
+
+    /// <summary>True when Windows exposes this device through XInput too, so its buttons follow the standard Xbox-over-DirectInput order even without an explicit <see cref="XboxButtons"/> table.</summary>
+    public bool? ExposesXInput { get; set; }
 }
 
 /// <summary>

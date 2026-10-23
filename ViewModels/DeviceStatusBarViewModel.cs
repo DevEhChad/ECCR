@@ -133,6 +133,24 @@ public partial class DeviceStatusBarViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Fills connection type and battery for every non-Sony gamepad that Windows exposes through
+    /// XInput (Xbox pads, wired or Bluetooth) - the counterpart to <see cref="ApplyHidStatuses"/>,
+    /// which only covers Sony pads. Must run on the UI thread, like <see cref="ApplyHidStatuses"/>.
+    /// </summary>
+    public void ApplyXInputStatuses()
+    {
+        foreach (var status in GamepadStatuses)
+        {
+            if (status.VendorId == ControllerHidService.SonyVendorId) continue;
+            if (!XInputStatusService.TryGetStatus(status.VendorId, status.ProductId, out var xinput)) continue;
+
+            status.ConnectionType = xinput.Connection;
+            status.IsBatterySupported = xinput.BatteryPercent.HasValue;
+            status.BatteryPercent = xinput.BatteryPercent;
+        }
+    }
+
     public void ApplyHidStatuses(List<ControllerStatus> hidStatuses)
     {
         foreach (var hid in hidStatuses)

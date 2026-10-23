@@ -49,10 +49,63 @@ public class ControllerHidService : IDisposable
         // other one owns.
         public byte LastRed, LastGreen, LastBlue;
         public byte LastLargeMotor, LastSmallMotor;
+
+        /// <summary>Bluetooth pads take a different output report (78 bytes, CRC-protected) than USB ones - see <see cref="PlayStationOutputReports"/>.</summary>
+        public bool IsBluetooth;
+
+        /// <summary>DualSense Bluetooth reports carry a 0-15 sequence number that advances with every write.</summary>
+        public byte BluetoothSequence;
+    }
+
+    /// <summary>
+    /// Windows exposes a Bluetooth HID device under the HID-over-GATT/BR-EDR service UUID 00001124, so
+    /// that UUID in the device path marks a wireless pad. A 78-byte output report is a second tell, as
+    /// neither pad's USB output report is that long.
+    /// </summary>
+    private static bool IsBluetoothDevice(HidDevice device) =>
+        device.DevicePath.Contains("00001124-0000-1000-8000-00805f9b34fb", StringComparison.OrdinalIgnoreCase)
+        || device.GetMaxOutputReportLength() == PlayStationOutputReports.BluetoothReportLength;
+
+    /// <summary>
+    /// A Bluetooth pad starts out sending a cut-down 10-byte input report with no battery, gyro or
+    /// touch data, and only switches to its full report after the host reads the calibration feature
+    /// report (ID 0x05 on both pads). Failure is harmless: the pad just keeps reporting as Unknown
+    /// until the first output report (lightbar/rumble) switches it too. If a pad ever stops
+    /// updating DirectInput after this, set this to false.
+    /// </summary>
+    private static readonly bool RequestFullBluetoothReports = true;
+
+    private static void EnableFullBluetoothReports(HidDevice device, HidStream stream)
+    {
+        if (!RequestFullBluetoothReports) return;
+
+        try
+        {
+            int length = device.GetMaxFeatureReportLength();
+            if (length <= 0) return;
+
+            var buffer = new byte[length];
+            buffer[0] = 0x05;
+            stream.GetFeature(buffer);
+            LogDebug($"Requested full Bluetooth reports from PID={device.ProductID:X4} (feature 0x05, {length} bytes).");
+        }
+        catch (Exception ex)
+        {
+            LogDebug($"Full Bluetooth report request failed for PID={device.ProductID:X4}: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private readonly Dictionary<string, OpenDevice> _openDevices = new();
     private readonly object _lock = new();
+
+    /// <summary>
+    /// Adaptive-trigger effects ECCR is currently managing, keyed by product ID like <see cref="FindOutputTarget"/>.
+    /// An entry exists only while at least one trigger has a non-Off effect, so a pad ECCR isn't
+    /// configuring keeps its trigger bytes out of every output report (and out of a game's way when
+    /// the pad isn't cloaked). Kept here rather than on <see cref="OpenDevice"/> so an effect set before
+    /// the pad connects, or across a reconnect, is applied the moment it opens. Guarded by <see cref="_lock"/>.
+    /// </summary>
+    private readonly Dictionary<int, (byte[] Left, byte[] Right)> _triggerEffectsByProductId = new();
     private Timer? _pollTimer;
     private bool _disposed;
 
@@ -182,10 +235,20 @@ public class ControllerHidService : IDisposable
                             // Shorter than PollIntervalMs so a quiet/disconnected device's read
                             // times out well before the next tick fires instead of piling up.
                             try { stream.ReadTimeout = 25; } catch { }
-                            _openDevices[dev.DevicePath] = new OpenDevice { Device = dev, Stream = stream };
+                            var opened = new OpenDevice { Device = dev, Stream = stream, IsBluetooth = IsBluetoothDevice(dev) };
+                            _openDevices[dev.DevicePath] = opened;
                             LogDebug($"Opened device VID={dev.VendorID:X4} PID={dev.ProductID:X4} " +
+                                     $"Transport={(opened.IsBluetooth ? "Bluetooth" : "USB")} " +
                                      $"MaxInputReportLength={dev.GetMaxInputReportLength()} MaxOutputReportLength={dev.GetMaxOutputReportLength()} " +
                                      $"Path={dev.DevicePath}");
+
+                            if (opened.IsBluetooth) EnableFullBluetoothReports(dev, stream);
+
+                            // A pad that was off/unplugged when its trigger effect was configured gets it on connect.
+                            if (dev.ProductID == DualSenseProductId && _triggerEffectsByProductId.ContainsKey(dev.ProductID))
+                            {
+                                WriteOutputReport(opened, dev.ProductID, "TriggerEffectOnConnect");
+                            }
                         }
                         else
                         {
@@ -500,6 +563,53 @@ public class ControllerHidService : IDisposable
         return WriteOutputReport(target, productId, "SetRumble");
     }
 
+    /// <summary>True for a pad with adaptive triggers - currently the DualSense only (a DualShock 4 has none, and no other Sony pad here does).</summary>
+    public static bool SupportsAdaptiveTriggers(int vendorId, int productId) =>
+        vendorId == SonyVendorId && productId == DualSenseProductId;
+
+    /// <summary>
+    /// Sets both adaptive-trigger effects on a DualSense. Passing two Off effects releases ECCR's
+    /// control after one write that switches the triggers off, so later lightbar/rumble writes stop
+    /// carrying trigger bytes. If the pad isn't connected yet a non-Off effect is remembered and sent
+    /// when it opens (see <see cref="RefreshDevices"/>). Returns false for a pad without adaptive
+    /// triggers or when the write failed.
+    /// </summary>
+    public bool SetTriggerEffects(int vendorId, int productId, byte[] left, byte[] right)
+    {
+        if (!SupportsAdaptiveTriggers(vendorId, productId)) return false;
+
+        bool allOff = DualSenseTriggerEffect.IsOff(left) && DualSenseTriggerEffect.IsOff(right);
+        lock (_lock)
+        {
+            // Nothing to switch off - skip the write, since every output report also re-sends lightbar/rumble state.
+            if (allOff && !_triggerEffectsByProductId.ContainsKey(productId)) return true;
+
+            _triggerEffectsByProductId[productId] = (left, right);
+        }
+
+        var target = FindOutputTarget(productId, out _);
+        bool ok = target != null && WriteOutputReport(target, productId, "SetTriggerEffects");
+
+        if (allOff)
+        {
+            lock (_lock) { _triggerEffectsByProductId.Remove(productId); }
+        }
+
+        return ok;
+    }
+
+    /// <summary>Switches off every adaptive-trigger effect ECCR is managing - run at app exit so a pad doesn't keep a resistance/vibration effect after ECCR is gone.</summary>
+    public void ReleaseTriggerEffects()
+    {
+        List<int> managed;
+        lock (_lock) { managed = _triggerEffectsByProductId.Keys.ToList(); }
+
+        foreach (int productId in managed)
+        {
+            SetTriggerEffects(SonyVendorId, productId, DualSenseTriggerEffect.Off(), DualSenseTriggerEffect.Off());
+        }
+    }
+
     private OpenDevice? FindOutputTarget(int productId, out int candidateCount)
     {
         lock (_lock)
@@ -531,48 +641,41 @@ public class ControllerHidService : IDisposable
                 return false;
             }
 
-            var buffer = new byte[outLen];
-
+            byte[]? left = null, right = null;
             if (isDualSense)
             {
-                buffer[0] = 0x02;
-                buffer[1] = 0x01; // valid_flag0: DS_OUTPUT_VALID_FLAG0_COMPATIBLE_VIBRATION (bit 0x01), per hid-playstation.c
-                buffer[2] = 0x04; // valid_flag1: DS_OUTPUT_VALID_FLAG1_LIGHTBAR_CONTROL_ENABLE (bit 0x04), verified against hid-playstation.c
-                if (outLen > 4)
+                lock (_lock)
                 {
-                    buffer[3] = target.LastSmallMotor; // motor_right (weak/high-freq)
-                    buffer[4] = target.LastLargeMotor; // motor_left (strong/low-freq)
+                    if (_triggerEffectsByProductId.TryGetValue(productId, out var triggers)) (left, right) = triggers;
                 }
-                // RGB lightbar bytes - verified against Linux hid-playstation.c, dualsensectl, and pydualsense (all three agree).
-                if (outLen > 47)
+            }
+
+            var state = new PlayStationOutputState(
+                target.LastRed, target.LastGreen, target.LastBlue,
+                target.LastLargeMotor, target.LastSmallMotor, left, right);
+
+            byte[] buffer;
+            if (target.IsBluetooth)
+            {
+                if (outLen < PlayStationOutputReports.BluetoothReportLength)
                 {
-                    buffer[45] = target.LastRed;
-                    buffer[46] = target.LastGreen;
-                    buffer[47] = target.LastBlue;
+                    LogDebug($"{callerForLog}: Bluetooth PID={productId:X4} MaxOutputReportLength is {outLen}, need {PlayStationOutputReports.BluetoothReportLength} - aborting.");
+                    return false;
                 }
-                else
-                {
-                    LogDebug($"{callerForLog}: DualSense outLen={outLen} is too short for the RGB offsets (need >47) - report format may differ on this interface.");
-                }
+
+                target.BluetoothSequence = (byte)((target.BluetoothSequence + 1) & 0x0F);
+                buffer = isDualSense
+                    ? PlayStationOutputReports.DualSenseBluetooth(target.BluetoothSequence, state)
+                    : PlayStationOutputReports.DualShock4Bluetooth(state);
             }
             else
             {
-                buffer[0] = 0x05;
-                buffer[1] = 0xFF; // flags: enable rumble + LED + flash
-                if (outLen > 4)
-                {
-                    buffer[3] = target.LastSmallMotor; // right/weak motor - best-effort offset, matches the RGB-at-6/7/8 layout already in use here
-                    buffer[4] = target.LastLargeMotor; // left/strong motor
-                }
-                if (outLen > 8)
-                {
-                    buffer[6] = target.LastRed;
-                    buffer[7] = target.LastGreen;
-                    buffer[8] = target.LastBlue;
-                }
+                buffer = isDualSense
+                    ? PlayStationOutputReports.DualSenseUsb(outLen, state)
+                    : PlayStationOutputReports.DualShock4Usb(outLen, state);
             }
 
-            LogDebug($"{callerForLog}: writing PID={productId:X4} outLen={outLen} " +
+            LogDebug($"{callerForLog}: writing PID={productId:X4} {(target.IsBluetooth ? "Bluetooth" : "USB")} outLen={outLen} " +
                      $"RGB=({target.LastRed},{target.LastGreen},{target.LastBlue}) motors=(L{target.LastLargeMotor},S{target.LastSmallMotor}) " +
                      $"buffer[0..2]=({buffer[0]:X2},{buffer[1]:X2},{buffer[2]:X2})");
             target.Stream.Write(buffer);

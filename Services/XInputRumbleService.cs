@@ -67,6 +67,49 @@ public static class XInputRumbleService
     [DllImport("xinput1_4.dll", EntryPoint = "#108")]
     private static extern int XInputGetCapabilitiesEx(uint dwApiVersion, uint dwUserIndex, uint dwFlags, out XInputCapabilitiesEx pCapabilities);
 
+    /// <summary>The XInput slot (0-3) whose controller reports this VID/PID, or -1 when none does or the capabilities API is unavailable. With two identical pads connected, the first slot wins. Never throws.</summary>
+    internal static int FindSlot(int vendorId, int productId)
+    {
+        if (vendorId == 0) return -1;
+        try
+        {
+            for (uint i = 0; i < MaxUserIndex; i++)
+            {
+                if (XInputGetCapabilitiesEx(1, i, 0, out var caps) != ErrorSuccess) continue;
+                if (caps.VendorId == vendorId && caps.ProductId == productId) return (int)i;
+            }
+        }
+        catch
+        {
+            // No XInput runtime or no capabilities export - treat as no slot.
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// True when a connected XInput slot reports this VID/PID - i.e. Windows exposes the device
+    /// through XInput as well as DirectInput, so its buttons follow the standard Xbox order. Used by
+    /// Auto Map to recognise Xbox-compatible wheels. False when the capabilities API is
+    /// unavailable or nothing matches. Never throws.
+    /// </summary>
+    public static bool IsXInputDevice(int vendorId, int productId)
+    {
+        if (vendorId == 0) return false;
+        try
+        {
+            for (uint i = 0; i < MaxUserIndex; i++)
+            {
+                if (XInputGetCapabilitiesEx(1, i, 0, out var caps) != ErrorSuccess) continue;
+                if (caps.VendorId == vendorId && caps.ProductId == productId) return true;
+            }
+        }
+        catch
+        {
+            // No XInput runtime or no capabilities export - treat as not an XInput device.
+        }
+        return false;
+    }
+
     /// <summary>Sends motor speeds (0-255, rescaled to XInput's 0-65535 range) to whichever connected XInput slot's VID/PID matches, or every connected slot if no match can be determined. Never throws - a missing/outdated xinput1_4.dll or no connected controllers just results in a no-op.</summary>
     public static void SetRumble(int vendorId, int productId, byte largeMotor, byte smallMotor)
     {

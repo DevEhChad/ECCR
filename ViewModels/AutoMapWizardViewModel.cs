@@ -30,42 +30,56 @@ public partial class AutoMapWizardViewModel : ViewModelBase
     [ObservableProperty]
     private string _wizardSelectedDevice = string.Empty;
 
-    /// <summary>Which virtual backend newly-applied mappings target - Xbox/DS4 (ViGEm) or Wheel (vJoy). See <see cref="ECCR.Services.OutputCategory"/>.</summary>
+    /// <summary>Which layout newly-applied mappings use - Xbox 360 / DualShock 4 (ViGEm), DirectInput wheel (vJoy), or Combined (Xbox buttons on ViGEm + wheel axes on vJoy). See <see cref="AutoBindMode"/>.</summary>
     [ObservableProperty]
-    private OutputCategory _wizardOutputCategory = OutputCategory.Xbox;
+    private AutoBindMode _wizardMode = AutoBindMode.Xbox360;
 
-    /// <summary>True when <see cref="WizardOutputCategory"/> is <see cref="OutputCategory.Wheel"/> - convenience for XAML bindings that only care about the Wheel-vs-everything-else split (e.g. which of <see cref="WizardTargetPlayer"/>/<see cref="WizardTargetWheelSlot"/> to show).</summary>
-    public bool WizardTargetIsWheel => WizardOutputCategory == OutputCategory.Wheel;
+    /// <summary>Why the preview looks the way it does (profile table, XInput device, generic gamepad...). Shown under the mode selector.</summary>
+    [ObservableProperty]
+    private string _wizardLayoutDescription = string.Empty;
 
-    // Three RadioButton-friendly two-way booleans backing the wizard's Xbox/DS4/Wheel choice -
-    // RadioButton.IsChecked has no built-in enum-equality binding, so each of these reads as
-    // "is WizardOutputCategory this value" and, on set, only reacts to becoming true (a
-    // RadioButton also fires false on the button being deselected, which must not stomp
-    // whichever other option the group is switching to).
+    /// <summary>True when any mapping will target the vJoy wheel (DirectInput or Combined) - shows the "Assign to Wheel Slot" combo.</summary>
+    public bool WizardUsesWheelSlot => WizardMode is AutoBindMode.DirectInput or AutoBindMode.Combined;
+
+    /// <summary>True when any mapping will target the ViGEm pad (everything but DirectInput) - shows the "Assign to Player" combo.</summary>
+    public bool WizardUsesPlayer => WizardMode != AutoBindMode.DirectInput;
+
+    // RadioButton.IsChecked has no enum-equality binding, so each option reads as "is WizardMode this
+    // value" and on set only reacts to becoming true (a RadioButton also fires false when deselected,
+    // which must not overwrite the option the group is switching to).
     public bool IsXboxOutputSelected
     {
-        get => WizardOutputCategory == OutputCategory.Xbox;
-        set { if (value) WizardOutputCategory = OutputCategory.Xbox; }
+        get => WizardMode == AutoBindMode.Xbox360;
+        set { if (value) WizardMode = AutoBindMode.Xbox360; }
     }
 
     public bool IsDualShock4OutputSelected
     {
-        get => WizardOutputCategory == OutputCategory.DualShock4;
-        set { if (value) WizardOutputCategory = OutputCategory.DualShock4; }
+        get => WizardMode == AutoBindMode.DualShock4;
+        set { if (value) WizardMode = AutoBindMode.DualShock4; }
     }
 
     public bool IsWheelOutputSelected
     {
-        get => WizardOutputCategory == OutputCategory.Wheel;
-        set { if (value) WizardOutputCategory = OutputCategory.Wheel; }
+        get => WizardMode == AutoBindMode.DirectInput;
+        set { if (value) WizardMode = AutoBindMode.DirectInput; }
     }
 
-    partial void OnWizardOutputCategoryChanged(OutputCategory value)
+    public bool IsCombinedOutputSelected
     {
-        OnPropertyChanged(nameof(WizardTargetIsWheel));
+        get => WizardMode == AutoBindMode.Combined;
+        set { if (value) WizardMode = AutoBindMode.Combined; }
+    }
+
+    partial void OnWizardModeChanged(AutoBindMode value)
+    {
+        OnPropertyChanged(nameof(WizardUsesWheelSlot));
+        OnPropertyChanged(nameof(WizardUsesPlayer));
         OnPropertyChanged(nameof(IsXboxOutputSelected));
         OnPropertyChanged(nameof(IsDualShock4OutputSelected));
         OnPropertyChanged(nameof(IsWheelOutputSelected));
+        OnPropertyChanged(nameof(IsCombinedOutputSelected));
+        PopulateWizardPreset();
     }
 
     /// <summary>
@@ -120,10 +134,9 @@ public partial class AutoMapWizardViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Preselects a device and its DirectInput Wheel vs. Xbox Gamepad target, and regenerates
-    /// the preset preview - run every time the Auto-Map page is navigated to (see
-    /// <c>MainWindowViewModel.OnCurrentPageChanged</c>) rather than behind an explicit "open"
-    /// action, since the page is now always part of the shell instead of a popup wizard.
+    /// Preselects a device and the layout that suits it (Combined for a wheel with Xbox buttons,
+    /// DirectInput for a wheel without, Xbox 360 for a gamepad), and regenerates the preview - run
+    /// every time the Auto-Map page is navigated to, since the page is always part of the shell.
     /// </summary>
     public void PrepareForNavigation()
     {
@@ -134,35 +147,36 @@ public partial class AutoMapWizardViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(WizardSelectedDevice))
         {
-            // Pre-selects the wizard's Wheel vs. Xbox Gamepad output to match the device's
-            // detected hardware family, so the common case needs no manual toggle. DS4 is never
-            // auto-selected - it's an explicit user choice only.
-            var connectedInfo = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
-            var vidPid = connectedInfo != null ? (connectedInfo.VendorId, connectedInfo.ProductId) : ((int, int)?)null;
-            var cat = DevicePresetService.ResolveCategory(WizardSelectedDevice, vidPid);
-            WizardOutputCategory = DevicePresetService.IsWheelOrPedalCategory(cat) ? OutputCategory.Wheel : OutputCategory.Xbox;
+            var info = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
+            var vidPid = info != null ? (info.VendorId, info.ProductId) : ((int, int)?)null;
+            // DualShock 4 is never auto-selected - it is an explicit choice only.
+            WizardMode = DevicePresetService.SuggestAutoBindMode(WizardSelectedDevice, vidPid, info?.ExposesXInput ?? false);
         }
 
         PopulateWizardPreset();
     }
 
+    partial void OnWizardSelectedDeviceChanged(string value) => PopulateWizardPreset();
+
     [RelayCommand]
     public void PopulateWizardPreset()
     {
         WizardMappings.Clear();
+        WizardLayoutDescription = string.Empty;
         if (string.IsNullOrWhiteSpace(WizardSelectedDevice)) return;
 
-        var connectedInfo = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
-        int buttonCount = connectedInfo?.ButtonCount ?? 32;
-        int axisCount = connectedInfo?.AxisCount ?? 8;
-        bool hasPov = connectedInfo?.HasPov ?? true;
-        var vidPid = connectedInfo != null ? (connectedInfo.VendorId, connectedInfo.ProductId) : ((int, int)?)null;
+        var info = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
+        var vidPid = info != null ? (info.VendorId, info.ProductId) : ((int, int)?)null;
 
-        var presets = DevicePresetService.GeneratePreset(WizardSelectedDevice, buttonCount, axisCount, WizardOutputCategory, hasPov, vidPid);
-        foreach (var item in presets)
+        var result = DevicePresetService.GenerateAutoBindPreset(
+            WizardSelectedDevice, info?.ButtonCount ?? 32, info?.AxisSlotMask ?? 0xFF, info?.HasPov ?? true,
+            WizardMode, vidPid, info?.ExposesXInput ?? false);
+
+        foreach (var item in result.Items)
         {
             WizardMappings.Add(item);
         }
+        WizardLayoutDescription = $"Detected as: {result.LayoutDescription}";
     }
 
     [RelayCommand]
@@ -172,9 +186,11 @@ public partial class AutoMapWizardViewModel : ViewModelBase
 
         var targetDevice = _connectedDeviceInfo().FirstOrDefault(d => d.InstanceName == WizardSelectedDevice);
         Guid devGuid = targetDevice?.InstanceGuid ?? Guid.Empty;
-        uint targetDeviceId = WizardTargetIsWheel ? WizardTargetWheelSlot : WizardTargetPlayer;
 
-        DevicePresetService.ApplyPreset(_mappings, WizardSelectedDevice, devGuid, WizardMappings.ToList(), targetDeviceId);
+        // Pure DirectInput has only wheel targets, so the wheel slot doubles as the default id; otherwise
+        // the player id is the default and [Wheel] items are redirected to the wheel slot.
+        uint defaultId = WizardMode == AutoBindMode.DirectInput ? WizardTargetWheelSlot : WizardTargetPlayer;
+        DevicePresetService.ApplyPreset(_mappings, WizardSelectedDevice, devGuid, WizardMappings.ToList(), defaultId, WizardTargetWheelSlot);
 
         _onMappingsApplied();
     }

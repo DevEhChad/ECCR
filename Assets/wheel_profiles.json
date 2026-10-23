@@ -21,6 +21,18 @@
 //                            Indices 128/129/130/131 are the synthetic D-Pad Up/Right/Down/Left.
 //   axes       (optional) - map of raw axis index 0-7 (X, Y, Z, RotationX, RotationY,
 //                            RotationZ, Slider0, Slider1) -> display label.
+//   xboxButtons   (optional) - map of raw button index (as a string) -> Xbox button name:
+//                            A, B, X, Y, LB, RB, View, Menu, Guide, LSB, RSB. Used by Auto Map's
+//                            "Xbox 360" and "Combined" layouts; buttons not listed stay generic
+//                            "Button N". The D-pad hat is always bound as the Xbox D-pad.
+//   axisRoles     (optional) - map of raw axis slot 0-7 (as a string) -> Steering, Gas, Brake,
+//                            Clutch, Handbrake or Ignore. Default: X steering, Y gas, Z brake,
+//                            Rx clutch, Ry handbrake.
+//   invertedAxes  (optional) - list of axis slots that rest at maximum (typical for pedals).
+//                            Omit to assume every pedal axis is inverted.
+//   exposesXInput (optional) - true if Windows also shows this device as an XInput controller
+//                            (its buttons then follow the standard Xbox order without an
+//                            xboxButtons table). Auto-detected when omitted.
 //
 // Example (copy into your %AppData%/ECCR/wheel_profiles.json and edit to use):
 // [
@@ -30,7 +42,8 @@
 //     "name": "Moza R9",
 //     "category": "MozaWheel",
 //     "buttons": { "0": "Wheel Button 1 (A / Cross)" },
-//     "axes": { "0": "Steering" }
+//     "axes": { "0": "Steering" },
+//     "xboxButtons": { "0": "A", "1": "B", "2": "X", "3": "Y", "4": "LB", "5": "RB" }
 //   }
 // ]
 []

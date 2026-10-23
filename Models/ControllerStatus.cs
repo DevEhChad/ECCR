@@ -8,7 +8,9 @@ public enum ControllerConnectionType
 {
     Unknown,
     Usb,
-    Bluetooth
+    Bluetooth,
+    /// <summary>Wireless, but XInput can't say whether over Bluetooth or an Xbox Wireless Adapter.</summary>
+    Wireless
 }
 
 /// <summary>

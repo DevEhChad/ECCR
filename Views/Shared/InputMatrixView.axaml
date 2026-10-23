@@ -14,6 +14,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:ECCR.ViewModels"
+             xmlns:models="using:ECCR.Models"
              xmlns:converters="using:ECCR.Converters"
              x:Class="ECCR.Views.Shared.InputMatrixView"
              x:DataType="vm:InputMatrixViewModel">
@@ -28,10 +29,68 @@
             <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,10">
                 <TextBlock Grid.Column="0" Text="INPUT MATRIX" FontWeight="Bold" FontSize="13" Foreground="#BAC2DE" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                    <Button Content="Auto-Map (1:1)" FontSize="12" Padding="12,7" CornerRadius="6"
+                    <Button Content="Auto-Map" FontSize="12" Padding="12,7" CornerRadius="6"
                             Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White"
-                            Command="{Binding AutoMapCommand}"
-                            ToolTip.Tip="Maps every physical button/POV/axis this device reports directly to its identity virtual slot (Button N -&#8594; Wheel Button N), clearing any of this device's mappings outside that set. Preserves nicknames."/>
+                            ToolTip.Tip="Auto-binds this device using the same layout choices as the Auto Map page (Xbox 360, DualShock 4, DirectInput wheel or Combined).">
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedRight" Opened="OnAutoMapFlyoutOpened" Closed="OnAutoMapFlyoutClosed">
+                                <StackPanel Width="320" Spacing="10" Margin="4" x:DataType="vm:InputMatrixViewModel" DataContext="{Binding AutoMapWizard}">
+                                    <TextBlock Text="Auto Bind Layout" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE"/>
+                                    <StackPanel Spacing="4" x:DataType="vm:AutoMapWizardViewModel">
+                                        <RadioButton Content="Xbox 360 layout" IsChecked="{Binding IsXboxOutputSelected}" GroupName="MatrixTargetType" Foreground="White"/>
+                                        <RadioButton Content="DirectInput layout (generic wheel)" IsChecked="{Binding IsWheelOutputSelected}" GroupName="MatrixTargetType" Foreground="White"/>
+                                        <RadioButton Content="Combined (Xbox buttons + wheel axes)" IsChecked="{Binding IsCombinedOutputSelected}" GroupName="MatrixTargetType" Foreground="White"/>
+                                        <RadioButton Content="DualShock 4" IsChecked="{Binding IsDualShock4OutputSelected}" GroupName="MatrixTargetType" Foreground="White"/>
+                                        <TextBlock Text="{Binding WizardLayoutDescription}" FontSize="11" Foreground="#8B95A5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                                        <TextBlock Text="Assign to Player" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" Margin="0,6,0,0" IsVisible="{Binding WizardUsesPlayer}"/>
+                                        <ComboBox ItemsSource="{Binding PlayerTargets}"
+                                                  SelectedValue="{Binding WizardTargetPlayer}"
+                                                  SelectedValueBinding="{Binding Id}"
+                                                  IsVisible="{Binding WizardUsesPlayer}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#10141E"
+                                                  CornerRadius="6">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="models:PlayerTargetOption">
+                                                    <Grid ColumnDefinitions="Auto, *">
+                                                        <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
+                                                            <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <TextBlock Text="Assign to Wheel Slot" FontWeight="SemiBold" FontSize="12" Foreground="#BAC2DE" Margin="0,6,0,0" IsVisible="{Binding WizardUsesWheelSlot}"/>
+                                        <ComboBox ItemsSource="{Binding WheelSlots}"
+                                                  SelectedValue="{Binding WizardTargetWheelSlot}"
+                                                  SelectedValueBinding="{Binding Id}"
+                                                  IsVisible="{Binding WizardUsesWheelSlot}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="#10141E"
+                                                  CornerRadius="6">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="models:WheelDeviceSlotOption">
+                                                    <Grid ColumnDefinitions="Auto, *">
+                                                        <Border Grid.Column="0" Background="{Binding BgColorHex}" BorderBrush="{Binding BorderColorHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,6,0">
+                                                            <TextBlock Text="{Binding ShortBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding TextColorHex}"/>
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                        <Button Content="Cancel" Click="OnAutoMapCancelClick" Background="#161B26" Foreground="#BAC2DE" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                        <Button Content="Apply" Click="OnAutoMapApplyClick" Classes="primary" Padding="10,5" CornerRadius="4" FontSize="11"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
                     <Button Content="Export Device Config" FontSize="12" Padding="12,7" CornerRadius="6"
                             Background="#1F283C" BorderBrush="#3D4B6E" Foreground="White"
                             Command="{Binding ExportDeviceConfigCommand}"/>

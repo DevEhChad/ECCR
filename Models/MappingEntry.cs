@@ -81,6 +81,10 @@ public partial class MappingEntry : ObservableObject
     [ObservableProperty]
     private string _targetOutput = "[Xbox] Xbox A (Cross / South / Handbrake)";
 
+    /// <summary>True when Auto Map created this entry. Re-running Auto Map removes stale auto-bound entries a new preset no longer covers, and never touches entries the user bound by hand. Absent in profiles saved before this field existed, so those load as hand-made.</summary>
+    [ObservableProperty]
+    private bool _isAutoBound = false;
+
     /// <summary>Inner deadzone: normalized travel near the axis's rest point (center for a stick/steering axis, zero for a pedal) that's clamped flat. See <see cref="CalculateCalibratedValue"/>.</summary>
     [ObservableProperty]
     private double _deadzone = 0.0;

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-10-23
+
+### 🚀 Added
+- **DualSense Adaptive Triggers:** New "Adaptive Triggers" card on the Device Mappings → More Options tab (DualSense only). Each trigger can be set to Off, Resistance, Weapon (a gun-trigger click) or Vibration, with start position, strength and frequency sliders. Effects are written straight to the controller, so they work with any output layout — including Xbox 360 and DualShock 4, which have no adaptive-trigger support of their own. Saved per device and per profile, re-applied on reconnect and profile switch, and switched off when ECCR exits.
+- **Bluetooth Support for PlayStation Pads:** DualShock 4 and DualSense lightbar, rumble and trigger effects now work over Bluetooth, not just USB. ECCR sends each pad its Bluetooth report format (including the checksum Bluetooth reports require) and asks it for its full status report so connection type, battery, gyro and touch data are available wirelessly.
+- **Xbox Controller Connection & Battery Status:** Xbox-style pads (wired or wireless) now show their connection type and a battery level, read through XInput. Known Xbox Bluetooth models show as Bluetooth, other wireless pads as Wireless. XInput only reports four battery steps, so the percentage is approximate.
+- **Auto-Map Layout Picker on the Input Matrix:** The Input Matrix's Auto-Map button now opens the same choices as the Auto Map page — Xbox 360, DualShock 4, DirectInput wheel or Combined — plus the Player / Wheel Slot pickers, instead of always applying a wheel-only 1:1 mapping.
+- **Combined Auto-Map Layout:** Binds a wheel's recognised Xbox buttons to the virtual Xbox pad and its axes (plus any other button) to the vJoy wheel in one pass. The Auto Map page now also explains why a preset looks the way it does (profile table, XInput device, generic gamepad).
+- **Smarter Auto Map Presets:** Wheel profiles can now carry per-device Xbox button names, axis roles (steering, gas, brake, clutch, handbrake), inverted-axis lists and an XInput flag. Auto Map probes which axes a device really has, detects XInput-exposed devices, inverts resting-at-maximum pedals, and splits a combined LT/RT trigger axis into two inputs. Entries created by Auto Map are remembered, so re-running it clears stale auto-bound entries a new preset no longer covers without touching your own bindings.
+
+### 🔄 Changed
+- **Input Matrix Auto-Map No Longer Deletes Other Mappings:** The old 1:1 button removed every mapping on the device outside its identity set. The new Auto-Map applies a preset the same way the Auto Map page does (it adds and updates entries).
+
+### 🛠️ Fixed
+- **DualShock 4 Rumble Over USB:** The rumble motor bytes were written one position off in the output report, so the two motors could be swapped or not respond. They now use the correct positions.
+
+### ⚠️ Known Limitations
+- **Adaptive trigger effects are new:** The effect encoding follows community-documented DualSense formats. The Vibration effect's frequency is the least certain part — if it feels wrong, please report it.
+- **Bluetooth coverage:** DualSense over Bluetooth has been tried on real hardware; DualShock 4 and Xbox Bluetooth have not, and rely on the same documented report formats.
+- **Identical pads share settings:** Two controllers with the same model are addressed by product ID, so lightbar, rumble and trigger effects apply to one of them rather than each independently.
+
+---
+
 ## [1.1.0] - 2026-09-08
 
 ### 🚀 Added

@@ -81,6 +81,7 @@ public partial class InputMatrixViewModel : ViewModelBase, INavigationAware
     {
         _host = host;
         _parent = parent;
+        AutoMapWizard = host.CreateAutoMapWizard();
 
         RebuildTiles();
 
@@ -238,14 +239,25 @@ public partial class InputMatrixViewModel : ViewModelBase, INavigationAware
         _host.QuickAssignAxis(deviceName, axisIndex, targetOutput);
     }
 
-    /// <summary>Strict index-for-index AutoMap: every physical button/POV/axis the device reports maps directly to its identity virtual slot, no per-category guessing, and any of this device's existing mappings outside that identity coverage are removed - see <see cref="MainWindowViewModel.ApplyStrict1To1AutoMap"/>.</summary>
-    [RelayCommand]
-    private void AutoMap()
+    /// <summary>Backs the Auto-Map flyout: the same layout / player / wheel-slot choices as the Auto Map page, scoped to <see cref="SelectedDeviceName"/>.</summary>
+    public AutoMapWizardViewModel AutoMapWizard { get; }
+
+    /// <summary>Points the flyout's wizard at the currently selected device and preselects the layout that suits it - run each time the flyout opens.</summary>
+    public void PrepareAutoMap()
     {
         string? deviceName = SelectedDeviceName;
         if (string.IsNullOrEmpty(deviceName)) return;
 
-        _host.ApplyStrict1To1AutoMap(deviceName);
+        AutoMapWizard.WizardSelectedDevice = deviceName;
+        AutoMapWizard.PrepareForNavigation();
+    }
+
+    /// <summary>Applies the flyout's chosen layout to the selected device - same path as the Auto Map page's Apply Configuration.</summary>
+    public void ApplyAutoMap()
+    {
+        if (string.IsNullOrEmpty(SelectedDeviceName)) return;
+
+        AutoMapWizard.ApplyWizardMappings();
         RebuildTiles();
     }
 

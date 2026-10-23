@@ -353,6 +353,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public event Action<LiveDeviceInputState>? OnLiveDeviceStateUpdated;
     private string _preListenDisplayName = "Click to Map";
     private DispatcherTimer? _listenTimeoutTimer;
+    private DispatcherTimer? _xInputStatusTimer;
     private readonly Dictionary<Guid, int[]> _axisBaselines = new();
 
     /// <summary>Per-device snapshot of every button's held/released state taken on the same first post-arm poll tick as <see cref="_axisBaselines"/> - lets capture require a down-EDGE (see <see cref="ProcessInputPolling"/>) instead of sustained state, so a button already held when listening starts is ignored until released and pressed again.</summary>
@@ -446,16 +447,42 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnGamepadSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (sender is GamepadDeviceSettings changed && e.PropertyName is nameof(GamepadDeviceSettings.LeftTrigger) or nameof(GamepadDeviceSettings.RightTrigger))
+        {
+            string? deviceName = GamepadSettings.FirstOrDefault(kv => ReferenceEquals(kv.Value, changed)).Key;
+            if (deviceName != null) ApplyTriggerEffects(deviceName, changed);
+        }
+
         AutoSaveCurrentProfile();
     }
 
-    /// <summary>Swaps in a freshly-deserialized <see cref="GamepadSettings"/> dictionary, re-subscribing each entry the same way <see cref="GetOrCreateGamepadSettings"/> does for one created on demand.</summary>
+    /// <summary>
+    /// Pushes one gamepad's saved adaptive-trigger effects to the physical pad. A no-op for a device
+    /// without adaptive triggers (everything but a DualSense) or one the hotplug cache doesn't know
+    /// yet - the latter is covered by the re-apply when it appears in <c>ConnectedDevices</c>.
+    /// </summary>
+    private void ApplyTriggerEffects(string deviceName, GamepadDeviceSettings settings)
+    {
+        var info = GetDeviceHardwareInfo(deviceName);
+        if (info == null || !ControllerHidService.SupportsAdaptiveTriggers(info.VendorId, info.ProductId)) return;
+
+        try
+        {
+            _controllerHidService.SetTriggerEffects(info.VendorId, info.ProductId,
+                DualSenseTriggerEffect.Encode(settings.LeftTrigger), DualSenseTriggerEffect.Encode(settings.RightTrigger));
+        }
+        catch { }
+    }
+
+    /// <summary>Swaps in a freshly-deserialized <see cref="GamepadSettings"/> dictionary, re-subscribing each entry the same way <see cref="GetOrCreateGamepadSettings"/> does for one created on demand, then applies each pad's trigger effects (a profile switch can change them).</summary>
     private void LoadGamepadSettings(Dictionary<string, GamepadDeviceSettings> settings)
     {
         foreach (var existing in GamepadSettings.Values) existing.PropertyChanged -= OnGamepadSettingsPropertyChanged;
 
         GamepadSettings = settings;
         foreach (var entry in GamepadSettings.Values) entry.PropertyChanged += OnGamepadSettingsPropertyChanged;
+
+        foreach (var (deviceName, entry) in GamepadSettings) ApplyTriggerEffects(deviceName, entry);
     }
 
     /// <summary>
@@ -649,18 +676,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _gameLibraryService.Load();
         _profileService.ProfileDeleted += id => _gameLibraryService.UnbindGamesForProfile(id);
 
-        AutoMap = new AutoMapWizardViewModel(
-            ConnectedDevices,
-            () => _cachedDevices,
-            Mappings,
-            PlayerTargets,
-            WheelSlots,
-            () =>
-            {
-                RebuildGroupedMappings();
-                UpdateVirtualDeviceSummary();
-                AutoSaveCurrentProfile();
-            });
+        AutoMap = CreateAutoMapWizard();
 
         InitializeShellNavigation();
 
@@ -717,7 +733,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
                 foreach (var name in newNames)
                 {
-                    if (!ConnectedDevices.Contains(name)) ConnectedDevices.Add(name);
+                    if (ConnectedDevices.Contains(name)) continue;
+
+                    ConnectedDevices.Add(name);
+
+                    // A pad that just (re)connected has lost any adaptive-trigger effect it had.
+                    if (GamepadSettings.TryGetValue(name, out var connectedSettings)) ApplyTriggerEffects(name, connectedSettings);
                 }
 
                 if (ConnectedDevices.Count > 0 && string.IsNullOrEmpty(AutoMap.WizardSelectedDevice))
@@ -753,6 +774,12 @@ public partial class MainWindowViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => StatusBar.ApplyHidStatuses(statuses));
         };
         _controllerHidService.Start();
+
+        // Xbox-style pads report connection type and battery through XInput, not the Sony HID service
+        // above. Battery changes slowly, so a 3s poll is plenty.
+        _xInputStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _xInputStatusTimer.Tick += (_, _) => StatusBar.ApplyXInputStatuses();
+        _xInputStatusTimer.Start();
 
         // Forwards a game's rumble feedback (via either virtual pad type) to whichever
         // physical device(s) are mapped into that player slot - the reverse direction of the
@@ -1229,64 +1256,22 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// The "Output As: Xbox / DS4 / Wheel" header switch's apply action - regenerates this
-    /// device's entire mapping set as a fresh <see cref="DevicePresetService.GeneratePreset"/>
-    /// targeting <paramref name="category"/>, replacing whatever it had before. Destructive by
-    /// design (the UI gates the call behind a confirmation Flyout); shares
-    /// <see cref="DevicePresetService.ApplyPreset"/> with <see cref="AutoMapWizardViewModel.ApplyWizardMappings"/>
-    /// so the wizard page and this quick switch never drift into two different "apply" behaviors.
+    /// Builds an <see cref="AutoMapWizardViewModel"/> over this instance's shared device list and mapping
+    /// collection. The Auto Map page owns one (<see cref="AutoMap"/>); the Input Matrix tab's Auto-Map
+    /// flyout owns a second so picking a device/layout there doesn't change the page's own selection.
     /// </summary>
-    public void ApplyOutputModeToDevice(string deviceName, OutputCategory category, uint targetDeviceId)
-    {
-        if (string.IsNullOrWhiteSpace(deviceName)) return;
-
-        var info = GetDeviceHardwareInfo(deviceName);
-        int buttonCount = info?.ButtonCount ?? 32;
-        int axisCount = info?.AxisCount ?? 8;
-        bool hasPov = info?.HasPov ?? true;
-        Guid deviceGuid = info?.InstanceGuid ?? Guid.Empty;
-        var vidPid = info != null ? (info.VendorId, info.ProductId) : ((int, int)?)null;
-
-        var preset = DevicePresetService.GeneratePreset(deviceName, buttonCount, axisCount, category, hasPov, vidPid);
-        DevicePresetService.ApplyPreset(Mappings, deviceName, deviceGuid, preset, targetDeviceId);
-
-        RebuildGroupedMappings();
-        UpdateVirtualDeviceSummary();
-        AutoSaveCurrentProfile();
-    }
-
-    /// <summary>
-    /// The Input Matrix tab's "Auto-Map (1:1)" action - strict index-for-index identity mapping
-    /// (physical button/POV/axis N -> virtual slot N) read directly from the device's own
-    /// reported capabilities, with no per-category guessing (unlike <see cref="ApplyOutputModeToDevice"/>'s
-    /// heuristic <see cref="DevicePresetService.GeneratePreset"/>). Reuses <see cref="DevicePresetService.ApplyPreset"/>'s
-    /// existing find-or-create-by-slot logic (preserves deadzone/calibration/<see cref="MappingEntry.SemanticHotspot"/>
-    /// on any slot whose physical index doesn't change), then additionally removes this device's
-    /// existing mappings that fall outside the new identity coverage - <see cref="DevicePresetService.ApplyPreset"/>
-    /// itself never removes anything, so without this second pass a device whose capabilities or
-    /// prior mappings changed would accumulate orphaned/stale entries. Nicknames need no special
-    /// handling here: they're keyed by (device, type, index) in <see cref="HardwareProfileService"/>,
-    /// independent of <see cref="MappingEntry"/> identity, and a strict 1:1 mapping by definition
-    /// never changes which physical index a slot represents.
-    /// </summary>
-    public void ApplyStrict1To1AutoMap(string deviceName, uint targetWheelSlot = 1)
-    {
-        if (string.IsNullOrWhiteSpace(deviceName)) return;
-
-        var info = GetDeviceHardwareInfo(deviceName);
-        if (info == null) return;
-
-        var preset = DevicePresetService.GenerateStrict1To1Preset(deviceName, info.ButtonCount, info.AxisCount, info.HasPov, (info.VendorId, info.ProductId));
-        DevicePresetService.ApplyPreset(Mappings, deviceName, info.InstanceGuid, preset, targetWheelSlot);
-
-        var covered = preset.Select(p => (p.Type, p.PhysicalIndex)).ToHashSet();
-        var orphans = Mappings.Where(m => m.SourceDeviceName == deviceName && !covered.Contains((m.SourceType, m.SourceIndex))).ToList();
-        foreach (var orphan in orphans) Mappings.Remove(orphan);
-
-        RebuildGroupedMappings();
-        UpdateVirtualDeviceSummary();
-        AutoSaveCurrentProfile();
-    }
+    public AutoMapWizardViewModel CreateAutoMapWizard() => new(
+        ConnectedDevices,
+        () => _cachedDevices,
+        Mappings,
+        PlayerTargets,
+        WheelSlots,
+        () =>
+        {
+            RebuildGroupedMappings();
+            UpdateVirtualDeviceSummary();
+            AutoSaveCurrentProfile();
+        });
 
     /// <summary>Finds-or-creates the <see cref="MappingEntry"/> at one physical axis slot for a device and points it at <paramref name="targetOutput"/> - the Input Matrix axis gauge's click-to-quick-assign action. Lives here (not on <c>InputMatrixViewModel</c>) since it needs <see cref="AutoSaveCurrentProfile"/>, which is private.</summary>
     public void QuickAssignAxis(string deviceName, int axisIndex, string targetOutput)
@@ -1321,7 +1306,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Public wrapper around the same connected-device capability lookup <see cref="ApplyOutputModeToDevice"/>/the Auto-Map wizard already do inline - lets <see cref="ViewModels.DeviceMappingPageViewModel"/> synthesize placeholder rows for every physical input a device reports (see <c>DeviceMappingPageViewModel.RebuildDisplayRows</c>).
+    /// Public wrapper around the same connected-device capability lookup the Auto-Map wizard already does inline - lets <see cref="ViewModels.DeviceMappingPageViewModel"/> synthesize placeholder rows for every physical input a device reports (see <c>DeviceMappingPageViewModel.RebuildDisplayRows</c>).
     ///
     /// <para>
     /// Reads <see cref="_cachedDevices"/> instead of calling <see cref="InputDeviceManager.GetConnectedDevices"/>
@@ -1805,7 +1790,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// Picks a default target channel the instant an axis/button is captured via
     /// "Click to Map" (see <see cref="AssignDetectedInput"/>), so a new mapping is never
     /// left pointed at nothing before the user gets a chance to change it. This is a
-    /// separate, simpler per-index guess from the full <see cref="DevicePresetService.GeneratePreset"/>
+    /// separate, simpler per-index guess from the full <see cref="DevicePresetService.GenerateAutoBindPreset"/>
     /// table the Auto-Map Wizard uses - it only needs one reasonable answer per index
     /// rather than a complete preset for every input at once.
     /// </summary>
@@ -2864,6 +2849,8 @@ public partial class MainWindowViewModel : ViewModelBase
         // 1. Stop background workers/pollers/hooks.
         RunShutdownStep("DeviceManager.StopPolling", () => _deviceManager?.StopPolling());
         RunShutdownStep("GameProcessWatcher.Dispose", () => _gameProcessWatcher?.Dispose());
+        RunShutdownStep("XInputStatusTimer.Stop", () => _xInputStatusTimer?.Stop());
+        RunShutdownStep("ControllerHidService.ReleaseTriggerEffects", () => _controllerHidService.ReleaseTriggerEffects());
         RunShutdownStep("ControllerHidService.Dispose", () => _controllerHidService.Dispose());
         RunShutdownStep("ControllerLedViewModel.Dispose", () => _controllerLedViewModel?.Dispose());
 
